@@ -4,8 +4,9 @@ from pathlib import Path
 root = Path(__file__).parent
 src = root / 'src'
 page = (src / 'template.html').read_text()
-client = '\n'.join((src / 'client' / n).read_text() for n in ('core.js', 'world.js', 'fx.js', 'controls.js', 'hud.js', 'menus.js', 'soundhooks.js', 'zz_boot.js'))
+client = '\n'.join((src / 'client' / n).read_text() for n in ('core.js', 'world.js', 'fx.js', 'controls.js', 'net.js', 'hud.js', 'menus.js', 'soundhooks.js', 'zz_boot.js'))
 parts = {
+    '/*PEER*/': (src / 'vendor' / 'peerjs.min.js').read_text().replace('</script', '<\\/script'),
     '/*SIM*/': (src / 'sim.js').read_text(),
     '/*ART*/': (src / 'art.js').read_text() + '\n' + (src / 'terrain.js').read_text(),
     '/*AUDIO*/': (src / 'audio.js').read_text(),

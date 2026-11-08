@@ -349,9 +349,19 @@ const Art = (() => {
       else { cel(() => { const g = gx; g.moveTo(-.68, -.22); g.bezierCurveTo(-.74, -1.02, .74, -1.02, .68, -.22); g.closePath(); }, '#7a2ad6', { sh: .12, hi: .04, lw: .08 }); pg([[-.72, -.32], [.72, -.32], [.68, -.1], [-.68, -.1]], '#4a14a8', { sh: 0, lw: .07 }); pg([[-.62, .24], [.62, .24], [.44, .72], [0, .96], [-.44, .72]], '#a6ff2a', { sh: .08, hi: .03, lw: .08 }); line([[-.44, -.02], [-.12, .14]], INK, .12); line([[.44, -.02], [.12, .14]], INK, .12); }
     },
   };
+  // Minions sit a step behind champions: the same art with some colour taken out, done once on the cached sprite.
+  const quieted = new WeakSet();
+  function quiet(spr, amt) {
+    if (!spr || !spr.c || quieted.has(spr.c)) return spr; quieted.add(spr.c);
+    const c = spr.c, g = c.getContext('2d'), keep = cv(c.width, c.height); keep.getContext('2d').drawImage(c, 0, 0);
+    g.save(); g.setTransform(1, 0, 0, 1, 0, 0); g.globalAlpha = amt; g.fillStyle = '#868686'; g.globalCompositeOperation = 'saturation';
+    if (g.globalCompositeOperation === 'saturation') { g.fillRect(0, 0, c.width, c.height); g.globalCompositeOperation = 'destination-in'; g.globalAlpha = 1; g.drawImage(keep, 0, 0); }
+    else { g.globalCompositeOperation = 'source-atop'; g.globalAlpha = amt * .6; g.fillRect(0, 0, c.width, c.height); }
+    g.restore(); return spr;
+  }
   function minionCoin(team, ranged) {
     const hero = team === 0;
-    return comic(`mn${team}${ranged ? 'r' : 'm'}`, 30, hero ? 0 : 1, -1, hero ? FLD.deputy : FLD.goon, () => MINION[hero ? 'deputy' : 'goon'](ranged), { rimCol: hero ? '#1d3fe6' : '#ff4a14', band: hero ? '#ffffff' : '#ffb01f', face: .82 });
+    return quiet(comic(`mn${team}${ranged ? 'r' : 'm'}`, 30, hero ? 0 : 1, -1, hero ? FLD.deputy : FLD.goon, () => MINION[hero ? 'deputy' : 'goon'](ranged), { rimCol: hero ? '#1d3fe6' : '#ff4a14', band: hero ? '#ffffff' : '#ffb01f', face: .82 }), .34);
   }
   // Civilians are deliberately plain: a soft cream disc, a round friendly face and everyday colours.
   function civCoin(v) {
@@ -568,12 +578,13 @@ const Art = (() => {
 
   // ---------- ability buttons ----------
   const ABPAL = { vesper: ['#1d3fe6', '#5f7bff'], kade: ['#d81f1f', '#ff6b3d'], ione: ['#00909c', '#23d4c8'], solenne: ['#f28a00', '#ffc81f'], sable: ['#5a17c4', '#9a4dff'], gravel: ['#a83f08', '#f07a14'] };
-  function abilityCoin(champ, slot, on, R0 = 40) {
-    const id = `ab${champ}${slot}${on}${R0}`; if (cache.has(id)) return cache.get(id);
-    const R = R0 * 2, P = Math.round(R * .075), S = R * 2 + P * 2, c = cv(S, S), g = c.getContext('2d'), [a, b] = on ? ABPAL[champ] : ['#39405a', '#4b5372'], ult = slot === 2;
+  const VILPAL = { vesper: ['#5a1fc0', '#3a1188'], kade: ['#7a1f9e', '#4c1266'], ione: ['#3f8a1e', '#245c10'], solenne: ['#5f7a12', '#3c4e0a'], sable: ['#2c1a5e', '#180d3a'], gravel: ['#a8431a', '#6e2a0f'] };
+  function abilityCoin(champ, slot, on, R0 = 40, team = 0) {
+    const id = `ab${champ}${slot}${on}${R0}${team}`; if (cache.has(id)) return cache.get(id);
+    const R = R0 * 2, P = Math.round(R * .075), S = R * 2 + P * 2, c = cv(S, S), g = c.getContext('2d'), [a, b] = on ? (team ? VILPAL[champ] : ABPAL[champ]) : ['#39405a', '#4b5372'], ult = slot === 2;
     g.translate(S / 2, S / 2); g.scale(R, R); gx = g;
     // rim: ultimates wear a spiked gold crown
-    if (ult && on) { const e = []; for (let i = 0; i < 16; i++) { const an = i / 16 * TAU; e.push([an, .9]); e.push([an + TAU / 32, 1.04]); } cel(edgeT(e), '#ffd21a', { sh: .05, hi: .03, lw: .06 }); }
+    if (ult && on) { const e = []; for (let i = 0; i < 16; i++) { const an = i / 16 * TAU; e.push([an, .9]); e.push([an + TAU / 32, 1.04]); } cel(edgeT(e), team ? '#8dff2e' : '#ffd21a', { sh: .05, hi: .03, lw: .06 }); }
     else ov(0, 0, .97, .97, on ? '#ffffff' : '#7b84a0', { sh: .05, lw: .06 });
     ov(0, 0, .83, .83, a, { sh: 0, lw: .05 });
     g.save(); g.beginPath(); g.arc(0, 0, .81, 0, TAU); g.clip();
@@ -587,7 +598,7 @@ const Art = (() => {
     if (on) { g.translate(S / 2, S / 2); g.scale(R, R); g.beginPath(); g.moveTo(-.74, -.34); g.quadraticCurveTo(-.44, -.76, 0, -.8); g.lineTo(-.06, -.68); g.quadraticCurveTo(-.4, -.64, -.62, -.28); g.closePath(); g.fillStyle = 'rgba(255,255,255,.72)'; g.fill(); }
     cache.set(id, c); return c;
   }
-  function iconURL(champ, slot) { return abilityCoin(champ, slot, true, 40).toDataURL(); }
+  function iconURL(champ, slot, team = 0) { return abilityCoin(champ, slot, true, 40, team).toDataURL(); }
 
   // ---------- comic effect sprites, all prerendered once ----------
   const FONT = '"Bangers",Impact,sans-serif';

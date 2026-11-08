@@ -117,17 +117,17 @@ const Hud = {
   ui: {
     atk: { x: 0, y: 0, r: 46 },
     ab: [{ x: 0, y: 0, r: 33 }, { x: 0, y: 0, r: 33 }, { x: 0, y: 0, r: 37 }],
-    cancel: { x: 0, y: 70, r: 34 }, pause: { x: 0, y: 24, r: 16 },
-    forge: { x: 68, y: 86, r: 20 }, recall: { x: 124, y: 86, r: 20 },
+    cancel: { x: 0, y: 70, r: 34 }, pause: { x: 0, y: 20, r: 14 },
+    forge: { x: 63, y: 76, r: 17 }, recall: { x: 106, y: 76, r: 17 },
     map: { x: 0, y: 6, w: 140, h: 84 },
-    stripX: 400, miniR: 11, miniGap: 27, midHalf: 42, hpW: 130, compact: false,
+    stripX: 400, miniR: 8, miniGap: 20, midHalf: 40, hpW: 104, compact: false,
   },
 };
 
 const { hud, initHud, hudDraw, uiEvent } = (() => {
   const U = Hud.ui, HPI = Math.PI / 2, UIFONT = '"Barlow Semi Condensed",sans-serif';
   const { INK, PAPER, SUN, ULTRA, ULTRA2, VIOLET, VIOLET2, TOXIC, BLOOD } = Comic;
-  const WHITE = '#ffffff', HP_X = 104, GOLD_X = 118, GOLD_Y = 53;
+  const WHITE = '#ffffff', PX = 65, PY = 27, PR = 21, HP_X = 92, GOLD_X = 101, GOLD_Y = 44;
   const TRACKS = [['edge', 'Edge', 'More damage from everything'], ['guard', 'Guard', 'More health and armour'], ['haste', 'Haste', 'Shorter cooldowns, faster feet']];
   const fcache = {};
   const fw = (w, s) => fcache[w * 1000 + s] || (fcache[w * 1000 + s] = `${w} ${s}px ${UIFONT}`);
@@ -180,12 +180,11 @@ const { hud, initHud, hudDraw, uiEvent } = (() => {
     const bx = VW - 92, by = VH - 80, off = [[-104, 18], [-78, -78], [4, -112]];
     U.atk.x = bx; U.atk.y = by;
     off.forEach((o, i) => { U.ab[i].x = bx + o[0]; U.ab[i].y = by + o[1]; });
-    U.cancel.x = VW - 250;
-    const M = U.map; M.w = U.compact ? 108 : 140; M.h = Math.round(M.w * Sim.H / Sim.W); M.x = VW - 44 - M.w; M.y = 6;
-    U.pause.x = M.x - 26; U.pause.y = 24;
-    U.stripX = VW / 2; U.miniR = U.compact ? 9 : 11; U.miniGap = U.compact ? 20 : 26; U.midHalf = U.compact ? 38 : 44;
-    const left = U.stripX - U.midHalf - U.miniGap * 4;
-    U.hpW = Math.max(70, Math.min(130, Math.floor(left - 10 - HP_X)));
+    U.cancel.x = VW - 250; U.cancel.y = U.compact ? 118 : 70;
+    const M = U.map; M.w = U.compact ? 88 : 112; M.h = Math.round(M.w * Sim.H / Sim.W); M.x = VW - 44 - M.w; M.y = 6;
+    U.pause.x = M.x - 21; U.pause.y = 20;
+    U.stripX = VW / 2; U.miniR = U.compact ? 7 : 8; U.miniGap = U.compact ? 17 : 20; U.midHalf = U.compact ? 33 : 40;
+    U.hpW = U.compact ? 84 : 104;
     if (H) H.mapC = null;
   }
 
@@ -200,14 +199,14 @@ const { hud, initHud, hudDraw, uiEvent } = (() => {
     H = {
       t: 0, enter: 0, byId, mini, hope: s.hope, hopeFlash: 0, announced: false, hopeAng: s.hope >= 50 ? 0 : Math.PI, hopeSide: s.hope >= 50 ? 0 : 1,
       portrait: spriteOf(me), goldCoin: Art.coin('hudgold', 18, 'boss', Art.METAL.boss, -1, -1, .5),
-      abOn: me.kit.map((_, i) => Art.abilityCoin(me.champ, i, true, 40)), abOff: me.kit.map((_, i) => Art.abilityCoin(me.champ, i, false, 40)),
+      abOn: me.kit.map((_, i) => Art.abilityCoin(me.champ, i, true, 40, me.team)), abOff: me.kit.map((_, i) => Art.abilityCoin(me.champ, i, false, 40, me.team)),
       rng: me.kit.map(a => a.range ? `Range ${a.range}` : 'Self'),
-      hpTrail: me.hp, hpHold: 0, hurt: 0, hpPrev: me.hp, goldShow: me.gold, goldStr: String(Math.floor(me.gold)),
+      hpTrail: me.hp, hpHold: 0, hurt: 0, hpPrev: me.hp, goldShow: me.gold, goldStr: String(Math.floor(me.gold)), goldGain: 0, goldGainT: 0, goldGainStr: '', lvlFx: 0, first: save.hints < 1, guide: save.hints < 2, netStr: '', netKey: -2,
       prev: [0, 0, 0], cdMax: [1, 1, 1], recPrev: [0, 0, 0], recMax: [1, 1, 1], pop: [0, 0, 0], press: [0, 0, 0], deny: [0, 0, 0], flash: [0, 0, 0], spark: [.4, 1.2, 2.0],
       atkPress: 0, atkMax: 1, atkPrev: 0, cancelIn: 0,
       feed: [], banner: null, queue: [], pings: [], pingAt: {}, towerAt: -99, mapC: null, kills: [s.kills[0], s.kills[1]], killBump: [0, 0], lvl: me.lvl, lvlBump: 0, sq: { forge: 0, recall: 0, pause: 0 },
       clockSec: -1, clockStr: '0:00', hoardKey: -2, hoardStr: '', frame: 0, forgeKey: -1,
-      hint: save.hints < 3 ? { i: 0, t: 0 } : null,
+      hint: save.hints < 2 ? { i: 0, t: 0, n: 0 } : null,
     };
     g.goldBump = 0; g.goldAnchor = { x: GOLD_X, y: GOLD_Y };
     hud();
@@ -216,44 +215,37 @@ const { hud, initHud, hudDraw, uiEvent } = (() => {
   // ---------- banners: comic captions that slam in near the top, clear of the action ----------
   function banner(s, o = {}) {
     if (!H) return;
-    const b = { s: s.toUpperCase(), sub: o.sub || '', pri: o.pri || 1, spr: o.spr || null, team: o.team === 0 || o.team === 1 ? o.team : -1, t: 0, max: o.dur || 2.1, w: 0, hot: !!o.hot };
+    const b = { s: s.toUpperCase(), sub: o.sub || '', pri: o.pri || 1, spr: o.spr || null, team: o.team === 0 || o.team === 1 ? o.team : -1, t: 0, max: o.dur || 1.7, w: 0, hot: !!o.hot, at: H.t };
     if (H.banner && H.banner.s === b.s) { H.banner.t = Math.min(H.banner.t, .3); return; }
-    if (H.banner && b.pri > H.banner.pri) { H.banner = b; return; }
-    if (!H.banner) { H.banner = b; return; }
-    H.queue.push(b); H.queue.sort((p, q) => q.pri - p.pri);
-    if (H.queue.length > 3) H.queue.length = 3;
+    if (!H.banner || b.pri > H.banner.pri) { H.banner = b; return; }
+    // One on screen and at most one waiting; only objectives are worth the wait.
+    if (b.pri >= 3 && (!H.queue[0] || b.pri >= H.queue[0].pri)) H.queue[0] = b;
   }
 
   function drawBanner(dt) {
     let b = H.banner;
     if (!b) return;
     b.t += dt;
-    if (b.t >= b.max) { H.banner = H.queue.shift() || null; b = H.banner; if (!b) return; }
-    const big = b.pri >= 2, size = U.compact ? (big ? 23 : 20) : (big ? 27 : 22), h = (big ? 34 : 30) + (b.sub ? 15 : 0);
+    if (b.t >= b.max) { const n = H.queue.shift(); H.banner = n && H.t - n.at < 4 ? n : null; b = H.banner; if (!b) return; }
+    const big = b.pri >= 3, size = U.compact ? (big ? 19 : 16) : (big ? 22 : 18), h = (big ? 28 : 24) + (b.sub ? 13 : 0);
     ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-    if (!b.w) { ctx.font = fd(size); b.w = ctx.measureText(b.s).width + (b.spr ? 66 : 42); if (b.sub) { ctx.font = fw(700, 13.5); b.w = Math.max(b.w, ctx.measureText(b.sub).width + 42); } }
-    const SLAM = .15, inT = clamp01(b.t / SLAM), outT = clamp01((b.t - (b.max - .2)) / .2);
+    if (!b.w) { ctx.font = fd(size); b.w = ctx.measureText(b.s).width + (b.spr ? 54 : 34); if (b.sub) { ctx.font = fw(700, 12); b.w = Math.max(b.w, ctx.measureText(b.sub).width + 34); } }
+    const SLAM = .13, inT = clamp01(b.t / SLAM), outT = clamp01((b.t - (b.max - .2)) / .2);
     const eased = 1 - (1 - inT) * (1 - inT);
-    const scale = calm ? 1 : (inT < 1 ? 2.3 - 1.3 * eased : 1 + Math.max(0, .14 - (b.t - SLAM) * .9) * Math.sin((b.t - SLAM) * 26));
-    const W = Math.min(b.w, VW - 300), cy = Ctl.aim ? Math.min(136, VH * .36) : (U.compact ? 84 : 90), lift = outT * outT * -34;
-    ctx.globalAlpha = calm ? Math.min(inT * 2, 1 - outT) : Math.min(1, inT * 2.5) * (1 - outT);
+    const scale = calm || !big ? 1 : (inT < 1 ? 1.7 - .7 * eased : 1 + Math.max(0, .08 - (b.t - SLAM) * .6) * Math.sin((b.t - SLAM) * 26));
+    const W = Math.min(b.w, VW - 300), cy = Ctl.aim ? (U.compact ? VH - 22 : Math.min(128, VH * .36)) : (U.compact ? 58 : 62), cxB = Ctl.aim && U.compact ? VW / 2 - 44 : VW / 2, lift = outT * outT * -24;
+    ctx.globalAlpha = calm || !big ? Math.min(inT * 2, 1 - outT) : Math.min(1, inT * 2.5) * (1 - outT);
     const c = Math.cos(-.03), sn = Math.sin(-.03);
-    ctx.setTransform(dpr * scale * c, dpr * scale * sn, -dpr * scale * sn, dpr * scale * c, VW / 2 * dpr, (cy + lift) * dpr);
-    // impact lines after the slam
-    if (!calm && b.t > SLAM && b.t < SLAM + .32) {
-      const p = (b.t - SLAM) / .32; ctx.strokeStyle = INK; ctx.lineWidth = 3 * (1 - p); ctx.lineCap = 'round'; ctx.beginPath();
-      for (let i = 0; i < 12; i++) { const a = i / 12 * TAU + .2, rx = W / 2 + 6 + p * 26, ry = h / 2 + 4 + p * 14; ctx.moveTo(Math.cos(a) * rx, Math.sin(a) * ry); ctx.lineTo(Math.cos(a) * (rx + 12), Math.sin(a) * (ry + 12)); }
-      ctx.stroke();
-    }
+    ctx.setTransform(dpr * scale * c, dpr * scale * sn, -dpr * scale * sn, dpr * scale * c, cxB * dpr, (cy + lift) * dpr);
     const hw = W / 2, hh = h / 2, fill = b.team === 0 ? ULTRA : b.team === 1 ? VIOLET : b.hot ? BLOOD : SUN, tc = b.team >= 0 || b.hot ? WHITE : INK;
-    ctx.fillStyle = INK; ctx.beginPath(); ctx.moveTo(-hw - 8 + 4, -hh + 5); ctx.lineTo(hw + 4 + 8, -hh + 5); ctx.lineTo(hw + 4 - 2, hh + 5); ctx.lineTo(-hw + 4 - 12, hh + 5); ctx.closePath(); ctx.fill();
-    ctx.beginPath(); ctx.moveTo(-hw - 8, -hh); ctx.lineTo(hw + 8, -hh); ctx.lineTo(hw - 2, hh); ctx.lineTo(-hw - 12, hh); ctx.closePath(); ctx.fillStyle = fill; ctx.fill(); ctx.strokeStyle = INK; ctx.lineWidth = 3; ctx.lineJoin = 'round'; ctx.stroke();
-    const tx = b.spr ? 15 : 0, ty = b.sub ? -7.5 : 1;
-    if (b.spr) blit(b.spr, -hw + 21, 0, Math.min(16, hh - 2));
+    ctx.fillStyle = INK; ctx.beginPath(); ctx.moveTo(-hw - 7 + 3, -hh + 4); ctx.lineTo(hw + 3 + 7, -hh + 4); ctx.lineTo(hw + 3 - 2, hh + 4); ctx.lineTo(-hw + 3 - 11, hh + 4); ctx.closePath(); ctx.fill();
+    ctx.beginPath(); ctx.moveTo(-hw - 7, -hh); ctx.lineTo(hw + 7, -hh); ctx.lineTo(hw - 2, hh); ctx.lineTo(-hw - 11, hh); ctx.closePath(); ctx.fillStyle = fill; ctx.fill(); ctx.strokeStyle = INK; ctx.lineWidth = 2.5; ctx.lineJoin = 'round'; ctx.stroke();
+    const tx = b.spr ? 12 : 0, ty = b.sub ? -6.5 : 1;
+    if (b.spr) blit(b.spr, -hw + 15, 0, Math.min(13, hh - 2));
     ctx.font = fd(size);
-    if (tc === WHITE) { ctx.lineWidth = 3.6; ctx.strokeStyle = INK; ctx.lineJoin = 'round'; ctx.strokeText(b.s, tx, ty); ctx.fillStyle = b.team === 0 ? SUN : b.team === 1 ? TOXIC : WHITE; ctx.fillText(b.s, tx, ty); }
+    if (tc === WHITE) { ctx.lineWidth = 3; ctx.strokeStyle = INK; ctx.lineJoin = 'round'; ctx.strokeText(b.s, tx, ty); ctx.fillStyle = b.team === 0 ? SUN : b.team === 1 ? TOXIC : WHITE; ctx.fillText(b.s, tx, ty); }
     else { ctx.fillStyle = INK; ctx.fillText(b.s, tx, ty); }
-    if (b.sub) { ctx.font = fw(700, 13.5); ctx.fillStyle = tc; ctx.fillText(b.sub, tx, ty + 19); }
+    if (b.sub) { ctx.font = fw(700, 12); ctx.fillStyle = tc; ctx.fillText(b.sub, tx, ty + 16); }
     ctx.globalAlpha = 1; offset(0, 0);
   }
 
@@ -264,98 +256,109 @@ const { hud, initHud, hudDraw, uiEvent } = (() => {
     if (k === 'hit') {
       const u = H.byId.get(e.u); if (!u || u.team !== me.team) return;
       const now = G.s.t;
-      if (u.kind === 'tower') { if (now - H.towerAt > 25) { H.towerAt = now; banner('Your tower is under attack', { pri: 2, hot: true, dur: 2 }); } }
+      if (u.kind === 'tower') { if (now - H.towerAt > 25) { H.towerAt = now; banner('Tower under attack', { pri: 3, hot: true, dur: 1.8 }); } }
       else if (u !== me && now - (H.pingAt[u.id] || -9) > 2.5) { H.pingAt[u.id] = now; if (H.pings.length < 6) H.pings.push({ x: u.x, y: u.y, t: 0 }); }
-    } else if (k === 'gold') { if (e.u === me.id) G.goldBump = Math.max(G.goldBump, .55); }
-    else if (k === 'feed') {
-      const a = H.byId.get(e.a) || null, b = H.byId.get(e.b) || null;
-      H.feed.unshift({ aS: a && a.kind === 'champ' ? H.mini.get(a.id) : null, bS: b ? H.mini.get(b.id) : null, t: 5, aT: a ? a.team : -1, age: 0 });
-      if (H.feed.length > 4) H.feed.length = 4;
-      const spr = a && a.kind === 'champ' ? H.mini.get(a.id) : null, team = a ? a.team : -1;
-      if (e.first) banner('First strike', { pri: 6, spr, team, dur: 2.2 });
-      else if (e.multi >= 2) banner(e.multi === 2 ? 'Double take' : e.multi === 3 ? 'Triple take' : 'Quadra take', { pri: 4 + Math.min(4, e.multi), spr, team, dur: 2.3 });
+    } else if (k === 'gold') {
+      if (e.u === me.id) {
+        G.goldBump = Math.max(G.goldBump, .55);
+        if (e.a >= 1) { H.goldGain = H.goldGainT > 0 ? H.goldGain + e.a : e.a; H.goldGainT = 1; H.goldGainStr = '+' + Math.round(H.goldGain); }
+      }
+    } else if (k === 'feed') {
+      const a = H.byId.get(e.a) || null, b = H.byId.get(e.b) || null, mine = e.a === me.id || e.b === me.id;
+      H.feed.unshift({ aS: a && a.kind === 'champ' ? H.mini.get(a.id) : null, bS: b ? H.mini.get(b.id) : null, t: mine ? 3.2 : 1.3, aT: a ? a.team : -1, age: 0, mine });
+      if (H.feed.length > 2) H.feed.length = 2;
+      if (e.a === me.id) {
+        const spr = H.mini.get(me.id), team = me.team;
+        if (e.first) banner('First takedown', { pri: 6, spr, team, dur: 1.9 });
+        else if (e.multi >= 2) banner(e.multi === 2 ? 'Double takedown' : e.multi === 3 ? 'Triple takedown' : 'Four takedowns', { pri: 4 + Math.min(4, e.multi), spr, team, dur: 2 });
+        else banner('Takedown', { pri: 2, spr, team, dur: 1.2 });
+      }
     } else if (k === 'level') {
-      if (e.u === me.id) { H.lvlBump = 1; if (me.lvl === 3) banner('Ultimate unlocked', { pri: 3, dur: 2 }); else banner(`Level ${me.lvl}`, { pri: 1, dur: 1.3 }); }
+      if (e.u === me.id) { H.lvlBump = 1; H.lvlFx = 1; if (me.lvl === 3) banner('Ultimate unlocked', { pri: 4, dur: 1.9 }); }
     } else if (k === 'tower') {
-      banner(e.team === me.team ? 'Your team lost a tower' : `${Sim.TEAM_NAMES[e.team]} lost a tower`, { pri: 3, team: e.team, dur: 2.4 });
-    } else if (k === 'bossup') banner('The Colossus is up', { pri: 4, sub: 'It waits at the centre', dur: 2.6 });
-    else if (k === 'boss') banner(`${Sim.TEAM_NAMES[e.team]} took the Colossus`, { pri: 5, sub: 'Stronger strikes for 90 seconds', team: e.team, dur: 2.8 });
+      banner(e.team === me.team ? 'We lost a tower' : 'Enemy tower down', { pri: 3, team: e.team === me.team ? -1 : me.team, hot: e.team === me.team, dur: 2 });
+    } else if (k === 'bossup') banner('The Colossus is up', { pri: 4, sub: 'At the centre of the map', dur: 2.2 });
+    else if (k === 'boss') banner(`${Sim.TEAM_NAMES[e.team]} took the Colossus`, { pri: 5, sub: 'Stronger hits for 90 seconds', team: e.team, dur: 2.4 });
     else if (k === 'forge') { if (e.u === me.id) forgeSync(true); }
-    else if (k === 'civ') { H.hopeFlash = 1; if (e.team === G.me.team) banner(e.team === 0 ? 'Rescued' : 'Seized', { pri: 1, team: e.team, dur: 1.3 }); }
-    else if (k === 'hope') {
-      if (e.on) banner(e.team === 0 ? 'The people rally' : 'The city cowers', { pri: 3, sub: `${Sim.TEAM_NAMES[e.team]} hit harder`, team: e.team, dur: 2.4 });
-      else banner(`${Sim.TEAM_NAMES[e.team]} lost their edge`, { pri: 1, team: e.team, dur: 1.6 });
-    }
+    else if (k === 'civ') H.hopeFlash = 1;
+    else if (k === 'hope') { if (e.on) banner(e.team === 0 ? 'The people rally' : 'The city cowers', { pri: 3, sub: `${Sim.TEAM_NAMES[e.team]} hit harder`, team: e.team, dur: 2 }); }
   }
 
   // ---------- player frame ----------
   function drawFrame(dt, me) {
     const hpw = U.hpW, f = clamp01(me.hp / me.maxHp), side = me.team;
     if (me.hp < H.hpPrev - .5) H.hurt = 1;
-    H.hpPrev = me.hp; H.hurt = Math.max(0, H.hurt - dt * 4.5); H.lvlBump = Math.max(0, H.lvlBump - dt * 3.2);
-    const jolt = calm ? 0 : Math.sin(H.t * 60) * H.hurt * 2.4;
+    H.hpPrev = me.hp; H.hurt = Math.max(0, H.hurt - dt * 4.5); H.lvlBump = Math.max(0, H.lvlBump - dt * 3.2); H.lvlFx = Math.max(0, H.lvlFx - dt * 1.5);
+    const jolt = calm ? 0 : Math.sin(H.t * 60) * H.hurt * 2;
     if (jolt) offset(jolt, 0);
-    // A slim panel with the portrait breaking out on the left.
-    put(panel(HP_X - 78 + hpw + 12, 38, 6, SIDE_FILL[side]), 78, 7);
-    disc(72, 31, 26); ctx.fillStyle = INK; ctx.fill();
-    blit(H.portrait, 72, 31, 24);
-    const lb = 1 + H.lvlBump * .55;
-    disc(92, 48, 9.5 * lb); ctx.fillStyle = SUN; ctx.fill(); ctx.strokeStyle = INK; ctx.lineWidth = 2.2; ctx.stroke();
-    ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.font = fw(700, 13); ctx.fillStyle = INK; ctx.fillText(num(me.lvl), 92, 48.5);
+    // Level-up: a quick inked burst behind the portrait.
+    if (H.lvlFx > 0 && !calm) {
+      const q = 1 - H.lvlFx, rr = PR + 6 + outBack(Math.min(1, q * 2.4)) * 15;
+      ctx.save(); ctx.translate(PX, PY); ctx.rotate(q * 1.2); ctx.globalAlpha = Math.min(1, H.lvlFx * 2.4);
+      Comic.starPath(ctx, 11, rr + 3, rr * .72); ctx.fillStyle = INK; ctx.fill();
+      Comic.starPath(ctx, 11, rr, rr * .74); ctx.fillStyle = SIDE_ACC[side]; ctx.fill();
+      ctx.restore(); ctx.globalAlpha = 1;
+    }
+    disc(PX + 1.5, PY + 2.5, PR + 1); ctx.fillStyle = INK; ctx.fill();
+    blit(H.portrait, PX, PY, PR);
+    const lb = 1 + (calm ? 0 : H.lvlBump) * .65, bx = PX + PR * .78, by = PY + PR * .78;
+    disc(bx, by, 8.5 * lb); ctx.fillStyle = SUN; ctx.fill(); ctx.strokeStyle = INK; ctx.lineWidth = 2; ctx.stroke();
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.font = fw(700, Math.round(12 * lb)); ctx.fillStyle = INK; ctx.fillText(num(me.lvl), bx, by + .5);
     if (me.hp < H.hpTrail) { H.hpHold += dt; if (H.hpHold > .32) H.hpTrail = Math.max(me.hp, H.hpTrail - (me.maxHp * .9 + H.hpTrail - me.hp) * dt); } else { H.hpTrail = me.hp; H.hpHold = 0; }
-    const x = HP_X, y = 12, h = 13, tr = clamp01(H.hpTrail / me.maxHp), low = f < .3;
-    ctx.fillStyle = INK; ctx.fillRect(x - 2.5, y - 2.5, hpw + 5, h + 5);
+    const x = HP_X, y = 11, h = 12, tr = clamp01(H.hpTrail / me.maxHp), low = f < .3;
+    ctx.fillStyle = INK; ctx.fillRect(x - 2, y - 2, hpw + 4, h + 9);
     ctx.fillStyle = '#3a3358'; ctx.fillRect(x, y, hpw, h);
     if (tr > f) { ctx.fillStyle = SUN; ctx.fillRect(x + hpw * f, y, hpw * (tr - f), h); }
     ctx.fillStyle = low ? '#ff3a22' : '#38e04f'; ctx.fillRect(x, y, hpw * f, h);
-    ctx.fillStyle = low ? '#ff9a7a' : '#baf79e'; ctx.fillRect(x, y, hpw * f, 4);
-    if (low && !calm) { ctx.globalAlpha = .35 + Math.sin(H.t * 9) * .3; ctx.fillStyle = '#fff'; ctx.fillRect(x, y, hpw * f, h); ctx.globalAlpha = 1; }
-    const step = me.maxHp > 1500 ? 250 : 100, seg = hpw * step / me.maxHp;
-    ctx.fillStyle = INK;
-    for (let tx = x + seg; tx < x + hpw - .5; tx += seg) ctx.fillRect(tx - .6, y, 1.2, h);
-    ctx.font = fw(700, 12.5); ctx.textAlign = 'center';
-    label(num(Math.ceil(me.hp)), x + hpw / 2, y + h / 2 + .5, WHITE, 3);
+    ctx.fillStyle = low ? '#ff9a7a' : '#baf79e'; ctx.fillRect(x, y, hpw * f, 3);
+    ctx.font = fw(700, 11.5); ctx.textAlign = 'center';
+    label(num(Math.ceil(me.hp)), x + hpw / 2, y + h / 2 + .5, WHITE, 2.6);
     const need = Sim.xpNeed(me.lvl), xf = me.lvl >= 10 ? 1 : clamp01(me.xp / need);
-    ctx.fillStyle = INK; ctx.fillRect(x - 2.5, 29, hpw + 5, 9);
-    ctx.fillStyle = '#3a3358'; ctx.fillRect(x, 31, hpw, 5);
-    ctx.fillStyle = SIDE_ACC[side]; ctx.fillRect(x, 31, hpw * xf, 5);
+    ctx.fillStyle = '#3a3358'; ctx.fillRect(x, y + h + 2, hpw, 3);
+    ctx.fillStyle = SIDE_ACC[side]; ctx.fillRect(x, y + h + 2, hpw * xf, 3);
     if (jolt) offset(0, 0);
     // gold rolls toward the real value
     G.goldBump = Math.max(0, (G.goldBump || 0) - dt * 4.5);
     const diff = me.gold - H.goldShow;
     H.goldShow = Math.abs(diff) < 1 ? me.gold : H.goldShow + diff * Math.min(1, dt * 9);
     const shown = Math.floor(H.goldShow); if (shown !== H.gv) { H.gv = shown; H.goldStr = String(shown); }
-    const bump = 1 + (calm ? 0 : G.goldBump) * .3;
+    const gb = calm ? 0 : G.goldBump, bump = 1 + gb * .3;
     G.goldAnchor.x = GOLD_X; G.goldAnchor.y = GOLD_Y;
-    ctx.font = fw(700, Math.round(18 * bump * 2) / 2); ctx.textAlign = 'left';
+    ctx.font = fw(700, Math.round(14.5 * bump * 2) / 2); ctx.textAlign = 'left';
     const gw = ctx.measureText(H.goldStr).width;
-    put(panel(32 + gw, 20, 6, INK, 0), GOLD_X - 13, GOLD_Y - 10);
-    blit(H.goldCoin, GOLD_X, GOLD_Y, 8 * bump);
-    ctx.fillStyle = SUN; ctx.fillText(H.goldStr, GOLD_X + 12, GOLD_Y + .5);
-    // Upgrade coin
-    let afford = 0;
-    if (me.alive) for (let i = 0; i < 3; i++) { const n = me.up[TRACKS[i][0]]; if (n < 3 && me.gold >= Sim.FORGE_COST[n]) afford++; }
-    smallCoin(U.forge, afford > 0, 'Upgrade', drawHammer, H.sq.forge, dt, 'forge');
-    if (afford > 0) {
-      const p = (Math.sin(H.t * 6) + 1) / 2;
-      if (!calm) arcLine(U.forge.x, U.forge.y, U.forge.r + 3 + p * 4, 0, TAU, SIDE_ACC[side], 2.5);
-      disc(U.forge.x + 15, U.forge.y - 15, 9); ctx.fillStyle = BLOOD; ctx.fill(); ctx.strokeStyle = INK; ctx.lineWidth = 2; ctx.stroke();
-      ctx.font = fw(700, 12); ctx.textAlign = 'center'; ctx.fillStyle = '#fff'; ctx.fillText(num(afford), U.forge.x + 15, U.forge.y - 14.5);
+    ctx.globalAlpha = .82; put(panel(26 + Math.ceil(gw), 18, 5, INK, 0), GOLD_X - 11, GOLD_Y - 9); ctx.globalAlpha = 1;
+    blit(H.goldCoin, GOLD_X, GOLD_Y, 6.5 * bump);
+    ctx.fillStyle = gb > .3 ? WHITE : SUN; ctx.fillText(H.goldStr, GOLD_X + 10, GOLD_Y + .5);
+    if (H.goldGainT > 0) {
+      H.goldGainT = Math.max(0, H.goldGainT - dt * 1.4);
+      const q = 1 - H.goldGainT; ctx.font = fw(700, 12.5); ctx.globalAlpha = Math.min(1, H.goldGainT * 3);
+      label(H.goldGainStr, GOLD_X + 20 + gw, GOLD_Y - (calm ? 0 : q * 7) + .5, SUN, 2.6); ctx.globalAlpha = 1;
+    }
+    // Upgrade only draws the eye when something can be bought.
+    let afford = false;
+    if (me.alive) for (let i = 0; i < 3; i++) { const n = me.up[TRACKS[i][0]]; if (n < 3 && me.gold >= Sim.FORGE_COST[n]) afford = true; }
+    const open = forgeOpen(), hot = afford && !open;
+    smallCoin(U.forge, hot || open, 'Upgrade', drawHammer, H.sq.forge, dt, 'forge');
+    if (hot) {
+      if (!calm) { const p = (Math.sin(H.t * 3.6) + 1) / 2; arcLine(U.forge.x, U.forge.y, U.forge.r + 2.5 + p * 3.5, 0, TAU, SIDE_ACC[side], 2); }
+      disc(U.forge.x + 12, U.forge.y - 12, 5); ctx.fillStyle = BLOOD; ctx.fill(); ctx.strokeStyle = INK; ctx.lineWidth = 1.8; ctx.stroke();
     }
     const chan = me.chan && me.chan.recall ? me.chan : null;
-    smallCoin(U.recall, false, 'Recall', drawGate, H.sq.recall, dt, 'recall');
-    if (chan) arcLine(U.recall.x, U.recall.y, U.recall.r + 2, -HPI, -HPI + TAU * (1 - chan.t / chan.total), SIDE_ACC[side], 4);
+    smallCoin(U.recall, !!chan, 'Recall', drawGate, H.sq.recall, dt, 'recall');
+    if (chan) arcLine(U.recall.x, U.recall.y, U.recall.r + 2, -HPI, -HPI + TAU * (1 - chan.t / chan.total), SIDE_ACC[side], 3.5);
   }
 
   function smallCoin(B, hot, name, icon, sq, dt, key) {
     H.sq[key] = Math.max(0, H.sq[key] - dt * 7);
     const s = 1 - sq * .16, r = B.r * s;
-    disc(B.x + 2.5, B.y + 3.5, B.r); ctx.fillStyle = INK; ctx.fill();
-    disc(B.x + sq * 2.5, B.y + sq * 3.5, r); ctx.fillStyle = hot ? SUN : PAPER; ctx.fill();
-    ctx.strokeStyle = INK; ctx.lineWidth = 2.6; ctx.stroke();
-    icon(B.x + sq * 2.5, B.y + sq * 3.5, INK);
-    ctx.font = fw(700, 11.5); ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-    label(name, B.x, B.y + B.r + 8.5, WHITE, 3);
+    // Quiet until it matters.
+    ctx.globalAlpha = hot ? 1 : .7;
+    disc(B.x + 2, B.y + 3, B.r); ctx.fillStyle = INK; ctx.fill();
+    disc(B.x + sq * 2, B.y + sq * 3, r); ctx.fillStyle = hot ? SUN : PAPER; ctx.fill();
+    ctx.strokeStyle = INK; ctx.lineWidth = 2.2; ctx.stroke();
+    icon(B.x + sq * 2, B.y + sq * 3, INK);
+    ctx.globalAlpha = 1;
+    if (H.first) { ctx.font = fw(700, 10); ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; label(name, B.x, B.y + B.r + 7.5, WHITE, 2.4); }
   }
   function drawHammer(x, y, col) {
     ctx.fillStyle = col; ctx.strokeStyle = col; ctx.lineCap = 'round'; ctx.lineWidth = 2.6;
@@ -373,90 +376,79 @@ const { hud, initHud, hudDraw, uiEvent } = (() => {
   function bakeStrip(w, h, mid) {
     const c = Art.cv((w + 3) * 2, (h + 3) * 2), g = c.getContext('2d'); g.scale(2, 2);
     const m = w / 2;
-    g.fillStyle = INK; rounded(g, 3.5, 3.5, w - 3, h - 3, 6); g.fill();
-    g.save(); rounded(g, 1.5, 1.5, w - 3, h - 3, 6); g.clip();
-    g.fillStyle = ULTRA; g.fillRect(0, 0, m + 6, h); g.fillStyle = VIOLET; g.beginPath(); g.moveTo(m + 8, 0); g.lineTo(w, 0); g.lineTo(w, h); g.lineTo(m - 8, h); g.closePath(); g.fill();
-    g.fillStyle = 'rgba(255,255,255,.2)'; g.fillRect(0, 0, w, h * .34);
-    g.fillStyle = PAPER; g.beginPath(); g.moveTo(m - mid + 8, 0); g.lineTo(m + mid + 8, 0); g.lineTo(m + mid - 8, h); g.lineTo(m - mid - 8, h); g.closePath(); g.fill();
-    g.strokeStyle = INK; g.lineWidth = 2.5; g.stroke();
+    g.save(); rounded(g, 1, 1, w - 2, h - 2, 5); g.clip();
+    g.fillStyle = 'rgba(16,31,156,.84)'; g.fillRect(0, 0, m, h);
+    g.fillStyle = 'rgba(46,10,110,.86)'; g.fillRect(m, 0, m, h);
+    g.fillStyle = INK; g.beginPath(); g.moveTo(m - mid + 6, 0); g.lineTo(m + mid + 6, 0); g.lineTo(m + mid - 6, h); g.lineTo(m - mid - 6, h); g.closePath(); g.fill();
     g.restore();
-    rounded(g, 1.5, 1.5, w - 3, h - 3, 6); g.strokeStyle = INK; g.lineWidth = 2.5; g.stroke();
+    rounded(g, 1, 1, w - 2, h - 2, 5); g.strokeStyle = INK; g.lineWidth = 2; g.stroke();
     return c;
   }
   function drawStrip(dt, s, me) {
-    const cx = U.stripX, r = U.miniR, gap = U.miniGap, mid = U.midHalf, half = mid + gap * 4 + 6, Y = 4, h = 29;
+    const cx = U.stripX, r = U.miniR, gap = U.miniGap, mid = U.midHalf, half = mid + gap * 4 + 4, Y = 3, h = 21, cy = Y + h / 2;
     const key = `${half}|${mid}`; if (key !== stripK) { stripK = key; stripC = bakeStrip(half * 2, h, mid); }
     ctx.drawImage(stripC, cx - half, Y, stripC.width / 2, stripC.height / 2);
     for (const t of [0, 1]) { if (s.kills[t] !== H.kills[t]) { H.kills[t] = s.kills[t]; H.killBump[t] = 1; } H.killBump[t] = Math.max(0, H.killBump[t] - dt * 3.6); }
-    ctx.textBaseline = 'middle';
-    const big = U.compact ? 20 : 23, sc0 = calm ? 1 : 1 + H.killBump[0] * .5, sc1 = calm ? 1 : 1 + H.killBump[1] * .5;
-    ctx.textAlign = 'center';
-    ctx.font = fd(Math.round(big * sc0)); ctx.fillStyle = ULTRA2; ctx.fillText(num(s.kills[0]), cx - mid + (U.compact ? 12 : 16), Y + 15);
-    ctx.font = fd(Math.round(big * sc1)); ctx.fillStyle = VIOLET; ctx.fillText(num(s.kills[1]), cx + mid - (U.compact ? 12 : 16), Y + 15);
+    ctx.textBaseline = 'middle'; ctx.textAlign = 'center';
+    const big = U.compact ? 15 : 17, sc0 = calm ? 1 : 1 + H.killBump[0] * .35, sc1 = calm ? 1 : 1 + H.killBump[1] * .35, kx = mid - (U.compact ? 9 : 11);
+    ctx.font = fd(Math.round(big * sc0)); ctx.fillStyle = SUN; ctx.fillText(num(s.kills[0]), cx - kx, cy + .5);
+    ctx.font = fd(Math.round(big * sc1)); ctx.fillStyle = TOXIC; ctx.fillText(num(s.kills[1]), cx + kx, cy + .5);
     const sec = Math.floor(s.t);
     if (sec !== H.clockSec) { H.clockSec = sec; H.clockStr = `${Math.floor(sec / 60)}:${String(sec % 60).padStart(2, '0')}`; }
-    ctx.font = fw(700, U.compact ? 13 : 15); ctx.fillStyle = INK; ctx.fillText(H.clockStr, cx, Y + 15.5);
+    ctx.font = fw(700, U.compact ? 11.5 : 13); ctx.fillStyle = WHITE; ctx.fillText(H.clockStr, cx, cy + .5);
     for (const c of s.champs) {
-      const dir = c.team ? 1 : -1, x = cx + dir * (mid + gap * (c.slot + .5)), y = Y + 14.5, spr = H.mini.get(c.id);
-      ctx.globalAlpha = c.alive ? 1 : .3; blit(spr, x, y, r); ctx.globalAlpha = 1;
-      disc(x, y, r + .5); ctx.strokeStyle = INK; ctx.lineWidth = 1.5; ctx.stroke();
-      if (c === me) { disc(x, y, r + 2); ctx.strokeStyle = SUN; ctx.lineWidth = 2; ctx.stroke(); }
-      if (!c.alive) { ctx.font = fw(700, U.compact ? 12 : 14); ctx.textAlign = 'center'; label(num(Math.ceil(c.respawn)), x, y + .5, WHITE, 3); }
-      else if (c.role && !U.compact) {
-        const n = Sim.ROLE_INFO[c.role].name[0];
-        disc(x + r * .74, y + r * .74, 5); ctx.fillStyle = INK; ctx.fill();
-        ctx.font = fw(700, 8.5); ctx.textAlign = 'center'; ctx.fillStyle = WHITE; ctx.fillText(n, x + r * .74, y + r * .74 + .5);
-      }
+      const dir = c.team ? 1 : -1, x = cx + dir * (mid + gap * (c.slot + .5)), y = cy, spr = H.mini.get(c.id);
+      ctx.globalAlpha = c.alive ? 1 : .32; blit(spr, x, y, r); ctx.globalAlpha = 1;
+      if (c === me) { disc(x, y, r + 1); ctx.strokeStyle = SUN; ctx.lineWidth = 1.8; ctx.stroke(); }
+      if (!c.alive) { ctx.font = fw(700, 11); ctx.textAlign = 'center'; label(num(Math.ceil(c.respawn)), x, y + .5, WHITE, 2.4); }
     }
     const P = U.pause, sq = H.sq.pause; H.sq.pause = Math.max(0, sq - dt * 7);
-    disc(P.x + 2, P.y + 3, P.r); ctx.fillStyle = INK; ctx.fill();
-    disc(P.x + sq * 2, P.y + sq * 2, P.r * (1 - sq * .15)); ctx.fillStyle = PAPER; ctx.fill(); ctx.strokeStyle = INK; ctx.lineWidth = 2.5; ctx.stroke();
-    ctx.fillStyle = INK; ctx.fillRect(P.x - 5 + sq * 2, P.y - 6.5 + sq * 2, 3.6, 13); ctx.fillRect(P.x + 1.4 + sq * 2, P.y - 6.5 + sq * 2, 3.6, 13);
+    ctx.globalAlpha = .82;
+    disc(P.x + 1.5, P.y + 2.5, P.r); ctx.fillStyle = INK; ctx.fill();
+    disc(P.x + sq * 1.5, P.y + sq * 2, P.r * (1 - sq * .15)); ctx.fillStyle = PAPER; ctx.fill(); ctx.strokeStyle = INK; ctx.lineWidth = 2; ctx.stroke();
+    ctx.fillStyle = INK; ctx.fillRect(P.x - 4.4 + sq * 1.5, P.y - 5.5 + sq * 2, 3, 11); ctx.fillRect(P.x + 1.4 + sq * 1.5, P.y - 5.5 + sq * 2, 3, 11);
+    ctx.globalAlpha = 1;
   }
 
-  // ---------- the people: a tug-of-war between the sides ----------
+  // ---------- the people: a slim tug-of-war tucked under the strip ----------
   function drawPeople(dt, s) {
-    const cx = U.stripX, bw = U.compact ? 112 : 186, x = cx - bw / 2, y = 38, h = 12, low = s.hope <= 30, high = s.hope >= 70;
+    const cx = U.stripX, half = U.midHalf + U.miniGap * 4, x = cx - half, bw = half * 2, y = 26, h = 4, low = s.hope <= 30, high = s.hope >= 70;
     H.hope += (s.hope - H.hope) * Math.min(1, dt * 5);
     H.hopeFlash = Math.max(0, H.hopeFlash - dt * 2.2);
-    const f = clamp01(H.hope / 100), mx = x + bw * f, pulse = calm ? 1 : .75 + Math.sin(H.t * 8) * .25;
-    ctx.fillStyle = INK; ctx.fillRect(x - 2.5 + 1.5, y - 2.5 + 2, bw + 5, h + 5);
-    ctx.fillStyle = INK; ctx.fillRect(x - 2.5, y - 2.5, bw + 5, h + 5);
-    ctx.fillStyle = ULTRA; ctx.fillRect(x, y, mx - x, h);
-    ctx.fillStyle = VIOLET; ctx.fillRect(mx, y, x + bw - mx, h);
-    ctx.fillStyle = SUN; ctx.fillRect(x, y, mx - x, 4);
-    ctx.fillStyle = TOXIC; ctx.fillRect(mx, y, x + bw - mx, 4);
-    if (high) { ctx.globalAlpha = pulse; ctx.fillStyle = '#fff'; ctx.fillRect(x, y, bw * .3, h); ctx.globalAlpha = 1; }
-    if (low) { ctx.globalAlpha = pulse; ctx.fillStyle = '#fff'; ctx.fillRect(x + bw * .7, y, bw * .3, h); ctx.globalAlpha = 1; }
-    ctx.fillStyle = INK; ctx.fillRect(x + bw * .3 - 1, y, 2, h); ctx.fillRect(x + bw * .7 - 1, y, 2, h);
-    // End markers show which side each direction favours; the marker coin flips as the balance tips.
+    const f = clamp01(H.hope / 100), mx = x + bw * f, pulse = calm ? 1 : .7 + Math.sin(H.t * 5) * .3;
+    ctx.fillStyle = INK; ctx.fillRect(x - 1.5, y - 1.5, bw + 3, h + 3);
+    ctx.fillStyle = high ? SUN : ULTRA; ctx.fillRect(x, y, mx - x, h);
+    ctx.fillStyle = low ? TOXIC : VIOLET; ctx.fillRect(mx, y, x + bw - mx, h);
+    if (high || low) { ctx.globalAlpha = pulse * .5; ctx.fillStyle = '#fff'; ctx.fillRect(high ? x : mx, y, high ? mx - x : x + bw - mx, h); ctx.globalAlpha = 1; }
+    ctx.fillStyle = INK; ctx.fillRect(x + bw * .3 - .5, y, 1, h); ctx.fillRect(x + bw * .7 - .5, y, 1, h);
+    // The marker coin flips as the balance tips.
     const want = s.hope >= 50 ? 0 : 1;
     if (want !== H.hopeSide) { H.hopeSide = want; H.hopeFlash = Math.max(H.hopeFlash, .8); }
     H.hopeAng += ((want ? Math.PI : 0) - H.hopeAng) * Math.min(1, dt * 7);
-    const m = 1 + (calm ? 0 : H.hopeFlash) * .4;
-    Comic.flip(ctx, mx, y + h / 2, 10 * m, H.hopeAng, 24, 0);
-    ctx.font = fw(700, U.compact ? 11 : 12); ctx.textBaseline = 'middle';
-    ctx.textAlign = 'right'; label('The people', x - 9, y + h / 2 + .5, WHITE, 3);
+    const m = 1 + (calm ? 0 : H.hopeFlash) * .45;
+    Comic.flip(ctx, mx, y + h / 2, 7 * m, H.hopeAng, 24, 0);
     const left = s.bossUp ? -1 : Math.max(0, Math.ceil(s.bossAt - s.t));
-    if (left !== H.hoardKey) { H.hoardKey = left; H.hoardStr = left < 0 ? 'Colossus up' : `Colossus ${Math.floor(left / 60)}:${String(left % 60).padStart(2, '0')}`; }
-    ctx.textAlign = 'left'; label(H.hoardStr, x + bw + 9, y + h / 2 + .5, s.bossUp ? SUN : WHITE, 3);
+    if (left !== H.hoardKey) { H.hoardKey = left; H.hoardStr = left > 0 ? `Colossus in ${Math.floor(left / 60)}:${String(left % 60).padStart(2, '0')}` : ''; }
+    ctx.font = fw(700, 11); ctx.textBaseline = 'middle'; ctx.textAlign = 'center';
+    if (left > 0 && left <= 30) label(H.hoardStr, cx, y + h + 10, SUN, 2.6);
+    else if (H.first && s.t < 40 && !H.banner) label('The people', cx, y + h + 10, WHITE, 2.6);
   }
 
   // ---------- minimap ----------
   function bakeMap(s) {
     const M = U.map, c = Art.cv(M.w * 2, M.h * 2), g = c.getContext('2d'), kx = M.w * 2 / Sim.W, ky = M.h * 2 / Sim.H;
-    g.fillStyle = '#2f9b52'; g.fillRect(0, 0, c.width, c.height);
-    g.fillStyle = '#0f5a35'; for (const w of s.map.walls) if (w.big) g.fillRect(w.x * kx, w.y * ky, w.w * kx, w.h * ky);
-    g.fillStyle = '#7fe08c'; for (const w of s.map.walls) if (!w.big) g.fillRect(w.x * kx, w.y * ky, w.w * kx, w.h * ky);
-    g.strokeStyle = '#fff3c0'; g.lineWidth = 5; g.lineJoin = 'round'; g.lineCap = 'round';
+    g.fillStyle = '#25664a'; g.fillRect(0, 0, c.width, c.height);
+    g.fillStyle = '#123f2c'; for (const w of s.map.walls) if (w.big) g.fillRect(w.x * kx, w.y * ky, w.w * kx, w.h * ky);
+    g.fillStyle = '#4c9468'; for (const w of s.map.walls) if (!w.big) g.fillRect(w.x * kx, w.y * ky, w.w * kx, w.h * ky);
+    g.strokeStyle = '#d8cfa2'; g.lineWidth = 4.5; g.lineJoin = 'round'; g.lineCap = 'round';
     for (const L of s.map.lanes) { g.beginPath(); L.forEach(([x, y], i) => g[i ? 'lineTo' : 'moveTo'](x * kx, y * ky)); g.stroke(); }
     return c;
   }
   function drawMap(dt, s, me) {
     const M = U.map, kx = M.w / Sim.W, ky = M.h / Sim.H;
     if (!H.mapC) H.mapC = bakeMap(s);
-    put(panel(M.w + 8, M.h + 8, 4, INK, 2.5), M.x - 4, M.y - 4);
-    ctx.drawImage(H.mapC, M.x, M.y, M.w, M.h);
+    put(panel(M.w + 6, M.h + 6, 4, INK, 2), M.x - 3, M.y - 3);
+    ctx.globalAlpha = .9; ctx.drawImage(H.mapC, M.x, M.y, M.w, M.h); ctx.globalAlpha = 1;
     ctx.save(); ctx.beginPath(); ctx.rect(M.x, M.y, M.w, M.h); ctx.clip();
     for (const t of s.towers) if (t.alive) { const r = t.sub === 'core' ? 3.8 : 2.8; ctx.fillStyle = INK; ctx.fillRect(M.x + t.x * kx - r - 1, M.y + t.y * ky - r - 1, 2 * r + 2, 2 * r + 2); ctx.fillStyle = t.team ? BLOOD : ULTRA; ctx.fillRect(M.x + t.x * kx - r, M.y + t.y * ky - r, 2 * r, 2 * r); }
     ctx.fillStyle = PAPER; for (const c of s.sites) if (c.alive) { disc(M.x + c.x * kx, M.y + c.y * ky, 2); ctx.fill(); }
@@ -474,6 +466,15 @@ const { hud, initHud, hudDraw, uiEvent } = (() => {
       disc(X, Y, mine ? 4.8 : 3.5); ctx.fillStyle = mine ? SUN : c.team ? BLOOD : ULTRA; ctx.fill(); ctx.strokeStyle = INK; ctx.lineWidth = 1.3; ctx.stroke();
     }
     ctx.restore();
+    if (Hud.isLive()) drawNetDot(M);
+  }
+  function drawNetDot(M) {
+    const ok = typeof Net !== 'undefined' && !!Net.connected && !Net.stalled, ping = ok ? Math.round(Net.ping || 0) : -1;
+    if (ping !== H.netKey) { H.netKey = ping; H.netStr = ping < 0 ? 'Reconnecting' : ping ? `${ping} ms` : 'Online'; }
+    const col = ping < 0 || ping >= 180 ? BLOOD : ping >= 90 ? SUN : '#38e04f', x = M.x + M.w, y = M.y + M.h + 12;
+    ctx.font = fw(700, 11); ctx.textAlign = 'right'; ctx.textBaseline = 'middle';
+    label(H.netStr, x, y + .5, WHITE, 2.6);
+    disc(x - ctx.measureText(H.netStr).width - 7, y, 3.6); ctx.fillStyle = col; ctx.fill(); ctx.strokeStyle = INK; ctx.lineWidth = 1.4; ctx.stroke();
   }
 
   // ---------- right cluster ----------
@@ -526,11 +527,6 @@ const { hud, initHud, hudDraw, uiEvent } = (() => {
       ctx.drawImage(H.abOn[i], x - half, y - half, size, size);
       arcLine(x, y, r + 1.5, 0, TAU, INK, 5.5);
       arcLine(x, y, r + 1.5, 0, TAU, recast ? (calm ? TOXIC : `rgba(141,255,42,${.75 + Math.sin(H.t * 8) * .25})`) : acc, 3);
-      if (!calm) {
-        H.spark[i] += dt;
-        const cyc = 2.1, t = H.spark[i] % cyc;
-        if (t < .42) { const p = t / .42, ang = (Math.floor(H.spark[i] / cyc) * 2.3 + i) % TAU, gx = x + Math.cos(ang) * r * .82, gy = y + Math.sin(ang) * r * .82, gr = Math.sin(p * Math.PI) * 9; Comic.glint(ctx, gx + 1, gy + 1, gr, INK); Comic.glint(ctx, gx, gy, gr, WHITE); }
-      }
     }
     if (recast) { arcLine(x, y, r + 5, 0, TAU, 'rgba(141,255,42,.35)', 3.5); arcLine(x, y, r + 5, -HPI, -HPI + TAU * clamp01(rec / H.recMax[i]), TOXIC, 3.5); }
     if (pop > 0) {
@@ -538,7 +534,7 @@ const { hud, initHud, hudDraw, uiEvent } = (() => {
       ctx.strokeStyle = acc; ctx.lineWidth = 2.5 + pop * 2; ctx.lineCap = 'round'; ctx.beginPath();
       for (let k = 0; k < 10; k++) { const an = k / 10 * TAU + .3; ctx.moveTo(B.x + Math.cos(an) * R, B.y + Math.sin(an) * R); ctx.lineTo(B.x + Math.cos(an) * (R + 8), B.y + Math.sin(an) * (R + 8)); }
       ctx.stroke();
-      if (pop > .25) { ctx.font = fd(19); ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.globalAlpha = Math.min(1, pop * 2.4); ctx.lineWidth = 4; ctx.strokeStyle = INK; ctx.lineJoin = 'round'; const ry = B.y - B.r - 8 - (1 - pop) * 5; ctx.strokeText('READY!', B.x, ry); ctx.fillStyle = acc; ctx.fillText('READY!', B.x, ry); ctx.globalAlpha = 1; }
+      if (pop > .25 && i === 2) { ctx.font = fd(19); ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.globalAlpha = Math.min(1, pop * 2.4); ctx.lineWidth = 4; ctx.strokeStyle = INK; ctx.lineJoin = 'round'; const ry = B.y - B.r - 8 - (1 - pop) * 5; ctx.strokeText('READY!', B.x, ry); ctx.fillStyle = acc; ctx.fillText('READY!', B.x, ry); ctx.globalAlpha = 1; }
     }
     if (held) arcLine(x, y, r + 5, 0, TAU, Ctl.aim.cancelHot ? BLOOD : WHITE, 3.5);
     if (charge) { const f = Math.min(1, charge.t / (a.charge || 1.1)); arcLine(x, y, r + 10, -HPI, -HPI + TAU * f, f >= 1 ? SUN : '#c9b6ff', 5); }
@@ -565,16 +561,17 @@ const { hud, initHud, hudDraw, uiEvent } = (() => {
 
   function drawAimCard(me) {
     const A = Ctl.aim; if (!A) return;
-    const a = me.kit[A.slot], rng = H.rng[A.slot], acc = SIDE_FILL[me.team], title = a.name.toUpperCase();
+    const a = me.kit[A.slot], rng = H.rng[A.slot], acc = SIDE_FILL[me.team], title = a.name.toUpperCase(), more = H.first;
     ctx.textBaseline = 'middle'; ctx.textAlign = 'left';
-    ctx.font = fd(20); const nw = ctx.measureText(title).width;
-    ctx.font = fw(700, 12.5); const rw = ctx.measureText(rng).width, dw = ctx.measureText(a.d).width;
-    const w = Math.min(VW - 330, Math.ceil(Math.max(nw + rw + 28, dw) + 26)) & ~7, h = 42, x = VW / 2 - w / 2, y = U.compact ? 54 : 58;
-    put(panel(w, h, 4, PAPER, 3), x, y);
-    ctx.font = fd(20); ctx.fillStyle = acc; ctx.fillText(title, x + 11, y + 14);
-    ctx.font = fw(700, 12.5); ctx.textAlign = 'right'; ctx.fillStyle = INK; ctx.fillText(rng, x + w - 11, y + 14);
-    ctx.textAlign = 'left'; ctx.font = fw(600, 13); ctx.fillStyle = INK; ctx.fillText(a.d, x + 11, y + 30, w - 22);
-    if (A.backHot) { const B = U.ab[A.slot]; ctx.font = fw(700, 13.5); ctx.textAlign = 'center'; label('Release to cancel', B.x, B.y - B.r - 15, '#ffb08a', 3); }
+    ctx.font = fd(17); const nw = ctx.measureText(title).width;
+    ctx.font = fw(700, 11.5); const rw = ctx.measureText(rng).width;
+    let dw = 0; if (more) { ctx.font = fw(600, 12); dw = ctx.measureText(a.d).width; }
+    const h = more ? 38 : 25, w = Math.min(VW - 330, Math.ceil(Math.max(nw + rw + 22, dw) + 20)) & ~1, x = Math.round(VW / 2 - w / 2), y = U.compact ? 36 : 39;
+    put(panel(w, h, 4, PAPER, 2.5), x, y);
+    ctx.font = fd(17); ctx.fillStyle = acc; ctx.fillText(title, x + 9, y + 12.5);
+    ctx.font = fw(700, 11.5); ctx.textAlign = 'right'; ctx.fillStyle = INK; ctx.fillText(rng, x + w - 10, y + 12.5);
+    if (more) { ctx.textAlign = 'left'; ctx.font = fw(600, 12); ctx.fillStyle = INK; ctx.fillText(a.d, x + 9, y + 27, w - 18); }
+    if (A.backHot) { const B = U.ab[A.slot]; ctx.font = fw(700, 13); ctx.textAlign = 'center'; label('Release to cancel', B.x, B.y - B.r - 13, '#ffb08a', 3); }
   }
 
   function drawStick(s) {
@@ -584,47 +581,47 @@ const { hud, initHud, hudDraw, uiEvent } = (() => {
       disc(st.sx, st.sy, 58); ctx.strokeStyle = WHITE; ctx.lineWidth = 2.2; ctx.stroke();
       const dx = st.x - st.sx, dy = st.y - st.sy, l = Math.min(58, Math.hypot(dx, dy)), an = Math.atan2(dy, dx), nx = st.sx + Math.cos(an) * l, ny = st.sy + Math.sin(an) * l;
       disc(nx, ny, 25); ctx.fillStyle = SUN; ctx.fill(); ctx.strokeStyle = INK; ctx.lineWidth = 3; ctx.stroke();
-    } else if (s.t < 30) { disc(122, VH - 86, 56); ctx.strokeStyle = 'rgba(255,255,255,.45)'; ctx.lineWidth = 2.5; ctx.stroke(); }
+    } else if (H.guide && s.t < 20) { disc(122, VH - 86, 52); ctx.strokeStyle = 'rgba(255,255,255,.3)'; ctx.lineWidth = 2; ctx.stroke(); }
   }
 
   function drawFeed(dt) {
-    let y = U.forge.y + U.forge.r + 28;
+    let y = U.forge.y + U.forge.r + (H.first ? 26 : 19);
     ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
     for (let i = 0; i < H.feed.length; i++) {
       const f = H.feed[i]; f.t -= dt; f.age += dt;
       if (f.t <= 0) { H.feed.splice(i--, 1); continue; }
-      ctx.globalAlpha = Math.min(1, f.t * 2);
-      const ax = 40 - Math.max(0, 1 - f.age / .16) * 70, fill = f.aT === 0 ? ULTRA : f.aT === 1 ? VIOLET : '#ffe9d6', mark = f.aT === 0 ? SUN : f.aT === 1 ? TOXIC : INK;
-      put(panel(82, 23, 4, fill, 2), ax + 4, y - 11.5);
-      if (f.aS) blit(f.aS, ax + 18, y, 9.5); else { disc(ax + 18, y, 6.5); ctx.fillStyle = '#d9c9a0'; ctx.fill(); }
-      ctx.save(); ctx.translate(ax + 45, y); Comic.starPath(ctx, 6, 8, 3.2, .3); ctx.fillStyle = mark; ctx.fill(); ctx.strokeStyle = INK; ctx.lineWidth = 1.5; ctx.lineJoin = 'round'; ctx.stroke(); ctx.restore();
-      if (f.bS) blit(f.bS, ax + 73, y, 9.5);
-      y += 25;
+      ctx.globalAlpha = Math.min(1, f.t * 3) * (f.mine ? 1 : .72);
+      const ax = 44 - Math.max(0, 1 - f.age / .14) * 60, fill = f.aT === 0 ? ULTRA : f.aT === 1 ? VIOLET : '#ffe9d6', mark = f.aT === 0 ? SUN : f.aT === 1 ? TOXIC : INK;
+      put(panel(66, 19, 4, fill, 1.5), ax, y - 9.5);
+      if (f.aS) blit(f.aS, ax + 13, y, 7.5); else { disc(ax + 13, y, 5.5); ctx.fillStyle = '#d9c9a0'; ctx.fill(); }
+      ctx.save(); ctx.translate(ax + 32, y); Comic.starPath(ctx, 6, 6, 2.5, .3); ctx.fillStyle = mark; ctx.fill(); ctx.strokeStyle = INK; ctx.lineWidth = 1.2; ctx.lineJoin = 'round'; ctx.stroke(); ctx.restore();
+      if (f.bS) blit(f.bS, ax + 51, y, 7.5);
+      y += 21;
     }
     ctx.globalAlpha = 1;
   }
 
-  const HINTS = ['Left thumb moves', 'Hold the big coin to attack', 'Drag an ability to aim, or tap to fire'];
+  const HINTS = ['Left thumb: move', 'Hold the big coin: attack', 'Drag an ability to aim'];
   function drawHint(dt, me) {
-    const h = H.hint; if (!h || !me.alive || Ctl.aim) return;
+    const h = H.hint; if (!h || !me.alive || Ctl.aim || H.banner) return;
     h.t += dt;
-    if ((h.i === 0 && Ctl.stick && h.t > .8) || (h.i === 1 && Ctl.atk !== null && h.t > .5) || (h.i === 2 && (me.stats.casts > 0 || h.t > 9)) || h.t > 10) { h.i++; h.t = 0; }
+    if ((h.i === 0 && Ctl.stick && h.t > .8) || (h.i === 1 && Ctl.atk !== null && h.t > .5) || (h.i === 2 && (me.stats.casts > 0 || h.t > 7)) || h.t > 8) { h.i++; h.t = 0; }
     if (h.i >= HINTS.length) { H.hint = null; return; }
-    const s = HINTS[h.i]; ctx.font = fw(700, 15.5); ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-    const w = Math.ceil(ctx.measureText(s).width + 28) & ~7, y = VH - 40;
-    ctx.globalAlpha = Math.min(1, h.t * 4);
-    put(panel(w, 28, 5, PAPER, 2.5), VW / 2 - w / 2, y);
-    ctx.fillStyle = INK; ctx.fillText(s, VW / 2, y + 14.5); ctx.globalAlpha = 1;
+    const s = HINTS[h.i]; ctx.font = fw(700, 14); ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    const w = Math.ceil(ctx.measureText(s).width + 24) & ~1, x = Math.round(VW / 2 - w / 2), y = VH - 34;
+    ctx.globalAlpha = Math.min(1, h.t * 4) * .94;
+    put(panel(w, 24, 5, PAPER, 2), x, y);
+    ctx.fillStyle = INK; ctx.fillText(s, VW / 2, y + 12.5); ctx.globalAlpha = 1;
   }
 
   function drawDeath(me) {
-    ctx.fillStyle = 'rgba(20,16,42,.5)'; ctx.fillRect(0, 0, VW, VH);
-    const cx = VW / 2, cy = VH / 2 - 34, R = 40, ang = calm ? 0 : H.t * 1.25, c = Math.cos(ang), ab = Math.abs(c);
+    ctx.fillStyle = 'rgba(20,16,42,.38)'; ctx.fillRect(0, 0, VW, VH);
+    const cx = VW / 2, cy = VH / 2 - 30, R = 34, ang = calm ? 0 : H.t * 1.25, c = Math.cos(ang), ab = Math.abs(c);
     disc(cx + 3, cy + 4, R); ctx.fillStyle = INK; ctx.fill();
     ctx.fillStyle = '#3a3358'; ctx.beginPath(); ctx.ellipse(cx, cy, Math.max(R * ab, 3) + (1 - ab) * 5, R, 0, 0, TAU); ctx.fill();
     if (ab > .05) { const h = H.portrait.S * R / H.portrait.R; ctx.drawImage(H.portrait.c, cx - h * ab / 2, cy - h / 2, h * ab, h); }
     ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-    Comic.text(ctx, `BACK IN ${Math.ceil(me.respawn)}`, cx, cy + R + 28, 40, SIDE_ACC[me.team], 5);
+    Comic.text(ctx, `BACK IN ${Math.ceil(me.respawn)}`, cx, cy + R + 24, 32, SIDE_ACC[me.team], 4, 2);
   }
 
   // ---------- frame ----------
@@ -635,11 +632,11 @@ const { hud, initHud, hudDraw, uiEvent } = (() => {
     H.enter = clamp01(H.enter + (want ? dt * 3.2 : -dt * 4));
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0); ctx.globalAlpha = 1; ctx.globalCompositeOperation = 'source-over'; ctx.textBaseline = 'middle';
     if (H.enter <= 0) return;
-    if (want && !H.announced) { H.announced = true; banner(me.team ? 'Terrorize the city' : 'Save the people', { pri: 3, sub: me.team ? "You're a Villain" : "You're a Hero", team: me.team, dur: 2.6 }); }
+    if (want && !H.announced) { H.announced = true; banner(me.team ? 'Terrorize the city' : 'Save the people', { pri: 3, team: me.team, dur: 2 }); }
     const e = calm ? 1 : H.enter * H.enter * (3 - 2 * H.enter), away = 1 - e;
-    if (me.hp / me.maxHp < .3 && me.alive) {
-      const p = calm ? .5 : (Math.sin(H.t * 7) + 1) / 2;
-      ctx.globalAlpha = (.34 + p * .42) * e; ctx.drawImage(redEdge(), 0, 0, VW, VH); ctx.globalAlpha = 1;
+    if (me.hp / me.maxHp < .25 && me.alive) {
+      const p = calm ? .5 : (Math.sin(H.t * 3.4) + 1) / 2;
+      ctx.globalAlpha = (.2 + p * .16) * e; ctx.drawImage(redEdge(), 0, 0, VW, VH); ctx.globalAlpha = 1;
     }
     drawStick(s);
     offset(-300 * away, 0); drawFrame(dt, me); drawFeed(dt);
@@ -648,7 +645,7 @@ const { hud, initHud, hudDraw, uiEvent } = (() => {
     offset(320 * away, 0); drawAttack(dt, me); for (let i = 0; i < 3; i++) drawAbility(i, dt, me);
     offset(0, 0);
     if (!me.alive) drawDeath(me);
-    drawAimCard(me); drawHint(dt, me); drawBanner(dt);
+    drawHint(dt, me); drawAimCard(me); drawBanner(dt);
     if (forgeOpen() && (H.frame++ % 10 === 0)) forgeSync(false);
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   }
@@ -681,6 +678,8 @@ const { hud, initHud, hudDraw, uiEvent } = (() => {
       b.setAttribute('aria-label', `${TRACKS[i][1]}, ${n} of 3, ${full ? 'full' : `costs ${cost}`}`);
     });
   }
+  Hud.forgeOpen = forgeOpen;
+  Hud.closeForge = () => $('forge').classList.add('hide');
   Hud.toggleForge = () => {
     const f = $('forge'); f.classList.toggle('hide');
     if (!f.classList.contains('hide')) forgeBuild();
@@ -690,7 +689,9 @@ const { hud, initHud, hudDraw, uiEvent } = (() => {
   // ---------- small helpers for the controls ----------
   Hud.deny = i => { if (H) H.deny[i] = 1; };
   Hud.flash = i => { if (H) H.flash[i] = 1; };
-  Hud.toast = s => banner(s, { pri: 2, dur: 1.4 });
+  Hud.toast = s => banner(s, { pri: 2, dur: 1.3 });
+  Hud.banner = banner;
+  Hud.isLive = () => !!(G && G.net && !G.net.dead);
   Hud.squash = k => { if (H && k in H.sq) H.sq[k] = 1; };
 
   // ---------- scoreboard, shared with the end screen ----------
@@ -708,8 +709,8 @@ const { hud, initHud, hudDraw, uiEvent } = (() => {
       for (const c of s.champs) {
         if (c.team !== team) continue;
         const tr = document.createElement('tr'); if (c === me) tr.className = 'me';
-        const st = c.stats, role = c.role ? Sim.ROLE_INFO[c.role].name : '';
-        tr.innerHTML = `<td><canvas width="48" height="48"></canvas></td><td>${Sim.charOf(c.team, c.champ).name}<small>${c.pname}</small></td><td>${role}</td><td class="n">${st.kills}/${st.deaths}/${st.assists}</td><td class="n">${Math.floor(c.gold)}</td>`;
+        const st = c.stats || { kills: 0, deaths: 0, assists: 0 }, role = c.role ? Sim.ROLE_INFO[c.role].name : '';
+        tr.innerHTML = `<td><canvas width="48" height="48"></canvas></td><td>${Sim.charOf(c.team, c.champ).name}<small>${c.pname || ''}</small></td><td>${role}</td><td class="n">${st.kills}/${st.deaths}/${st.assists}</td><td class="n">${Math.floor(c.gold || 0)}</td>`;
         Hud.coinTo(tr.querySelector('canvas'), Art.champCoin(c.champ, c.team, c.tier, 26));
         body.append(tr);
       }
@@ -722,7 +723,11 @@ const { hud, initHud, hudDraw, uiEvent } = (() => {
     if (!G) return;
     if (Ctl.aim) G.me.q.push({ t: 'cancel' });
     Ctl.reset(); G.me.atk = false; G.me.mv.x = G.me.mv.y = 0;
-    paused = true;
+    const net = Hud.isLive();
+    if (!net) paused = true;
+    $('pT').textContent = net ? 'Menu' : 'Paused';
+    $('pNote').classList.toggle('hide', !net);
+    Hud.closeForge();
     Hud.scoreTable($('pBoard'), G.s, G.me);
     if (Hud.syncToggles) Hud.syncToggles();
     $('pause').classList.remove('hide');

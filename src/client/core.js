@@ -35,12 +35,15 @@ function spriteOf(u) { if (u.kind === 'champ') return Art.champCoin(u.champ, u.t
 const drawR = u => u.kind === 'champ' ? 36 : u.kind === 'minion' ? (u.ranged ? 17 : 21) : u.boss ? 78 : u.big ? 44 : 25;
 const unitById = id => { const s = G.s; return s.champs.find(c => c.id === id) || s.minions.find(c => c.id === id) || s.monsters.find(c => c.id === id) || s.towers.find(c => c.id === id); };
 
-// cfg: { teams: [[{champ, role, tier, human, name}, ...4], [...4]], diff }
-function startMatch(cfg) {
-  const s = Sim.createMatch({ seed: Date.now() & 0xffffff, diff: cfg.diff, teams: cfg.teams });
-  const me = s.champs.find(c => c.human);
-  G = { s, me, cfg, cam: { x: me.x, y: me.y }, acc: 0, t: 0, frames: 0, ms: 0, ended: false, intro: 2.6, outro: null, timeScale: 1, slowT: 0, stop: 0, shake: 0, punch: 0, flash: 0, hpq: [] };
+// cfg: { teams: [[{champ, role, tier, human, remote, name}, ...4], [...4]], diff, seed }
+// net: { role: 'host' | 'guest' } for an online match, otherwise leave it out.
+function startMatch(cfg, net) {
+  const seed = cfg.seed === undefined ? Date.now() & 0xffffff : cfg.seed;
+  const s = Sim.createMatch({ seed, diff: cfg.diff, teams: cfg.teams });
+  const me = net && net.role === 'guest' ? s.champs.find(c => c.remote) : (s.champs.find(c => c.human && !c.remote) || s.champs.find(c => c.human));
+  G = { s, me, cfg, cam: { x: me.x, y: me.y }, acc: 0, t: 0, frames: 0, ms: 0, ended: false, intro: 2.6, outro: null, timeScale: 1, slowT: 0, stop: 0, shake: 0, punch: 0, flash: 0, hpq: [], net: net ? { role: net.role } : null };
   initWorld(G); initHud(G); initSound(G);
+  if (net) Net.attach();
   save.hints++; persist(); paused = false;
 }
 function finishMatch() {
@@ -49,35 +52,46 @@ function finishMatch() {
   G.ended = true; showEnd({ won, gain, before, after: before + gain, me, s });
 }
 // Called by effects code: pause the simulation for a beat, or run it in slow motion.
-function hitStop(sec) { if (!calm) G.stop = Math.max(G.stop, sec); }
-function slowMo(sec, scale = .35) { if (!calm) { G.slowT = Math.max(G.slowT, sec); G.timeScale = scale; } }
+// Both are local-only moods, so an online match never uses them.
+function hitStop(sec) { if (!calm && !G.net) G.stop = Math.max(G.stop, sec); }
+function slowMo(sec, scale = .35) { if (!calm && !G.net) { G.slowT = Math.max(G.slowT, sec); G.timeScale = scale; } }
+
+// Runs the simulation for dt seconds and plays its events. A hidden online host still drives this from a worker.
+function stepMatch(dt) {
+  const net = G.net, cap = net ? 8 : 4, hidden = net && document.hidden;
+  G.acc += dt * G.timeScale; let n = 0;
+  while (G.acc >= DT && n++ < cap) {
+    if (net) Net.hostBefore();
+    applyInput(); Sim.step(G.s); G.acc -= DT;
+    if (net) Net.hostAfter();
+    for (const e of G.s.ev) { if (!hidden) { fxEvent(e); soundEvent(e); } uiEvent(e); }
+    G.s.ev.length = 0;
+    if (G.s.over) { const core = G.s.towers.find(t => t.sub === 'core' && !t.alive); G.outro = { t: 0, x: core.x, y: core.y }; outroStart(); break; }
+  }
+  if (n >= cap) G.acc = 0;
+}
 
 let last = performance.now();
 function frame(now) {
   requestAnimationFrame(frame);
-  const dt = Math.min(.05, (now - last) / 1000); last = now;
+  const raw = (now - last) / 1000, dt = Math.min(.05, raw); last = now;
   animMenus(dt);
   if (!G) return;
   G.t += dt;
-  if (!paused && !G.ended) {
+  // Pause never holds back an online match. Before the intro ends, `paused` is the versus splash.
+  const held = paused && !(G.net && !G.net.dead && G.intro <= 0);
+  // A hidden tab has no rAF anyway; this keeps a hidden online host from double-stepping if one sneaks through.
+  if (!held && !G.ended && !(G.net && document.hidden)) {
     if (G.intro > 0) { G.intro -= dt; introTick(dt); }
     else if (G.outro) { G.outro.t += dt; outroTick(dt); if (G.outro.t > 2.6) finishMatch(); }
+    else if (G.net && G.net.role === 'guest') Net.guestFrame(Math.min(.25, raw), now);
     else {
       if (G.slowT > 0) { G.slowT -= dt; if (G.slowT <= 0) G.timeScale = 1; }
       if (G.stop > 0) G.stop -= dt;
-      else {
-        G.acc += dt * G.timeScale; let n = 0;
-        while (G.acc >= DT && n++ < 4) {
-          applyInput(); Sim.step(G.s); G.acc -= DT;
-          for (const e of G.s.ev) { fxEvent(e); uiEvent(e); soundEvent(e); }
-          G.s.ev.length = 0;
-          if (G.s.over) { const core = G.s.towers.find(t => t.sub === 'core' && !t.alive); G.outro = { t: 0, x: core.x, y: core.y }; outroStart(); break; }
-        }
-        if (n >= 4) G.acc = 0;
-      }
+      else stepMatch(G.net ? Math.min(.25, raw) : dt);
     }
   }
-  soundFrame(paused ? 0 : dt);
-  render(paused ? 0 : dt);
+  soundFrame(held ? 0 : dt);
+  render(held ? 0 : dt);
   if (save.gfx === 'auto') { const f = G.frames++; G.ms += dt * 1000; if (f && f % 120 === 0) { const avg = G.ms / 120; G.ms = 0; if (avg > 26 && quality > 0) { quality--; resize(); } } }
 }

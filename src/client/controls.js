@@ -72,6 +72,7 @@ const { Ctl, applyInput, aimDir } = (() => {
     try { view.setPointerCapture(e.pointerId); } catch (_) { }
     const p = Ctl.pt(e), U = Hud.ui, me = G.me;
     if (G.intro <= 0 && !G.outro) {
+      if (Hud.forgeOpen() && !near(U.forge, p, 8)) Hud.closeForge();
       if (Ctl.aim && near(U.cancel, p, 6)) { cancelAim(); return; }
       if (near(U.pause, p, 10)) { Hud.squash('pause'); Hud.openPause(); return; }
       if (near(U.forge, p, 8)) { Hud.squash('forge'); Hud.toggleForge(); return; }

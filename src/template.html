@@ -29,7 +29,8 @@ h1,h2,h3,p{margin:0;font-weight:inherit}
 
 /* Comic panels and stickers */
 .plate{background:var(--paper);border:3px solid var(--ink);border-radius:5px;box-shadow:5px 5px 0 var(--ink);color:var(--ink)}
-.go,.ghost,.tok{position:relative;border:3px solid var(--ink);transition:transform .07s;touch-action:manipulation}
+.go,.ghost,.tok{position:relative;border:3px solid var(--ink);transition:transform .17s cubic-bezier(.3,1.9,.5,1),box-shadow .1s,filter .12s;touch-action:manipulation}
+.go:active,.ghost:active,.tok:active,.mb:active,.bk:active,.kr button:active{transition-duration:.05s}
 .go{height:50px;padding:0 24px;border-radius:9px;color:var(--ink);background:var(--b);box-shadow:inset 0 3px 0 rgba(255,255,255,.55),inset 0 -5px 0 rgba(20,16,42,.18),0 0 0 2px #fff,3px 5px 0 2px var(--ink);font-family:var(--disp);font-weight:700;font-synthesis:none;font-size:25px;line-height:1;letter-spacing:.035em;text-transform:uppercase;transform:rotate(-1.5deg)}
 .go:active{transform:translate(3px,4px) scale(.95) rotate(-1.5deg);box-shadow:inset 0 3px 0 rgba(255,255,255,.55),inset 0 -5px 0 rgba(20,16,42,.18),0 0 0 2px #fff,0 1px 0 2px var(--ink)}
 .ghost{min-height:46px;padding:0 16px;border-radius:9px;font-size:17px;font-weight:700;color:var(--ink);background:#fff;box-shadow:3px 4px 0 var(--ink);transform:rotate(1deg)}
@@ -65,7 +66,7 @@ h1,h2,h3,p{margin:0;font-weight:inherit}
 #lobby>*{position:relative;min-width:0;min-height:0}
 .ltop{grid-column:1/-1;display:flex;align-items:center;justify-content:space-between;gap:12px;z-index:2}
 .ltop h1{font-family:var(--disp);font-weight:700;font-synthesis:none;text-transform:uppercase;letter-spacing:.03em;font-size:30px;line-height:1;color:#fff;text-shadow:var(--o2),3px 4px 0 var(--ink);transform:rotate(-3deg)}
-.ltop>div{display:flex;align-items:center;gap:8px}
+.ltop>div:last-child{display:flex;align-items:center;gap:8px}
 .mission{flex:1;display:flex;align-items:center;gap:8px;white-space:nowrap;min-width:0}
 .mission b{font-family:var(--disp);font-weight:700;font-synthesis:none;text-transform:uppercase;letter-spacing:.04em;font-size:21px;line-height:1;padding:4px 10px 3px;background:var(--b);color:var(--ink);border:2.5px solid var(--ink);box-shadow:2px 3px 0 var(--ink);transform:rotate(-2deg)}
 .mission span{font-size:16px;font-weight:700;color:#fff;text-shadow:var(--o2)}
@@ -85,7 +86,7 @@ h1,h2,h3,p{margin:0;font-weight:inherit}
 .nm h2.pop{animation:namein .24s ease-out}
 @keyframes namein{0%{transform:scale(1.45) rotate(-5deg);opacity:.2}60%{transform:scale(.96) rotate(-1deg);opacity:1}100%{transform:rotate(-2deg)}}
 .nmsub{display:flex;align-items:center;gap:6px;flex-wrap:nowrap;min-width:0;max-width:100%}
-.blurb{font-size:14px;font-weight:700;color:#fff;text-shadow:var(--o2);line-height:1.05;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0;padding:2px}
+.blurb{font-size:14px;font-weight:700;color:#fff;text-shadow:var(--o2);line-height:1.05;min-width:0;padding:2px}
 .tags{display:flex;gap:4px;flex:none}
 .tags span{font-size:13px;font-weight:700;padding:1px 7px;background:#fff;border:2px solid var(--ink);color:var(--ink);line-height:1.2;transform:rotate(-1deg)}
 .tags span:nth-child(2){background:var(--b);transform:rotate(1.2deg)}
@@ -95,7 +96,7 @@ h1,h2,h3,p{margin:0;font-weight:inherit}
 .abil img{width:34px;height:34px;display:block;border-radius:50%;border:2.5px solid var(--ink)}
 .abil em{font-style:normal;white-space:nowrap;font-family:var(--disp);font-weight:700;font-synthesis:none;text-transform:uppercase;letter-spacing:.03em;font-size:15.5px;line-height:1;color:var(--a2)}
 .abil u{text-decoration:none;font-size:11.5px;font-weight:700;color:#000;background:var(--b);border:1.5px solid var(--ink);padding:0 4px;margin-left:5px;white-space:nowrap;vertical-align:1px}
-.stats{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:2px 9px;align-items:center;font-size:10.5px;font-weight:700;line-height:1;margin-top:5px}
+.stats{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:2px 11px;align-items:center;font-size:10.5px;font-weight:700;line-height:1;margin-top:5px}
 .stats>span{display:flex;flex-direction:column;gap:2px;min-width:0}
 .stats em{font-style:normal;font-size:12.5px;line-height:7px}
 .stats i{display:block;height:7px;border:1.5px solid var(--ink);background:#fff;overflow:hidden}
@@ -162,7 +163,7 @@ h1,h2,h3,p{margin:0;font-weight:inherit}
 .setrow .seg{color:var(--ink);text-shadow:none}
 
 /* Match overlays */
-#forge{position:absolute;left:152px;top:62px;width:min(348px,calc(100% - 363px));padding:6px;display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px;transform:rotate(-.5deg);animation:pop .2s ease-out both}
+#forge{position:absolute;left:44px;top:112px;width:min(306px,calc(100% - 330px));z-index:2;padding:6px;display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px;transform:rotate(-.5deg);animation:pop .2s ease-out both}
 #forge button{display:flex;flex-direction:column;align-items:flex-start;gap:2px;padding:6px 8px;min-height:72px;border:2.5px solid var(--ink);border-radius:6px;text-align:left;line-height:1.05;background:#fff;box-shadow:2px 3px 0 var(--ink);transition:transform .07s}
 #forge button:active{transform:translate(1px,2px) scale(.95);box-shadow:none}
 #forge button:disabled{background:#d9d3c2;opacity:.8}
@@ -213,7 +214,7 @@ h1,h2,h3,p{margin:0;font-weight:inherit}
 #endM{font-size:16px;font-weight:700;line-height:1.15}
 .row{display:flex;gap:10px;align-items:center}
 .row .go{height:46px;font-size:22px;padding:0 18px}
-#tierup{position:absolute;left:92px;top:-10px;padding:5px 12px 4px;background:var(--b);border:3px solid var(--ink);box-shadow:3px 4px 0 var(--ink);font-family:var(--disp);font-weight:700;font-synthesis:none;text-transform:uppercase;letter-spacing:.04em;font-size:25px;line-height:1;color:var(--ink);transform:rotate(-6deg);z-index:2;animation:tier .46s ease-out both}
+#tierup{position:absolute;right:2px;top:94px;padding:4px 11px 3px;background:var(--b);border:3px solid var(--ink);box-shadow:3px 4px 0 var(--ink);font-family:var(--disp);font-weight:700;font-synthesis:none;text-transform:uppercase;letter-spacing:.04em;font-size:22px;line-height:1;color:var(--ink);transform:rotate(-6deg);z-index:2;animation:tier .46s ease-out both;white-space:nowrap}
 @keyframes tier{0%{transform:scale(3) rotate(-18deg);opacity:0}45%{transform:scale(.9) rotate(-4deg);opacity:1}75%{transform:scale(1.12) rotate(-7deg)}100%{transform:rotate(-6deg)}}
 
 /* The coin flip */
@@ -241,7 +242,7 @@ h1,h2,h3,p{margin:0;font-weight:inherit}
 .vside h2{position:absolute;font-family:var(--disp);font-weight:700;font-synthesis:none;text-transform:uppercase;letter-spacing:.04em;line-height:1;font-size:50px;text-shadow:var(--o3),4px 5px 0 var(--ink)}
 .v0 h2{left:48px;top:6px;color:var(--sun);transform:rotate(-3deg);transform-origin:left}
 .v1 h2{right:50px;bottom:12px;color:var(--toxic);transform:rotate(-3deg);transform-origin:right}
-.vgrid{position:absolute;display:grid;grid-template-columns:repeat(2,minmax(0,150px));gap:4px 4px}
+.vgrid{position:absolute;display:grid;grid-template-columns:repeat(2,minmax(0,132px));gap:4px 4px}
 .v0 .vgrid{left:44px;top:60px}
 .v1 .vgrid{right:44px;bottom:66px}
 .vcell{display:flex;flex-direction:column;align-items:center;gap:0;animation:vcoin0 .32s cubic-bezier(.2,1.35,.4,1) both;animation-delay:calc(.3s + var(--i)*.07s);text-align:center}
@@ -249,7 +250,7 @@ h1,h2,h3,p{margin:0;font-weight:inherit}
 @keyframes vcoin0{from{transform:translateX(-180px) rotate(-50deg) scale(.6);opacity:0}}
 @keyframes vcoin1{from{transform:translateX(180px) rotate(50deg) scale(.6);opacity:0}}
 .vcell canvas{width:84px;height:84px;display:block}
-.vcell b{font-family:var(--disp);font-weight:700;font-synthesis:none;text-transform:uppercase;letter-spacing:.03em;font-size:17px;line-height:1;color:#fff;text-shadow:var(--o2),2px 3px 0 var(--ink);max-width:140px}
+.vcell b{font-family:var(--disp);font-weight:700;font-synthesis:none;text-transform:uppercase;letter-spacing:.03em;font-size:17px;line-height:1;color:#fff;text-shadow:var(--o2),2px 3px 0 var(--ink);max-width:130px}
 .vcell i{font-style:normal;font-size:12px;font-weight:700;padding:0 6px;background:var(--sun);color:var(--ink);border:2px solid var(--ink);line-height:1.2;transform:rotate(-3deg);margin-top:1px}
 .vburst{position:absolute;left:50%;top:50%;width:210px;height:210px;margin:-105px 0 0 -105px;clip-path:var(--star);background:var(--ink);animation:vstar .32s .32s cubic-bezier(.2,1.5,.4,1) both}
 .vburst::after{content:"";position:absolute;inset:7px;clip-path:var(--star);background:var(--sun)}
@@ -258,6 +259,134 @@ h1,h2,h3,p{margin:0;font-weight:inherit}
 @keyframes vmark{0%{transform:translate(-50%,-52%) scale(4) rotate(-22deg);opacity:0}40%{opacity:1}55%{transform:translate(-50%,-52%) scale(.88) rotate(-5deg)}75%{transform:translate(-50%,-52%) scale(1.09) rotate(-9deg)}100%{transform:translate(-50%,-52%) rotate(-8deg)}}
 #vs{animation:vshake .28s .46s linear}
 @keyframes vshake{20%{transform:translate(9px,-7px)}40%{transform:translate(-8px,6px)}60%{transform:translate(6px,5px)}80%{transform:translate(-4px,-3px)}}
+
+/* Shared screen furniture */
+.scr{position:absolute;inset:0;overflow:hidden;background:repeating-conic-gradient(from 4deg at 26% 50%,var(--a) 0 9deg,var(--a2) 9deg 18deg)}
+.scr::before{content:"";position:absolute;inset:0;background:var(--dots);pointer-events:none;-webkit-mask-image:linear-gradient(105deg,transparent 35%,#000 100%);mask-image:linear-gradient(105deg,transparent 35%,#000 100%)}
+.scr>*{position:relative}
+.scr.in{animation:scrin .2s ease-out both}
+.scr.out{animation:scrout .15s ease-in forwards;pointer-events:none}
+@keyframes scrin{from{opacity:0;transform:scale(1.04)}}
+@keyframes scrout{to{opacity:0;transform:scale(.97)}}
+.scr.in .stick{animation:stick .3s cubic-bezier(.2,1.5,.4,1) both;animation-delay:calc(var(--i,0)*45ms)}
+@keyframes stick{0%{opacity:0;transform:scale(1.5) rotate(-7deg)}55%{opacity:1}100%{}}
+.bk{position:relative;display:inline-flex;align-items:center;gap:5px;height:44px;padding:0 13px 0 8px;border:3px solid var(--ink);border-radius:9px;background:#fff;box-shadow:3px 4px 0 var(--ink);font-size:17px;font-weight:700;color:var(--ink);flex:none;transition:transform .17s cubic-bezier(.3,1.9,.5,1),box-shadow .1s;touch-action:manipulation}
+#mbub{position:absolute;left:44px;top:10px;z-index:3;max-width:230px;padding:5px 12px;background:#fff;border:3px solid var(--ink);border-radius:14px;box-shadow:3px 4px 0 var(--ink);font-family:var(--disp);font-weight:700;font-synthesis:none;font-size:21px;line-height:1.05;text-transform:uppercase;letter-spacing:.03em;color:var(--ink);pointer-events:none;transform-origin:10% 100%;animation:bub 1.5s ease-in-out both}
+#mbub::after{content:"";position:absolute;left:48px;bottom:-14px;width:20px;height:14px;background:#fff;border-right:3px solid var(--ink);border-bottom:3px solid var(--ink);transform:skewX(32deg);transform-origin:top}
+@keyframes bub{0%{transform:scale(.3) rotate(-10deg);opacity:0}9%{transform:scale(1.1) rotate(1deg);opacity:1}15%{transform:none}86%{transform:none;opacity:1}100%{transform:translateY(-8px);opacity:0}}
+.bk svg{width:20px;height:20px;display:block}
+.bk:active{transform:translate(2px,3px) scale(.95);box-shadow:1px 1px 0 var(--ink)}
+.warn{background:var(--blood)!important;color:#fff!important}
+.go.off{background:#e6e0cf;color:#6d6780;box-shadow:inset 0 3px 0 rgba(255,255,255,.55),0 0 0 2px #fff,2px 3px 0 2px var(--ink)}
+.go.hot{animation:gohot 1s ease-in-out infinite}
+@keyframes gohot{50%{filter:brightness(1.12);transform:rotate(-1.5deg) scale(1.04)}}
+.shake{animation:shake .3s linear}
+@keyframes shake{20%{transform:translateX(-6px)}40%{transform:translateX(5px)}60%{transform:translateX(-4px)}80%{transform:translateX(2px)}}
+.dots{display:inline-flex;gap:3px;margin-left:5px;vertical-align:1px}
+.dots i{display:block;width:6px;height:6px;border-radius:50%;background:currentColor;animation:dot 1s ease-in-out infinite}
+.dots i:nth-child(2){animation-delay:.14s}.dots i:nth-child(3){animation-delay:.28s}
+@keyframes dot{0%,60%,100%{transform:none;opacity:.5}30%{transform:translateY(-5px);opacity:1}}
+
+/* Main menu */
+#menu{background:repeating-conic-gradient(from 4deg at 24% 50%,var(--a) 0 9deg,var(--a2) 9deg 18deg)}
+#mcan{position:absolute;inset:0;width:100%;height:100%;display:block}
+#mcoin{position:absolute;left:0;top:0;bottom:0;width:44%;border-radius:0}
+.mcol{position:absolute;left:44%;right:44px;top:0;bottom:0;display:flex;flex-direction:column;justify-content:center;gap:9px}
+.mlogo{font-family:var(--disp);font-weight:700;font-synthesis:none;text-transform:uppercase;letter-spacing:.03em;font-size:52px;line-height:.92;color:var(--b);text-shadow:var(--o3),5px 6px 0 var(--ink);transform:rotate(-2.5deg);transform-origin:left;margin-bottom:2px}
+.mrow{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.08fr);gap:9px}
+.mrow+.mrow{grid-template-columns:repeat(2,minmax(0,1fr))}
+.mb{position:relative;display:flex;flex-direction:column;align-items:flex-start;justify-content:center;gap:2px;min-height:68px;padding:6px 13px;border:3px solid var(--ink);border-radius:12px;background:#fff;color:var(--ink);box-shadow:4px 5px 0 var(--ink);text-align:left;transition:transform .17s cubic-bezier(.3,1.9,.5,1),box-shadow .1s;touch-action:manipulation}
+.mb:nth-child(odd){transform:rotate(-.8deg)}.mb:nth-child(even){transform:rotate(.8deg)}
+.mb:active{transform:translate(3px,4px) scale(.96);box-shadow:1px 1px 0 var(--ink)}
+.mb b{font-family:var(--disp);font-weight:700;font-synthesis:none;text-transform:uppercase;letter-spacing:.03em;font-size:25px;line-height:1;white-space:nowrap}
+.mb small{font-size:14px;font-weight:700;line-height:1.05;color:#4b4562}
+.mb.big{min-height:84px;background:var(--b);padding-left:22px;transform:rotate(-1.2deg)}
+.mb.big b{font-size:48px}
+.mb.big canvas{position:absolute;right:12px;top:50%;width:72px;height:72px;margin-top:-36px;display:block;pointer-events:none}
+.mb.ml{min-height:54px;align-items:center}
+.mb.ml b{font-size:22px}
+
+/* How to play */
+#how{display:flex;flex-direction:column;gap:7px;padding:8px 44px}
+.htop{display:flex;align-items:center;gap:12px}
+.htop h1{font-family:var(--disp);font-weight:700;font-synthesis:none;text-transform:uppercase;letter-spacing:.03em;font-size:30px;line-height:1;color:var(--b);text-shadow:var(--o2),3px 4px 0 var(--ink);transform:rotate(-2deg);white-space:nowrap}
+.htop p{font-size:16px;font-weight:700;color:#fff;text-shadow:var(--o2);line-height:1.1}
+.hgrid{flex:1;min-height:0;display:grid;grid-template-columns:repeat(5,minmax(0,1fr));grid-template-rows:auto;align-content:center;gap:9px;align-items:stretch}
+.hc{display:flex;flex-direction:column;background:var(--paper);border:3px solid var(--ink);border-radius:6px;box-shadow:4px 5px 0 var(--ink);overflow:hidden;min-height:0}
+.hc:nth-child(odd){transform:rotate(-.7deg)}.hc:nth-child(even){transform:rotate(.7deg)}
+.hc canvas{display:block;width:100%;height:auto;aspect-ratio:360/380;border-bottom:3px solid var(--ink)}
+.hc h3{font-family:var(--disp);font-weight:700;font-synthesis:none;text-transform:uppercase;letter-spacing:.03em;font-size:21px;line-height:1;padding:6px 8px 1px;color:var(--a2)}
+.hc p{font-size:14.5px;font-weight:600;line-height:1.12;padding:0 8px 7px}
+
+/* Online: room and join */
+#room,#joinS{display:flex;flex-direction:column;gap:7px;padding:8px 44px}
+.rtop{display:flex;align-items:center;gap:12px;min-height:46px}
+.rtop h1{font-family:var(--disp);font-weight:700;font-synthesis:none;text-transform:uppercase;letter-spacing:.03em;font-size:30px;line-height:1;color:var(--b);text-shadow:var(--o2),3px 4px 0 var(--ink);transform:rotate(-2deg);white-space:nowrap}
+.stat{flex:1;min-width:0;font-size:16px;font-weight:700;color:#fff;text-shadow:var(--o2);line-height:1.1}
+.rbody{flex:1;min-height:0;display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.14fr);grid-template-rows:auto;align-content:center;gap:12px}
+.rpl{padding:10px 14px;display:flex;flex-direction:column;justify-content:center;gap:8px;min-height:0;min-width:0}
+.rlab{font-size:15px;font-weight:700;color:#4b4562;line-height:1}
+.bigcode{font-family:var(--disp);font-weight:700;font-synthesis:none;font-size:88px;line-height:.95;letter-spacing:.09em;color:var(--a2);text-align:center;white-space:nowrap;-webkit-user-select:text;user-select:text}
+.rbtns{display:flex;gap:9px}
+.rbtns .go{flex:1;height:48px;font-size:21px;padding:0 6px}
+.rbtns .ghost{flex:1;min-height:48px;padding:0 6px}
+.rlink{font-size:13px;font-weight:600;color:#4b4562;line-height:1.1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;text-align:center}
+.rwho{display:grid;grid-template-columns:1fr auto 1fr;align-items:center;gap:6px}
+.rp{display:flex;align-items:center;gap:8px;min-width:0}
+#rMe{justify-content:flex-end;text-align:right}
+#rMe>div{order:-1}
+.rp+span{font-family:var(--disp);font-size:26px;color:var(--a2);text-transform:uppercase}
+.rp.joined{position:relative}
+.rp.joined::before{content:"";pointer-events:none;position:absolute;left:-22px;top:50%;width:98px;height:98px;margin-top:-49px;clip-path:var(--star);background:var(--b);animation:joinburst .55s ease-out both}
+@keyframes joinburst{0%{transform:scale(.2) rotate(-40deg);opacity:1}70%{opacity:1}100%{transform:scale(1.35) rotate(25deg);opacity:0}}
+.rp canvas{position:relative}
+.rp canvas,.rp .rq{width:54px;height:54px;flex:none;display:block;border-radius:50%}
+.rp .rq{display:flex;align-items:center;justify-content:center;font-family:var(--disp);font-size:28px;color:#7d7690;border:3px dashed #7d7690;animation:rq 1.6s ease-in-out infinite}
+@keyframes rq{50%{transform:scale(.88) rotate(10deg)}}
+.rp b{font-family:var(--disp);font-weight:700;font-synthesis:none;text-transform:uppercase;letter-spacing:.03em;font-size:20px;line-height:1;white-space:nowrap}
+.rp small{display:block;font-size:13.5px;font-weight:700;color:#4b4562;line-height:1.1;margin-top:1px}
+.rp.joined canvas{animation:pop .36s ease-out both}
+.rrow{display:flex;align-items:center;justify-content:space-between;gap:8px;font-size:16px;font-weight:700}
+.rrow .seg{color:var(--ink);text-shadow:none}
+.rrow .seg button{min-height:42px}
+.seg.ro button{pointer-events:none}
+.seg.ro button:not([aria-pressed=true]){opacity:.5}
+#rFlip{height:52px;font-size:27px}
+.jtop{display:flex;align-items:center;gap:10px}
+.jslots{flex:1;display:flex;justify-content:center;gap:7px}
+.jslots i{display:flex;align-items:center;justify-content:center;width:56px;height:62px;font-style:normal;font-family:var(--disp);font-weight:700;font-size:44px;line-height:1;background:#fff;border:3px solid var(--ink);border-radius:9px;box-shadow:3px 4px 0 var(--ink);color:var(--ink)}
+.jslots i.cur{background:var(--b);animation:cur .8s ease-in-out infinite}
+.jslots i.pop{animation:slotpop .22s cubic-bezier(.2,1.6,.4,1)}
+@keyframes cur{50%{transform:translateY(-3px)}}
+@keyframes slotpop{0%{transform:scale(1.45) rotate(-8deg)}}
+.jtop .ghost{min-height:48px}
+.jtop .go{height:52px;font-size:26px;padding:0 20px}
+.jmsg{min-height:22px;font-size:16px;font-weight:700;line-height:1.1;text-align:center;color:#fff;text-shadow:var(--o2)}
+.jmsg.bad{color:#fff;background:var(--blood);padding:2px 12px;border:2.5px solid var(--ink);box-shadow:2px 3px 0 var(--ink);text-shadow:none;align-self:center}
+.kb{flex:1;min-height:0;display:grid;grid-template-rows:repeat(4,minmax(0,1fr));gap:6px}
+.kr{display:flex;justify-content:center;gap:6px;min-height:0}
+.kr button{flex:1;max-width:82px;min-width:0;border:2.5px solid var(--ink);border-radius:8px;background:#fff;box-shadow:2px 3px 0 var(--ink);font-family:var(--disp);font-weight:700;font-synthesis:none;font-size:27px;line-height:1;color:var(--ink);transition:transform .15s cubic-bezier(.3,1.9,.5,1),box-shadow .1s,background .1s;touch-action:manipulation}
+.kr button:active{transform:translate(2px,3px) scale(.93);box-shadow:none;background:var(--b)}
+.kr button.wide{max-width:118px;font-family:"Barlow Semi Condensed",sans-serif;font-size:17px}
+.kr svg{display:block;width:28px;height:22px;margin:auto}
+
+/* Friend in the lobby */
+.lnet{display:flex;align-items:center;gap:7px;color:#fff;text-shadow:var(--o2);font-size:15px;font-weight:700;white-space:nowrap}
+.lnet canvas{width:34px;height:34px;flex:none;display:block}
+.lnet em{font-style:normal;font-size:13px;padding:1px 7px;background:#fff;color:var(--ink);border:2px solid var(--ink);text-shadow:none;line-height:1.2}
+.lnet em.yes{background:var(--toxic);animation:pop .3s ease-out both}
+.pick.taken{opacity:.42}
+.you.fr{background:#fff}
+.you.fr.yes{background:var(--toxic)}
+.you.fr.yes.pop{animation:bump .3s ease-out}
+
+/* Notices */
+#notice{z-index:48}
+.nbox{max-width:440px;padding:16px 20px;display:flex;flex-direction:column;gap:10px;align-items:center;text-align:center;transform:rotate(-.6deg)}
+.nbox h3{font-family:var(--disp);font-weight:700;font-synthesis:none;text-transform:uppercase;letter-spacing:.03em;font-size:32px;line-height:1;color:var(--a2)}
+.nbox p{font-size:17px;font-weight:600;line-height:1.2}
+.nbox .go{height:50px}
+#pNote{font-size:14px;font-weight:700;line-height:1.1;text-align:center}
 
 @media (prefers-reduced-motion:reduce){*,*::before,*::after{animation:none!important;transition:none!important}}
 
@@ -307,6 +436,11 @@ h1,h2,h3,p{margin:0;font-weight:inherit}
 .sm .eburst{left:-24px}
 .sm .eburst{width:132px;height:132px}
 .sm .ehead{margin-bottom:12px}
+.sm #tierup{top:66px;font-size:15px;padding:3px 8px 2px}
+.sm #forge{width:252px;padding:4px;gap:4px}
+.sm #forge button{padding:4px 6px;min-height:64px}
+.sm #forge b{font-size:17px}
+.sm #forge small{font-size:11.5px}
 .sm .ehead h2{font-size:34px}
 .sm #endW{font-size:15px}
 .sm #endS{font-size:13.5px}
@@ -320,9 +454,43 @@ h1,h2,h3,p{margin:0;font-weight:inherit}
 .sm .vside h2{font-size:36px}
 .sm .v0 .vgrid{top:44px}.sm .v1 .vgrid{bottom:50px}
 .sm .vcell canvas{width:66px;height:66px}
-.sm .vcell b{font-size:13px;max-width:102px}
-.sm .vgrid{grid-template-columns:repeat(2,minmax(0,104px))}
+.sm .vcell b{font-size:13px;max-width:96px}
+.sm .vgrid{grid-template-columns:repeat(2,minmax(0,98px))}
 .sm .vmark{font-size:58px}.sm .vburst{width:130px;height:130px;margin:-65px 0 0 -65px}
+.sm .mcol{gap:6px}
+.sm .mlogo{font-size:36px}
+.sm .mrow{gap:7px}
+.sm .mb{min-height:52px;padding:4px 10px}
+.sm .mb b{font-size:21px}
+.sm .mb small{font-size:12px}
+.sm .mb.big{min-height:66px;padding-left:16px}
+.sm .mb.big b{font-size:36px}
+.sm .mb.ml{min-height:44px}
+.sm .mb.ml b{font-size:18px}
+.sm .htop h1,.sm .rtop h1{font-size:23px}
+.sm .htop p,.sm .stat{font-size:14px}
+.sm .hgrid{gap:6px}
+.sm .hc h3{font-size:17px;padding:4px 6px 1px}
+.sm .hc p{font-size:12.5px;padding:0 6px 5px;line-height:1.08}
+.sm #room,.sm #joinS,.sm #how{gap:5px;padding:6px 44px}
+.sm .rbody{gap:8px}
+.sm .rpl{padding:7px 10px;gap:5px}
+.sm .bigcode{font-size:58px}
+.sm .rbtns .go{height:44px;font-size:18px}.sm .rbtns .ghost{min-height:44px;font-size:15px}
+.sm .rp canvas,.sm .rp .rq{width:40px;height:40px}
+.sm #mbub{font-size:17px;max-width:170px;padding:4px 9px}
+.sm .rp b{font-size:16px}.sm .rp small{font-size:12px}
+.sm .rrow{font-size:14px}.sm .rrow .seg button{min-height:38px;padding:0 6px}
+.sm #rFlip{height:44px;font-size:22px}
+.sm .jslots{gap:5px}
+.sm .jslots i{width:44px;height:50px;font-size:34px}
+.sm .jtop .go{height:46px;font-size:21px;padding:0 12px}
+.sm .jtop .ghost{min-height:44px;padding:0 10px;font-size:15px}
+.sm .jmsg{min-height:18px;font-size:14px}
+.sm .kb{gap:4px}.sm .kr{gap:4px}
+.sm .kr button{font-size:22px}
+.sm .lnet{font-size:13px}.sm .lnet>span:last-child{display:none}.sm .lnet canvas{width:28px;height:28px}
+.sm .nbox h3{font-size:26px}.sm .nbox p{font-size:15px}
 #wipe{position:absolute;inset:0;width:100%;height:100%;display:block;z-index:50}
 </style>
 </head>
@@ -334,7 +502,8 @@ h1,h2,h3,p{margin:0;font-weight:inherit}
   <div id="pause" class="over hide" role="dialog" aria-label="Paused">
     <div class="plate pgrid">
       <div class="pcol">
-        <h2>Paused</h2>
+        <h2 id="pT">Paused</h2>
+        <p id="pNote" class="hide">The match keeps running</p>
         <button class="go" id="resume">Resume</button>
         <button class="ghost" id="leave">Leave match</button>
         <button class="tog" id="pMusic">Music</button>
@@ -352,7 +521,7 @@ h1,h2,h3,p{margin:0;font-weight:inherit}
         <p id="endS"></p>
         <div class="prof"><b id="endBar"></b></div>
         <p id="endM"></p>
-        <div class="row"><button class="go" id="again">Play again</button><button class="ghost" id="tolobby">Back to lobby</button></div>
+        <div class="row"><button class="go" id="again">Play again</button><button class="ghost" id="tolobby">Main menu</button></div>
       </div>
       <div class="board scroll" id="eBoard"></div>
     </div>
@@ -360,8 +529,9 @@ h1,h2,h3,p{margin:0;font-weight:inherit}
 
   <div id="lobby" class="hide">
     <div class="ltop">
-      <h1>Flipside</h1>
+      <button class="bk" id="lBack" aria-label="Back"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 4 7 12l8 8" fill="none" stroke="#14102a" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/></svg>Back</button>
       <p class="mission" id="mission"></p>
+      <div class="lnet hide" id="lnet"></div>
       <div>
         <div class="seg" id="diff"><span>Bots</span><button data-d="easy">Easy</button><button data-d="normal">Normal</button><button data-d="hard">Hard</button></div>
         <button class="tok" id="openSet">Settings</button>
@@ -380,6 +550,64 @@ h1,h2,h3,p{margin:0;font-weight:inherit}
     </div>
   </div>
 
+  <div id="menu" class="scr s0 hide">
+    <canvas id="mcan"></canvas>
+    <button id="mcoin" aria-label="Flip the coin"></button>
+    <div id="mbub" class="hide" aria-hidden="true"></div>
+    <div class="mcol">
+      <h1 class="mlogo stick">Flipside</h1>
+      <button class="mb big stick" id="mBots" style="--i:1"><b>Play vs bots</b><canvas id="mplay" width="160" height="160"></canvas></button>
+      <div class="mrow">
+        <button class="mb stick" id="mHost" style="--i:2"><b>Host a match</b><small>Get a code for a friend</small></button>
+        <button class="mb stick" id="mJoin" style="--i:3"><b>Join with a code</b><small>Got a code? Type it in</small></button>
+      </div>
+      <div class="mrow">
+        <button class="mb ml stick" id="mHow" style="--i:4"><b>How to play</b></button>
+        <button class="mb ml stick" id="mSet" style="--i:5"><b>Settings</b></button>
+      </div>
+    </div>
+  </div>
+
+  <div id="how" class="scr hide" role="dialog" aria-label="How to play">
+    <div class="htop"><button class="bk" id="hBack" aria-label="Back"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 4 7 12l8 8" fill="none" stroke="#14102a" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/></svg>Back</button><h1>How to play</h1><p>Knock down the towers, then break the enemy core.</p></div>
+    <div class="hgrid">
+      <div class="hc stick"><canvas id="h1" width="360" height="380"></canvas><h3>Move</h3><p>Left thumb, anywhere on the left side.</p></div>
+      <div class="hc stick" style="--i:1"><canvas id="h2" width="360" height="380"></canvas><h3>Attack</h3><p>Hold the big coin. It picks the target.</p></div>
+      <div class="hc stick" style="--i:2"><canvas id="h3" width="360" height="380"></canvas><h3>Aim and cancel</h3><p>Drag to aim, let go to fire. Slide back to cancel.</p></div>
+      <div class="hc stick" style="--i:3"><canvas id="h4" width="360" height="380"></canvas><h3>The people</h3><p>Stand by people to win them over. Tip the bar to hit harder.</p></div>
+      <div class="hc stick" style="--i:4"><canvas id="h5" width="360" height="380"></canvas><h3>Roles</h3><p>Top holds. Jungle roams. Bottom shoots. Support protects.</p></div>
+    </div>
+  </div>
+
+  <div id="room" class="scr hide" role="dialog" aria-label="Match room">
+    <div class="rtop"><button class="bk" id="rBack" aria-label="Back"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 4 7 12l8 8" fill="none" stroke="#14102a" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/></svg>Back</button><h1 id="rH">Your room</h1><p class="stat" id="rStat" aria-live="polite"></p></div>
+    <div class="rbody">
+      <div class="plate rpl stick">
+        <p class="rlab">Room code</p>
+        <div class="bigcode" id="rCode"></div>
+        <div class="rbtns"><button class="go" id="rCopy">Copy code</button><button class="ghost" id="rShare">Share invite</button></div>
+        <p class="rlink" id="rLink"></p>
+      </div>
+      <div class="plate rpl stick" style="--i:1">
+        <div class="rwho"><div class="rp" id="rMe"></div><span id="rWith">+</span><div class="rp" id="rFr"></div></div>
+        <div class="rrow"><span>Teams</span><div class="seg" id="rTeam"><button data-t="same">Same team</button><button data-t="opposing">Opposing teams</button></div></div>
+        <div class="rrow"><span id="rDiffL">Bots</span><div class="seg" id="rDiff"><button data-d="easy">Easy</button><button data-d="normal">Normal</button><button data-d="hard">Hard</button></div></div>
+        <button class="go" id="rFlip">Flip for sides</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="joinS" class="scr hide" role="dialog" aria-label="Join with a code">
+    <div class="jtop">
+      <button class="bk" id="jBack" aria-label="Back"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 4 7 12l8 8" fill="none" stroke="#14102a" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/></svg>Back</button>
+      <div class="jslots" id="jSlots" role="status"></div>
+      <button class="ghost" id="jPaste">Paste</button>
+      <button class="go" id="jGo">Join</button>
+    </div>
+    <p class="jmsg" id="jMsg" aria-live="polite"></p>
+    <div class="kb" id="kb"></div>
+  </div>
+
   <div id="vs" class="hide"><div class="vside v0"><h2>Heroes</h2><div class="vgrid" id="vs0"></div></div><div class="vside v1"><h2>Villains</h2><div class="vgrid" id="vs1"></div></div><div class="vslash"></div><div class="vburst"></div><div class="vmark">VS</div></div>
   <div id="flip" class="hide" role="button" tabindex="0" aria-label="Skip the coin flip"><canvas id="fcan"></canvas><p class="sr" id="flipT" aria-live="polite"></p></div>
 
@@ -392,16 +620,21 @@ h1,h2,h3,p{margin:0;font-weight:inherit}
 
   <div id="settings" class="over hide" role="dialog" aria-label="Settings">
     <div class="plate sheet scroll" style="max-width:400px">
-      <div class="shead"><h3>Settings</h3><button class="go" id="setDone">Done</button></div>
+      <div class="shead"><button class="bk" id="setDone" aria-label="Back"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 4 7 12l8 8" fill="none" stroke="#14102a" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/></svg>Back</button><h3>Settings</h3></div>
       <button class="tog" id="sMusic">Music</button>
       <button class="tog" id="sSfx">Effects</button>
       <div class="setrow"><span>Graphics</span><div class="seg" id="gfx"><button data-g="auto">Auto</button><button data-g="high">High</button><button data-g="low">Low</button></div></div>
     </div>
   </div>
 
+  <div id="notice" class="over hide" role="alertdialog" aria-label="Notice">
+    <div class="plate nbox"><h3 id="nT"></h3><p id="nM"></p><button class="go" id="nB">Back to menu</button></div>
+  </div>
+
   <button id="title" aria-label="Tap to flip"><canvas id="tcan"></canvas><span class="tword"><b>Flipside</b><em>Tap to flip</em></span></button>
   <canvas id="wipe" class="hide"></canvas>
 </div>
+<script>/*PEER*/</script>
 <script>/*SIM*/</script>
 <script>/*ART*/</script>
 <script>/*AUDIO*/</script>
