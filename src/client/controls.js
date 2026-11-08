@@ -73,9 +73,9 @@ const { Ctl, applyInput, aimDir } = (() => {
     const p = Ctl.pt(e), U = Hud.ui, me = G.me;
     if (G.intro <= 0 && !G.outro) {
       if (Ctl.aim && near(U.cancel, p, 6)) { cancelAim(); return; }
-      if (near(U.pause, p, 10)) { Hud.openPause(); return; }
-      if (near(U.forge, p, 8)) { Hud.toggleForge(); return; }
-      if (near(U.recall, p, 8)) { if (me.alive) { me.q.push({ t: 'recall' }); Sound.play('recall'); } return; }
+      if (near(U.pause, p, 10)) { Hud.squash('pause'); Hud.openPause(); return; }
+      if (near(U.forge, p, 8)) { Hud.squash('forge'); Hud.toggleForge(); return; }
+      if (near(U.recall, p, 8)) { Hud.squash('recall'); if (me.alive) { me.q.push({ t: 'recall' }); Sound.play('recall'); } return; }
       if (near(U.atk, p, 14)) { Ctl.p.set(e.pointerId, { role: 'atk' }); Ctl.atk = e.pointerId; Sound.play('tap'); return; }
       for (let i = 0; i < 3; i++) if (near(U.ab[i], p, 9)) { pressAbility(i, e.pointerId, p); return; }
     }
