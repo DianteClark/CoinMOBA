@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>Mintfall</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Forum&family=Barlow+Semi+Condensed:wght@500;600;700&display=swap" rel="stylesheet">
+<style>
+:root{--pine:#10302b;--verdigris:#2c6f62;--patina:#6fb7a2;--brass:#e0b552;--copper:#b9744a;--parch:#f1e8d0;--azure:#58a6e6;--cinnabar:#e4573f}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent;-webkit-user-select:none;user-select:none}
+html,body{margin:0;height:100%;background:var(--pine);overflow:hidden;overscroll-behavior:none;touch-action:none;color:var(--parch);font-family:"Barlow Semi Condensed",system-ui,sans-serif;font-weight:500}
+#stage{position:fixed;left:0;top:0;transform-origin:0 0;overflow:hidden;background:var(--pine)}
+canvas#view{position:absolute;inset:0;width:100%;height:100%;touch-action:none;display:block}
+button{font:inherit;color:inherit;background:none;border:0;padding:0;cursor:pointer;touch-action:manipulation}
+button:focus-visible{outline:2px solid var(--brass);outline-offset:2px}
+h1,h2,h3,p{margin:0;font-weight:inherit}
+.hide{display:none!important}
+
+#lobby{position:absolute;inset:0;display:grid;grid-template-columns:minmax(150px,30%) 1fr minmax(210px,31%);gap:0 14px;padding:12px 44px 12px;background:radial-gradient(120% 130% at 18% 45%,#3b8a78 0,#225a50 34%,#123a33 72%,#0c2a26 100%)}
+#lobby::before{content:"";position:absolute;inset:0;background:repeating-radial-gradient(circle at 16% 48%,rgba(255,255,255,.028) 0 2px,transparent 2px 15px);pointer-events:none}
+.mark{grid-column:1/-1;display:flex;align-items:baseline;justify-content:space-between;position:relative;height:38px}
+.mark h1{font-family:Forum,Georgia,serif;font-size:32px;letter-spacing:.015em;color:var(--parch)}
+.seg{display:flex;align-items:center;gap:4px;font-size:15px}
+.seg span{color:var(--patina);margin-right:4px}
+.seg button{padding:5px 11px;border-radius:13px;color:#bcd8cc;min-height:30px}
+.seg button[aria-pressed=true]{background:var(--parch);color:var(--pine);font-weight:700}
+.bigcoin{position:relative;display:flex;align-items:center;justify-content:center;min-height:0}
+.bigcoin canvas{width:min(100%,250px);max-height:100%;aspect-ratio:1;display:block}
+.who{position:relative;display:flex;flex-direction:column;min-width:0;justify-content:center;gap:5px}
+.who h2{font-family:Forum,Georgia,serif;font-size:34px;line-height:1}
+.who .tag{font-size:17px;color:#cde4d9;line-height:1.15}
+.tierbar{display:flex;align-items:center;gap:8px;font-size:15px;color:var(--brass);font-weight:600}
+.tierbar i{display:block;flex:1;height:5px;border-radius:3px;background:rgba(0,0,0,.35);overflow:hidden;max-width:150px}
+.tierbar b{display:block;height:100%;background:var(--brass)}
+.abil{display:grid;gap:2px;font-size:14.5px;line-height:1.14;color:#d9e7dc}
+.abil em{font-style:normal;color:var(--brass);font-weight:700}
+.picks{grid-column:1/3;display:flex;gap:6px;position:relative;align-items:center;justify-content:flex-start;padding-top:4px}
+.picks button{width:54px;height:54px;border-radius:50%;position:relative;transition:transform .12s}
+.picks button canvas{width:100%;height:100%;display:block}
+.picks button[aria-pressed=true]{transform:scale(1.14);filter:drop-shadow(0 0 7px rgba(255,226,150,.85))}
+.side{grid-column:3;grid-row:2/4;position:relative;display:flex;flex-direction:column;justify-content:center;gap:8px;min-width:0}
+.teams{display:grid;gap:7px}
+.team h3{font-size:16px;font-weight:700;margin-bottom:3px}
+.team:nth-child(1) h3{color:#8cc7f2}.team:nth-child(2) h3{color:#f59a86}
+.slots{display:flex;gap:5px}
+.slots button{width:46px;height:46px;border-radius:50%;position:relative}
+.slots button canvas{width:100%;height:100%;display:block}
+.slots button[aria-current=true]::after{content:"You";position:absolute;left:50%;bottom:-4px;transform:translateX(-50%);background:var(--parch);color:var(--pine);font-size:11px;font-weight:700;padding:0 5px;border-radius:7px;line-height:14px}
+.go{height:52px;border-radius:26px;background:linear-gradient(180deg,#f4d27c,#c8912e);color:#2a1c06;font-family:Forum,Georgia,serif;font-size:24px;box-shadow:0 3px 0 #7c5513,0 8px 14px rgba(0,0,0,.3)}
+.go:active{transform:translateY(2px);box-shadow:0 1px 0 #7c5513}
+.note{font-size:13.5px;color:#a6c8ba;line-height:1.15}
+
+.panel{position:absolute;background:rgba(10,36,32,.94);border-radius:14px;box-shadow:0 8px 24px rgba(0,0,0,.45),inset 0 0 0 1.5px rgba(224,181,82,.45)}
+#forge{left:72px;top:116px;width:300px;padding:8px;display:grid;gap:6px}
+#forge button.f{display:grid;grid-template-columns:1fr auto;align-items:center;text-align:left;padding:7px 11px;border-radius:9px;background:rgba(255,255,255,.07);min-height:48px;line-height:1.1}
+#forge button.f:disabled{opacity:.45}
+#forge b{font-size:18px;font-weight:700;color:var(--parch)}
+#forge small{font-size:14px;color:#b8d4c8;display:block}
+#forge .c{font-size:18px;color:var(--brass);font-weight:700}
+
+.over{position:absolute;inset:0;background:rgba(8,28,25,.84);display:flex;align-items:center;justify-content:center;padding:14px 44px}
+.card{display:grid;grid-template-columns:auto 1fr;gap:6px 22px;align-items:center;max-width:620px;width:100%}
+.card h2{font-family:Forum,Georgia,serif;font-size:42px;line-height:1}
+.card canvas{width:150px;height:150px;grid-row:1/5}
+.card p{font-size:17px;line-height:1.2;color:#d9e7dc}
+.card .row{display:flex;gap:10px;margin-top:4px}
+.ghost{height:48px;padding:0 20px;border-radius:24px;font-size:18px;font-weight:600;box-shadow:inset 0 0 0 1.5px var(--patina);color:var(--parch)}
+.card .go{padding:0 26px;height:48px}
+</style>
+</head>
+<body>
+<div id="stage">
+  <canvas id="view"></canvas>
+  <div id="forge" class="panel hide" role="dialog" aria-label="Upgrades"></div>
+  <div id="pause" class="over hide"><div class="card"><div style="grid-column:1/-1"><h2>Paused</h2><div class="row" style="margin-top:14px"><button class="go" id="resume">Resume</button><button class="ghost" id="leave">Leave match</button></div></div></div></div>
+  <div id="end" class="over hide"><div class="card"><canvas id="endcoin" width="300" height="300"></canvas><h2 id="endT"></h2><p id="endS"></p><p id="endM" style="color:var(--brass);font-weight:600"></p><div class="row"><button class="go" id="again">Play again</button><button class="ghost" id="tolobby">Change champion</button></div></div></div>
+  <div id="lobby">
+    <div class="mark"><h1>Mintfall</h1><div class="seg"><span>Bots</span><button data-d="easy">Easy</button><button data-d="normal">Normal</button><button data-d="hard">Hard</button><button id="snd" style="margin-left:8px"></button></div></div>
+    <div class="bigcoin"><canvas id="big" width="520" height="520"></canvas></div>
+    <div class="who"><h2 id="wN"></h2><div class="tag" id="wT"></div><div class="tierbar"><span id="wTier"></span><i><b id="wBar"></b></i></div><div class="abil" id="wA"></div></div>
+    <div class="picks" id="picks"></div>
+    <div class="side"><div class="teams"><div class="team"><h3>Azure</h3><div class="slots" id="s0"></div></div><div class="team"><h3>Cinnabar</h3><div class="slots" id="s1"></div></div></div><p class="note">Tap any open seat to play on that team. Bots fill the rest.</p><button class="go" id="start">Start match</button></div>
+  </div>
+</div>
+<script>/*SIM*/</script>
+<script>/*ART*/</script>
+<script>/*GAME*/</script>
+</body>
+</html>
