@@ -2,7 +2,7 @@
 
 A real-time 4v4 MOBA for phones, in a single HTML page. Every champion, minion and tower is a minted coin.
 
-Open `dist/index.html` to play against bots.
+**[Play it live](https://dianteclark.github.io/CoinMOBA/)** on your phone, against bots.
 
 ## What's here
 
