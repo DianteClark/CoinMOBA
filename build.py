@@ -4,8 +4,15 @@ from pathlib import Path
 root = Path(__file__).parent
 src = root / 'src'
 page = (src / 'template.html').read_text()
-for tag, name in (('/*SIM*/', 'sim.js'), ('/*ART*/', 'art.js'), ('/*GAME*/', 'game.js')):
-    page = page.replace(tag, (src / name).read_text())
+client = '\n'.join((src / 'client' / n).read_text() for n in ('core.js', 'world.js', 'fx.js', 'controls.js', 'hud.js', 'menus.js', 'soundhooks.js', 'zz_boot.js'))
+parts = {
+    '/*SIM*/': (src / 'sim.js').read_text(),
+    '/*ART*/': (src / 'art.js').read_text() + '\n' + (src / 'terrain.js').read_text(),
+    '/*AUDIO*/': (src / 'audio.js').read_text(),
+    '/*CLIENT*/': '(() => {\n' + client + '\n})();',
+}
+for tag, code in parts.items():
+    page = page.replace(tag, code)
 (root / 'dist').mkdir(exist_ok=True)
 (root / 'dist' / 'index.html').write_text(page)
 print(len(page), 'bytes')

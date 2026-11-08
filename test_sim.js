@@ -7,7 +7,7 @@ let tot = 0, blue = 0, mx = 0, mn = 1e9, tk = 0, unf = 0, nan = 0;
 const t0 = Date.now();
 for (let g = 0; g < N; g++) {
   let seed = g * 97 + 5, r = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
-  const sh = () => ids.slice().sort(() => r() - .5).slice(0, 4).map((c, i) => ({ champ: c, name: 'b' + i, tier: 0 }));
+  const sh = () => { const list = ids.slice().sort(() => r() - .5).slice(0, 4), roles = Sim.autoRoles(list); return list.map((c, i) => ({ champ: c, role: roles[i], name: 'b' + i, tier: 0 })); };
   const s = Sim.createMatch({ seed: g + 1, diff, teams: [sh(), sh()] });
   while (!s.over && s.t < 2400) {
     Sim.step(s); s.ev.length = 0;

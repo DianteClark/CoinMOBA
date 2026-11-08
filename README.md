@@ -1,14 +1,15 @@
 # Mintfall
 
-A real-time 4v4 MOBA for phones, in a single HTML page. Every champion, minion and tower is a minted coin.
+A real-time 4v4 superhero MOBA for phones, in a single HTML page. Each match you are randomly a Hero or a Villain, saving the people or terrorizing the city, and everything on the map is a minted coin.
 
 **[Play it live](https://dianteclark.github.io/CoinMOBA/)** on your phone, against bots.
 
 ## What's here
 
-- `src/sim.js`: the whole game (map, champions, minions, towers, bots). It has no browser code, so the same file can run in a Cloudflare Durable Object when online play is added.
-- `src/art.js`: coin, terrain and tree art, all drawn in code.
-- `src/game.js`: rendering, weather and light, touch controls, HUD and lobby.
+- `src/sim.js`: the whole game (map, champions, roles, bots, the people). It has no browser code, so the same file can run in a Cloudflare Durable Object when online play is added.
+- `src/art.js`, `src/terrain.js`: coins, portraits, town and terrain, all drawn in code.
+- `src/audio.js`: generated music and sound, no audio files.
+- `src/client/`: rendering, effects, touch controls, HUD and menus, concatenated into one script.
 - `src/template.html`: page shell and styles.
 - `build.py`: inlines everything into `dist/index.html`.
 
