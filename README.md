@@ -1,4 +1,4 @@
-# Mintfall
+# Flipside: Heroes vs Villains
 
 A real-time 4v4 superhero MOBA for phones, in a single HTML page. Each match you are randomly a Hero or a Villain, saving the people or terrorizing the city, and everything on the map is a minted coin.
 
