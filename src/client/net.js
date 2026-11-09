@@ -52,12 +52,38 @@
 //   {t:'fund'}, {t:'surrender',vote}, {t:'ping',...}.
 //   Net.say({kind:'emote'|'quick', id, team:true|false})  quick-chat through the host; everyone (or just your team) gets 'say'.
 //   Net.send('lobby', obj)           host: to all guests. guest: to host only. Net.sendTo(pid, 'lobby', obj) host: one guest.
+// 11.0 additions
+// Spectators
+//   A joiner who finds all 8 seats taken (any phase) watches: full vision, no seat, no commands. Up to Net.MAX_SPEC (2);
+//   after that they get the normal "room is full" error. If a seat frees in the room phase the longest-waiting spectator takes it.
+//   Net.spectator (bool, this device). Net.room.spectators = [{pid, name, rank, online}]; they are NOT in room.players.
+//   'flip' gets {side:null, heroTeam, spectator:true}. 'draft' arrives read-only (ban/pick/lock do nothing). 'start'(cfg): call startMatch as usual.
+//   In their match G.spectator === true and G.me is the champion being watched (camera, HUD and vision team follow G.me; Art/UI draw
+//   full vision when G.spectator). No input is read and no rewards are given. finishMatch calls showEnd with {spectator:true}.
+//   Net.follow(champIndex)           which of G.s.champs to watch. Net.follow(+1) / Net.follow(-1) with {step:true} as 2nd arg moves through them. 'follow'(champ) after.
+// Modes
+//   Net.setMode(mode)                host, room phase. 'classic'|'duel'|'brawl'|'gold'|'raid'. false if the room doesn't fit it (duel is 1 a side, raid 4 humans, all on room team A). Further joiners spectate.
+//   Net.room.mode, Net.room.teamMax. Net.start() puts mode on the cfg. startMatch passes cfg.mode to Sim.createMatch.
+// Player cards (travel over the room connection; everything received is sanitised but is still other people's text: escape it)
+//   Net.profile({name, rank, card:{title, banner}, pins:[{id, tier}, ...up to 3], stats:{matches, wins, ...up to 12 numbers}})
+//   Net.cardOf(pid)                  {pid, id (device), name, rank, card, pins, stats, code} or null. Works for your own pid and for spectators.
+//   Net.cards                        {pid: that object}. 'card'(pid, card) whenever one arrives or changes. Spectators' cards too.
+// Recent players (save.recent, on this device, updated at every match start)
+//   Net.recent()                     newest first, up to 20: [{id, name, rank, card, pins, stats, code, at (Date.now ms), n (matches together)}].
+//   Net.forgetRecent(id)
+//   code is the room code that friend's device hosts under: Net.join(r.code) gets you in whenever they have a room open.
+//   Net.host() reuses this device's code (save.hostCode) so those stay valid; Net.host({fresh:true}) takes a new one. If the code is busy a new one is used.
+// Rematch (end screen)
+//   Net.canRematch()                 true after a match while the room is alive. Hide the button otherwise (e.g. after 'lost'); offer Recent players instead.
+//   Net.rematch()                    one tap. The host's tap, or every online human's, sends everyone back to the room with the same teams.
+//   'rematch'({ready:[pid,...], need, go}) as votes come in; go:true just before 'room' with phase 'room'. Host then calls Net.flip() as usual (no room screen needed).
+// Play of the Game: see replay.js. Team voice: see voice.js.
 // ============================================================================================
 // Online play over WebRTC with PeerJS, star topology through the host. The host runs the Sim; guests rebuild `s` from snapshots.
 //   reliable channel (PeerJS, JSON): room, draft, commands, events, slow-state deltas
 //   unreliable channel (our own, binary): snapshots, stick input, ping
 const Net = (() => {
-  const PREFIX = 'flipside3-', PROTOCOL = 3, ALPHA = '23456789ABCDEFGHJKMNPQRSTVWXYZ', CODE_LEN = 5, MAX = 8, TEAM_MAX = 4, BACKLOG = 48 * 1024;
+  const PREFIX = 'flipside3-', PROTOCOL = 4, ALPHA = '23456789ABCDEFGHJKMNPQRSTVWXYZ', CODE_LEN = 5, MAX = 8, TEAM_MAX = 4, MAX_SPEC = 2, MODES = ['classic', 'duel', 'brawl', 'gold', 'raid'], RECENT_MAX = 20, CHUNK = 14000, BACKLOG = 48 * 1024;
   const T = { signal: 12000, connect: 20000, hello: 8000, lost: 20000, away: 4000, stall: 1500, ping: 1000, retry: 5, quietIce: 3500, quietHost: 9000, rejoin: 62000, attempt: 9000, retryGap: 1200, hostMissing: 14000 };
   const MSG = {
     server: "Can't reach the matchmaking server. Check your internet, wait a minute and try again.",
@@ -76,8 +102,8 @@ const Net = (() => {
   const FAST = { label: 'flipside-fast', negotiated: true, id: 42, ordered: false, maxRetransmits: 0 };
 
   const api = {
-    MAX, TEAM_MAX, role: null, code: null, connected: false, ping: 0, stalled: false, away: false, reconnecting: false, pid: -1, phase: 'room', room: null, draft: null, stats: null, _fault: null,
-    on, off, profile, host, join, leave, resumable, send, sendTo, say, flip, start, setTeam, swap, shuffle, draftStart, ban, pick, lock, toRoom, me, mySide, attach, hostBefore, hostAfter, guestFrame, hiddenPump,
+    MAX, TEAM_MAX, MAX_SPEC, spectator: false, cards: {}, _voiceOn: false, role: null, code: null, connected: false, ping: 0, stalled: false, away: false, reconnecting: false, pid: -1, phase: 'room', room: null, draft: null, stats: null, _fault: null,
+    on, off, profile, host, join, leave, resumable, send, sendTo, say, flip, start, setTeam, swap, shuffle, draftStart, ban, pick, lock, toRoom, me, mySide, follow, setMode, cardOf, recent, forgetRecent, canRematch, rematch, _voiceSet: voiceSet, _call: placeCall, _sendClip: sendClip, attach, hostBefore, hostAfter, guestFrame, hiddenPump,
   };
   const listeners = Object.create(null);
   function on(type, fn) { const l = listeners[type] || (listeners[type] = []); if (!l.includes(fn)) l.push(fn); }
@@ -107,10 +133,11 @@ const Net = (() => {
   function newCode() { let c = ''; const r = new Uint32Array(CODE_LEN); crypto.getRandomValues(r); for (let i = 0; i < CODE_LEN; i++) c += ALPHA[r[i] % ALPHA.length]; return c; }
   function newToken() { const r = new Uint32Array(3); crypto.getRandomValues(r); return [...r].map(v => v.toString(36)).join(''); }
   function teardown() {
+    if (peer) emit('_down');
     disarm(); clearInterval(beat); beat = 0; clearInterval(draftTimer); draftTimer = 0; clearTimeout(retry.timer); session++;
     for (const l of links.slice()) killLink(l);
     if (up) { killLink(up); up = null; }
-    links = []; players = []; heroTeam = null; retry = { timer: 0, until: 0, missingSince: 0 };
+    links = []; players = []; spectators = []; roomMode = 'classic'; rematchVotes = new Set(); hostVLast = ''; api._voiceOn = false; api.spectator = false; api.cards = {}; heroTeam = null; retry = { timer: 0, until: 0, missingSince: 0 };
     if (peer) { try { peer.destroy(); } catch (e) { } }
     peer = null; api.connected = false; api.ping = 0; api.stalled = false; api.away = false; api.reconnecting = false; api.pid = -1; api.phase = 'room'; api.room = null; api.draft = null; phase = 'idle';
   }
@@ -138,7 +165,8 @@ const Net = (() => {
   // The host keeps its signalling socket alive all match: a dropped guest needs it to find the room again.
   function watchSignal(sid, p) {
     p.on('error', e => peerError(sid, e));
-    p.on('disconnected', () => { if (sid === session && !p.destroyed && (api.role === 'host' || !api.connected)) setTimeout(() => { if (sid === session && p.disconnected && !p.destroyed) try { p.reconnect(); } catch (e) { } }, 1500); });
+    p.on('call', c => { if (sid === session) emit('_call', c); });
+    p.on('disconnected', () => { if (sid === session && !p.destroyed && (api.role === 'host' || !api.connected || api._voiceOn)) setTimeout(() => { if (sid === session && p.disconnected && !p.destroyed) try { p.reconnect(); } catch (e) { } }, 1500); });
   }
 
   function witness(st, b) { let h = st.h || 0; const j = JSON.stringify(b); for (let i = 0; i < j.length; i++) h = Math.imul(h ^ j.charCodeAt(i), 16777619); st.h = h >>> 0; st.hn = (st.hn || 0) + 1; (st.hlog || (st.hlog = {}))[st.hn] = st.h; }
@@ -146,11 +174,27 @@ const Net = (() => {
   // ---------- profile and seat memory ----------
   const SEAT_KEY = 'flipside.seat';
   function clean(v, n) { return typeof v === 'string' ? v.slice(0, n) : v === undefined || v === null ? undefined : String(v).slice(0, n); }
-  function cleanProfile(o) { return { name: (clean(o && o.name, 18) || '').trim(), rank: isFinite(o && o.rank) ? +o.rank : 1000 }; }
+  function cleanProfile(o) {
+    o = o && typeof o === 'object' ? o : {};
+    const out = { name: (clean(o.name, 18) || '').trim(), rank: isFinite(o.rank) ? +o.rank : 1000, id: clean(o.id, 24) || '', code: validCode(o.code) ? o.code : '' };
+    const c = o.card && typeof o.card === 'object' ? o.card : {};
+    out.card = { title: clean(c.title, 40) || '', banner: clean(c.banner, 40) || '' };
+    out.pins = (Array.isArray(o.pins) ? o.pins : []).slice(0, 3).map(q => (q && typeof q === 'object' ? { id: clean(q.id, 40) || '', tier: Math.max(0, Math.min(2, q.tier | 0)) } : null)).filter(q => q && q.id);
+    out.stats = {};
+    if (o.stats && typeof o.stats === 'object') for (const k of Object.keys(o.stats).slice(0, 12)) { const v = o.stats[k]; if (typeof v === 'number' && isFinite(v)) out.stats[clean(k, 24)] = v; }
+    return out;
+  }
+  const validCode = c => typeof c === 'string' && c.length === CODE_LEN && [...c].every(ch => ALPHA.includes(ch));
+  function deviceId() { if (!save.netId) { save.netId = newToken(); persist(); } return save.netId; }
+  function hostCode() { if (!validCode(save.hostCode)) { save.hostCode = newCode(); persist(); } return save.hostCode; }
+  const wireProfile = () => Object.assign({}, myProfile, { id: deviceId(), code: hostCode() });
+  function setCard(pid, prof) { const c = { pid, id: prof.id, name: prof.name, rank: prof.rank, card: prof.card, pins: prof.pins, stats: prof.stats, code: prof.code }; api.cards[pid] = c; emit('card', pid, c); return c; }
+  function shareCard(pid, prof) { setCard(pid, prof); broadcast(['C', { [pid]: api.cards[pid] }]); }
+  function cardOf(pid) { return api.cards[pid] || null; }
   function profile(o) {
     Object.assign(myProfile, cleanProfile(Object.assign({}, myProfile, o)));
-    if (api.role === 'host') { const m = playerOf(0); if (m) { m.name = myProfile.name || 'Host'; m.rank = myProfile.rank; pushRoom(); } }
-    else if (up && up.linked) sendRel(up, ['P', myProfile]);
+    if (api.role === 'host') { const m = playerOf(0); if (m) { m.name = myProfile.name || 'Host'; m.rank = myProfile.rank; shareCard(0, Object.assign(wireProfile(), { name: m.name })); pushRoom(); } }
+    else if (up && up.linked) sendRel(up, ['P', wireProfile()]);
   }
   function seatMemory() { try { const r = JSON.parse(localStorage.getItem(SEAT_KEY) || 'null'); if (r && r.code && r.token) return r; } catch (e) { } return null; }
   function remember(token) { try { localStorage.setItem(SEAT_KEY, JSON.stringify({ code: api.code, token, at: Date.now() })); } catch (e) { } }
@@ -158,11 +202,14 @@ const Net = (() => {
   function resumable() { const r = seatMemory(); return r && Date.now() - r.at < T.rejoin - 2000 && !api.connected ? r.code : null; }
 
   // ---------- starting a session ----------
-  function host() {
-    teardown(); api.role = 'host'; tries = 0; api.stats = freshStats(); openRoom();
+  function host(o) {
+    teardown(); api.role = 'host'; tries = 0; api.stats = freshStats();
+    if (o && o.fresh) { save.hostCode = newCode(); persist(); }
+    openRoom();
   }
   function openRoom() {
-    const code = newCode(), sid = session, p = makePeer(PREFIX + code); if (!p) return;
+    if (tries) { save.hostCode = newCode(); persist(); } // the usual code is busy
+    const code = hostCode(), sid = session, p = makePeer(PREFIX + code); if (!p) return;
     peer = p; api.code = code; phase = 'signal'; nextPid = 1;
     arm(T.signal, () => { if (sid === session) fail(MSG.server); });
     watchSignal(sid, p);
@@ -170,6 +217,7 @@ const Net = (() => {
       if (sid !== session) return; disarm(); phase = 'room';
       players = [{ pid: 0, name: myProfile.name || 'Host', rank: myProfile.rank, team: 0, host: true, online: true, ping: 0, token: null, link: null, seat: -1, lostAt: 0 }];
       api.pid = 0; clearInterval(beat); beat = setInterval(heartbeat, T.ping);
+      setCard(0, Object.assign(wireProfile(), { name: players[0].name }));
       refreshRoom(); emit('open', code); emit('room', api.room);
     });
     p.on('connection', c => {
@@ -205,7 +253,7 @@ const Net = (() => {
       openFast(sid, l);
       if (api.role === 'guest') {
         const mem = seatMemory();
-        sendRel(l, ['H', PROTOCOL, mem && mem.code === api.code ? mem.token : '', myProfile]);
+        sendRel(l, ['H', PROTOCOL, mem && mem.code === api.code ? mem.token : '', wireProfile()]);
         arm(T.hello, () => { if (sid === session && !api.connected && !api.reconnecting) fail(MSG.direct); });
       }
     });
@@ -256,24 +304,43 @@ const Net = (() => {
 
   // ---------- room ----------
   const playerOf = pid => players.find(p => p.pid === pid);
-  function me() { return api.room && api.room.players.find(p => p.pid === api.pid) || null; }
+  function me() { const r = api.room; return r && (r.players.find(p => p.pid === api.pid) || (r.spectators || []).find(p => p.pid === api.pid)) || null; }
   function mySide() { const m = me(); return m ? m.side : null; }
+  let spectators = [], roomMode = 'classic', rematchVotes = new Set(), hostVLast = '';
+  const teamMax = () => roomMode === 'duel' ? 1 : TEAM_MAX, seatsMax = () => roomMode === 'raid' ? TEAM_MAX : teamMax() * 2, teamFor = () => roomMode === 'raid' ? 0 : teamCount(0) <= teamCount(1) ? 0 : 1;
+  // A seat opened up in the room: the longest-waiting spectator takes it.
+  function promote() {
+    if (api.role !== 'host' || api.phase !== 'room') return;
+    while (spectators.length && players.length < seatsMax()) { const p = spectators.shift(); p.spec = false; p.team = teamFor(); p.side = undefined; players.push(p); }
+  }
+  function setMode(m) {
+    if (api.role !== 'host' || api.phase !== 'room' || !MODES.includes(m)) return false;
+    const cap = m === 'duel' ? 1 : TEAM_MAX; if (teamCount(0) > cap || teamCount(1) > cap || (m === 'raid' && players.length > TEAM_MAX)) return false;
+    roomMode = m; if (m === 'raid') for (const p of players) p.team = 0; // co-op: everyone on one side
+    promote(); pushRoom(); return true;
+  }
+  function follow(i, o) {
+    if (!api.spectator || !G || !G.spectator) return;
+    const n = G.s.champs.length, cur = G.s.champs.indexOf(G.me), k = o && o.step ? ((cur + i) % n + n) % n : i | 0;
+    if (k < 0 || k >= n || !G.s.champs[k]) return;
+    G.me = G.s.champs[k]; emit('follow', G.me);
+  }
   function sideOf(team) { return heroTeam === null ? null : team === heroTeam ? 0 : 1; }
   function refreshRoom() {
-    api.room = { code: api.code, phase: api.phase, heroTeam, max: MAX, players: players.map(p => ({ pid: p.pid, name: p.name, rank: p.rank, team: p.team, side: sideOf(p.team), host: !!p.host, online: !!p.online, ping: Math.round(p.ping || 0) })) };
+    api.room = { code: api.code, phase: api.phase, heroTeam, max: MAX, mode: roomMode, teamMax: teamMax(), spectators: spectators.map(p => ({ pid: p.pid, name: p.name, rank: p.rank, online: true, spectator: true, team: -1, side: null })), players: players.map(p => ({ pid: p.pid, name: p.name, rank: p.rank, team: p.team, side: sideOf(p.team), host: !!p.host, online: !!p.online, ping: Math.round(p.ping || 0) })) };
     return api.room;
   }
-  function pushRoom() { if (api.role !== 'host') return; broadcast(['R', refreshRoom()]); emit('room', api.room); }
+  function pushRoom() { if (api.role !== 'host') return; broadcast(['R', refreshRoom()]); emit('room', api.room); pushVoice(); }
   const teamCount = t => players.filter(p => p.team === t).length;
   function setTeam(pid, team) {
     if (api.role !== 'host' || api.phase !== 'room') return false;
-    const p = playerOf(pid); if (!p || (team !== 0 && team !== 1)) return false;
-    if (p.team !== team && teamCount(team) >= TEAM_MAX) return false;
+    const p = playerOf(pid); if (!p || (team !== 0 && team !== 1) || (roomMode === 'raid' && team !== 0)) return false;
+    if (p.team !== team && teamCount(team) >= teamMax()) return false;
     p.team = team; pushRoom(); return true;
   }
-  function swap(a, b) { if (api.role !== 'host' || api.phase !== 'room') return false; const p = playerOf(a), q = playerOf(b); if (!p || !q) return false; const t = p.team; p.team = q.team; q.team = t; pushRoom(); return true; }
+  function swap(a, b) { if (api.role !== 'host' || api.phase !== 'room' || roomMode === 'raid') return false; const p = playerOf(a), q = playerOf(b); if (!p || !q) return false; const t = p.team; p.team = q.team; q.team = t; pushRoom(); return true; }
   function shuffle() {
-    if (api.role !== 'host' || api.phase !== 'room') return;
+    if (api.role !== 'host' || api.phase !== 'room' || roomMode === 'raid') return;
     const list = players.slice(); for (let i = list.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [list[i], list[j]] = [list[j], list[i]]; }
     const first = Math.random() < .5 ? 0 : 1; list.forEach((p, i) => { p.team = i % 2 === 0 ? first : 1 - first; }); pushRoom();
   }
@@ -288,7 +355,8 @@ const Net = (() => {
   function toRoom() {
     if (api.role !== 'host') return;
     clearInterval(draftTimer); draftTimer = 0; draft = null; api.draft = null; api.phase = 'room'; heroTeam = null;
-    players = players.filter(p => p.online || p.host);
+    rematchVotes = new Set();
+    players = players.filter(p => p.online || p.host); promote();
     for (const p of players) { p.seat = -1; p.lostAt = 0; }
     pushRoom();
   }
@@ -361,11 +429,11 @@ const Net = (() => {
     pushDraft();
   }
   function draftLock(p) { const d = draft; if (!d || d.phase !== 'pick') return; const cur = d.picks[p.pid]; if (!cur || !cur.champ) return; cur.locked = true; pushDraft(); draftTick(); }
-  function ban(kit) { if (api.role === 'host') draftVote(playerOf(0), kit); else if (up) sendRel(up, ['D', 'b', kit]); }
-  function pick(o) { if (api.role === 'host') draftPick(playerOf(0), o); else if (up) sendRel(up, ['D', 'p', o]); }
-  function lock() { if (api.role === 'host') draftLock(playerOf(0)); else if (up) sendRel(up, ['D', 'l']); }
+  function ban(kit) { if (api.spectator) return; if (api.role === 'host') draftVote(playerOf(0), kit); else if (up) sendRel(up, ['D', 'b', kit]); }
+  function pick(o) { if (api.spectator) return; if (api.role === 'host') draftPick(playerOf(0), o); else if (up) sendRel(up, ['D', 'p', o]); }
+  function lock() { if (api.spectator) return; if (api.role === 'host') draftLock(playerOf(0)); else if (up) sendRel(up, ['D', 'l']); }
   function onDraftMsg(l, m) {
-    if (!l.player) return;
+    if (!l.player || l.player.spec) return;
     if (m[1] === 'b') draftVote(l.player, m[2]); else if (m[1] === 'p') draftPick(l.player, m[2]); else if (m[1] === 'l') draftLock(l.player);
   }
   function applyDraftWire(w) {
@@ -386,8 +454,8 @@ const Net = (() => {
       const used = new Set(seats.map(x => x.champ)), pool = kitsOf(side).filter(k => !used.has(k) && !d.bans[side].includes(k));
       for (let i = pool.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [pool[i], pool[j]] = [pool[j], pool[i]]; }
       // Bots fill the roles people left open with kits that suit them.
-      for (const r of ROLES.filter(r => !seats.some(x => x.role === r))) { if (seats.length >= TEAM_MAX) break; let i = pool.findIndex(k => (Sim.KITS[k].fit[r] || 0) >= 2); if (i < 0) i = pool.length - 1; seats.push({ champ: pool.splice(i, 1)[0], role: r, tier: Math.min(5, Math.floor(Math.random() * Math.random() * 6)), human: false, name: BOTS[nameI++ % BOTS.length] }); }
-      while (seats.length < TEAM_MAX) seats.push({ champ: pool.pop(), role: undefined, tier: Math.min(5, Math.floor(Math.random() * Math.random() * 6)), human: false, name: BOTS[nameI++ % BOTS.length] });
+      for (const r of ROLES.filter(r => !seats.some(x => x.role === r))) { if (seats.length >= teamMax()) break; let i = pool.findIndex(k => (Sim.KITS[k].fit[r] || 0) >= 2); if (i < 0) i = pool.length - 1; seats.push({ champ: pool.splice(i, 1)[0], role: r, tier: Math.min(5, Math.floor(Math.random() * Math.random() * 6)), human: false, name: BOTS[nameI++ % BOTS.length] }); }
+      while (seats.length < teamMax()) seats.push({ champ: pool.pop(), role: undefined, tier: Math.min(5, Math.floor(Math.random() * Math.random() * 6)), human: false, name: BOTS[nameI++ % BOTS.length] });
       // Roles: keep what people chose, then give each remaining seat its best free role.
       const free = ROLES.filter(r => !seats.some(x => x.role === r));
       for (const x of seats) if (!x.role) { let best = free[0], top = -1; for (const r of free) { const f = Sim.KITS[x.champ].fit[r]; if (f > top) { top = f; best = r; } } x.role = best; free.splice(free.indexOf(best), 1); }
@@ -395,19 +463,45 @@ const Net = (() => {
       bots.forEach((x, i) => { x.skill = skills[i]; });
       return seats;
     });
-    return { seed, teams };
+    return { seed, teams, mode: roomMode };
   }
   function start(cfg) {
     if (api.role !== 'host') return;
     if (!cfg) { if (!draft || draft.phase !== 'done') return; cfg = buildCfg(); }
     if (cfg.seed === undefined) cfg.seed = Date.now() & 0xffffff;
-    api.phase = 'match'; matchCfg = cfg; clearInterval(draftTimer); draftTimer = 0;
+    api.phase = 'match'; matchCfg = cfg; clearInterval(draftTimer); draftTimer = 0; rematchVotes = new Set();
+    rememberMatch(cfg);
     pushRoom();
     broadcast(['S', cfg]);
     later(() => emit('start', cfg));
   }
+  // ---------- recent players, rematch ----------
+  function rememberMatch(cfg) {
+    const mine = deviceId(), list = (save.recent || []).slice(), now = Date.now();
+    for (const seat of cfg.teams.flat()) {
+      if (!seat.human || seat.pid === undefined || seat.pid === api.pid) continue;
+      const c = api.cards[seat.pid]; if (!c || !c.id || c.id === mine) continue;
+      const i = list.findIndex(r => r.id === c.id), old = i >= 0 ? list.splice(i, 1)[0] : null;
+      list.unshift({ id: c.id, name: c.name || seat.name || 'Player', rank: c.rank, card: c.card, pins: c.pins, stats: c.stats, code: c.code || (old && old.code) || '', at: now, n: (old ? old.n : 0) + 1 });
+    }
+    save.recent = list.slice(0, RECENT_MAX); persist();
+  }
+  function recent() { return (save.recent || []).slice(); }
+  function forgetRecent(id) { save.recent = (save.recent || []).filter(r => r.id !== id); persist(); }
+  function canRematch() { return !!api.role && !api.spectator && api.pid >= 0 && api.phase === 'match' && !api.reconnecting && !!G && !!G.net && !G.net.dead && !!G.s.over && (api.role === 'host' || !!(up && up.linked)); }
+  function rematch() {
+    if (!canRematch()) return false;
+    if (api.role === 'host') { rematchVote(0); return true; }
+    sendRel(up, ['r']); return true;
+  }
+  function rematchVote(pid) {
+    rematchVotes.add(pid);
+    const online = players.filter(p => p.online), ready = online.filter(p => rematchVotes.has(p.pid)).map(p => p.pid), go = pid === 0 || ready.length >= online.length, o = { ready, need: online.length, go };
+    broadcast(['r', o]); emit('rematch', o);
+    if (go) toRoom();
+  }
   function say(o) {
-    if (!o) return;
+    if (!o || api.spectator) return;
     if (api.role === 'guest') { if (up) sendRel(up, ['y', o]); return; }
     if (api.role === 'host') relaySay(playerOf(0), o);
   }
@@ -425,22 +519,27 @@ const Net = (() => {
     if (!Array.isArray(m)) return;
     switch (m[0]) {
       case 'H': if (api.role === 'host' && !l.linked) onHello(l, m); return;
-      case 'W': if (api.role === 'guest' && !l.linked) { if (m[1] !== PROTOCOL) { fail(MSG.version); return; } welcomed(l, m[2], m[3]); } return;
+      case 'W': if (api.role === 'guest' && !l.linked) { if (m[1] !== PROTOCOL) { fail(MSG.version); return; } api.spectator = !!m[4]; welcomed(l, m[2], m[3]); } return;
       case 'X': if (!l.linked) { if (api.reconnecting) { hostGone(MSG.hostLost); return; } fail(m[1] === 'full' ? MSG.busy : m[1] === 'started' ? MSG.started : MSG.version); } return;
-      case 'P': if (api.role === 'host' && l.player) { const p = cleanProfile(Object.assign({ name: l.player.name, rank: l.player.rank }, m[1])); l.player.name = p.name || l.player.name; l.player.rank = p.rank; pushRoom(); } return;
+      case 'P': if (api.role === 'host' && l.player) { const p = cleanProfile(Object.assign({ name: l.player.name, rank: l.player.rank }, m[1])); l.player.name = p.name || l.player.name; l.player.rank = p.rank; shareCard(l.player.pid, Object.assign(p, { name: l.player.name })); pushRoom(); } return;
+      case 'C': if (api.role === 'guest' && m[1] && typeof m[1] === 'object') for (const k of Object.keys(m[1])) setCard(+k, cleanProfile(m[1][k])); return;
       case 'L': emit('lobby', m[1], api.role === 'host' && l.player ? l.player.pid : 0); return;
-      case 'R': if (api.role === 'guest') { api.room = m[1]; api.phase = m[1].phase; heroTeam = m[1].heroTeam; emit('room', api.room); } return;
-      case 'F': if (api.role === 'guest') { heroTeam = m[1]; const me_ = players.length ? null : me(); emit('flip', { side: m[2] ? m[1] : (mySide() === null ? (me_ ? me_.side : 0) : mySide()), heroTeam: m[1] }); } return;
+      case 'R': if (api.role === 'guest') { api.room = m[1]; api.phase = m[1].phase; heroTeam = m[1].heroTeam; api.spectator = (m[1].spectators || []).some(p => p.pid === api.pid); emit('room', api.room); } return;
+      case 'F': if (api.role === 'guest') { heroTeam = m[1]; if (api.spectator) { emit('flip', { side: null, heroTeam: m[1], spectator: true }); return; } const me_ = players.length ? null : me(); emit('flip', { side: m[2] ? m[1] : (mySide() === null ? (me_ ? me_.side : 0) : mySide()), heroTeam: m[1] }); } return;
       case 'D': if (api.role === 'host') onDraftMsg(l, m); return;
       case 'd': if (api.role === 'guest') applyDraftWire(m[1]); return;
       case 'S': if (api.role === 'guest') onStart(m[1], m[2]); return;
       case 'B': if (api.role === 'guest') { hostGone(api.phase === 'match' && G && G.net && !G.ended ? MSG.hostLeft : MSG.roomClosed); } else if (l.player) dropLink(l, true); return;
-      case 'y': if (api.role === 'host') { if (!l.player) return; const n = now_(); l.sayT = l.sayT.filter(t => n - t < 4000); if (l.sayT.length >= 6) return; l.sayT.push(n); relaySay(l.player, m[1] || {}); } else emit('say', m[1]); return;
+      case 'y': if (api.role === 'host') { if (!l.player || l.player.spec) return; const n = now_(); l.sayT = l.sayT.filter(t => n - t < 4000); if (l.sayT.length >= 6) return; l.sayT.push(n); relaySay(l.player, m[1] || {}); } else emit('say', m[1]); return;
       case 'n': emit('notice', m[1]); return;
       case 'v': if (api.role === 'host') { l.visible = !!m[1]; if (!l.visible && !l.hiddenAt) l.hiddenAt = now_(); } return;
-      case 'c': if (api.role === 'host') { api.stats.cmdsIn++; l.cmdq.push(m[1]); } return;
+      case 'c': if (api.role === 'host' && l.player && !l.player.spec) { api.stats.cmdsIn++; l.cmdq.push(m[1]); } return;
       case 's': if (api.role === 'guest') { if (G && G.net) Sim.applySlow(G.s, m[1]); else earlySlow.push(m[1]); } return;
-      case 'e': if (api.role === 'guest') for (let i = 1; i < m.length; i++) { const batch = m[i]; api.stats.evIn += batch.length - 1; if (api._fault) witness(api.stats, batch); for (let j = 1; j < batch.length; j++) pending.push({ t: batch[0], e: Sim.unpackEvent(batch[j]) }); } return;
+      case 'e': if (api.role === 'guest') for (let i = 1; i < m.length; i++) { const batch = m[i]; api.stats.evIn += batch.length - 1; if (api._fault) witness(api.stats, batch); for (let j = 1; j < batch.length; j++) { const e = Sim.unpackEvent(batch[j]); pending.push({ t: batch[0], e }); Replay.guestEvent(batch[0], e); } } return;
+      case 'V': if (api.role === 'host' && l.player && !l.player.spec) { l.player.voice = m[1] ? l.conn.peer : null; pushVoice(); } return;
+      case 'u': if (api.role === 'guest') emit('_voice', Array.isArray(m[1]) ? m[1] : []); return;
+      case 'r': if (api.role === 'guest') emit('rematch', m[1]); else if (l.player && !l.player.spec && canRematch()) rematchVote(l.player.pid); return;
+      case 'Q': if (api.role === 'guest') Replay.chunk(m[1], m[2], m[3], m[4]); return;
       case 'f': { const bin = atob(m[1]), a = new Uint8Array(bin.length); for (let i = 0; i < bin.length; i++) a[i] = bin.charCodeAt(i); onFast(l, a.buffer); return; }
     }
   }
@@ -449,7 +548,7 @@ const Net = (() => {
     if (!(buf instanceof ArrayBuffer) || !buf.byteLength) return;
     const type = new Uint8Array(buf)[0];
     st.bytesIn += buf.byteLength;
-    if (type === 0xF3) { if (api.role === 'guest' && G && G.net) { let fr; try { fr = Sim.decodeSnapshot(buf); } catch (e) { st.snapErrs++; return; } if (fr) addFrame(fr); } return; }
+    if (type === 0xF3) { if (api.role === 'guest' && G && G.net) { let fr; try { fr = Sim.decodeSnapshot(buf); } catch (e) { st.snapErrs++; return; } if (fr) { addFrame(fr); Replay.guestSnap(fr.tick, buf); } } return; }
     if (type === 1) { if (api.role === 'host') onInput(l, buf); return; }
     if (type === 2) { const a = new Uint8Array(buf); a[0] = 3; sendFast(l, a.buffer); return; }
     if (type === 3) { const rtt = now_() - l.pingAt; if (rtt >= 0 && rtt < 5000) { l.rtt = l.rtt ? l.rtt * .7 + rtt * .3 : rtt; if (l.player) l.player.ping = l.rtt; api.ping = api.role === 'host' ? links.reduce((a, x) => a + x.rtt, 0) / Math.max(1, links.length) : l.rtt; } return; }
@@ -466,8 +565,9 @@ const Net = (() => {
       else killLink(p.link);
     }
     if (p) {
-      p.link = l; l.player = p; p.online = true; p.name = prof.name || p.name; p.rank = prof.rank;
+      p.link = l; l.player = p; p.online = true; p.voice = null; p.name = prof.name || p.name; p.rank = prof.rank;
       l.linked = true; api.connected = true; sendRel(l, ['W', PROTOCOL, p.pid, p.token]);
+      sendRel(l, ['C', api.cards]); shareCard(p.pid, Object.assign(prof, { name: p.name }));
       sendRel(l, ['R', refreshRoom()]);
       if (draft && api.phase === 'draft') sendRel(l, ['d', draftWire()]);
       if (api.phase === 'match' && matchCfg && G && G.net && !G.ended) { sendRel(l, ['S', matchCfg, 1]); sendRel(l, ['s', Sim.slowDiff(null, Sim.slowFlat(G.s))]); seatBot(p, false); }
@@ -475,14 +575,52 @@ const Net = (() => {
       pushRoom(); emit('peer', p.pid);
       return;
     }
+    if (players.length >= (api._seatCap || seatsMax())) { // _seatCap: test-only, to reach the spectator path on small rigs
+      if (spectators.length >= MAX_SPEC) { sendRel(l, ['X', 'full']); setTimeout(() => killLink(l), 400); return; }
+      addSpectator(l, prof); return;
+    }
     if (api.phase !== 'room') { sendRel(l, ['X', 'started']); setTimeout(() => killLink(l), 400); return; }
-    if (players.length >= MAX) { sendRel(l, ['X', 'full']); setTimeout(() => killLink(l), 400); return; }
-    const t = teamCount(0) <= teamCount(1) ? 0 : 1;
+    const t = teamFor();
     const pid = nextPid++;
     p = { pid, name: prof.name || `Player ${pid + 1}`, rank: prof.rank, team: t, host: false, online: true, ping: 0, token: newToken(), link: l, seat: -1, lostAt: 0 };
     players.push(p); l.player = p; l.linked = true; api.connected = true;
     sendRel(l, ['W', PROTOCOL, pid, p.token]);
+    sendRel(l, ['C', api.cards]); shareCard(pid, Object.assign(prof, { name: p.name }));
     pushRoom(); emit('peer', pid);
+  }
+  function addSpectator(l, prof) {
+    const pid = nextPid++, p = { pid, name: prof.name || `Spectator ${pid}`, rank: prof.rank, team: -1, spec: true, host: false, online: true, ping: 0, token: newToken(), link: l, seat: -1, lostAt: 0 };
+    spectators.push(p); l.player = p; l.linked = true; api.connected = true;
+    sendRel(l, ['W', PROTOCOL, pid, p.token, 1]);
+    sendRel(l, ['C', api.cards]); shareCard(pid, Object.assign(prof, { name: p.name }));
+    sendRel(l, ['R', refreshRoom()]);
+    if (draft && api.phase === 'draft') sendRel(l, ['d', draftWire()]);
+    if (api.phase === 'match' && matchCfg && G && G.net && !G.ended) { sendRel(l, ['S', matchCfg, 1]); sendRel(l, ['s', Sim.slowDiff(null, Sim.slowFlat(G.s))]); }
+    pushRoom(); emit('peer', pid);
+  }
+  // ---------- voice roster: the host tells each team who has voice on; the calls themselves are direct (voice.js) ----------
+  function voiceSet(on) {
+    api._voiceOn = !!on;
+    if (api.role === 'host') { const m = playerOf(0); if (m) { m.voice = on && peer ? peer.id : null; pushVoice(); } }
+    else if (up && up.linked) sendRel(up, ['V', on ? 1 : 0]);
+  }
+  function pushVoice() {
+    if (api.role !== 'host') return;
+    for (const t of [0, 1]) { // raid: everyone is already on team 0
+      const list = players.filter(p => p.team === t && p.voice && p.online).map(p => ({ pid: p.pid, peer: p.voice, name: p.name })), j = JSON.stringify(list);
+      for (const p of players) {
+        if (p.team !== t) continue;
+        if (p.host) { if (hostVLast !== j) { hostVLast = j; emit('_voice', list); } }
+        else if (p.link && p.link.linked && p.link.vlast !== j) { p.link.vlast = j; sendRel(p.link, ['u', list]); }
+      }
+    }
+  }
+  function placeCall(id, stream, opts) { if (!peer || peer.destroyed || !peer.open) return null; try { return peer.call(id, stream, opts); } catch (e) { return null; } }
+  // Play of the Game: the host's clip goes out in pieces small enough for any browser's data channel.
+  function sendClip(id, json) {
+    const n = Math.max(1, Math.ceil(json.length / CHUNK)), sid = session, to = links.filter(l => l.linked);
+    let i = 0;
+    (function next() { if (sid !== session) return; const m = ['Q', id, i, n, json.slice(i * CHUNK, (i + 1) * CHUNK)]; for (const l of to) if (l.linked) sendRel(l, m); if (++i < n) setTimeout(next, 25); })();
   }
   function noticeAll(n) {
     const pl = playerOf(n.pid), kind = n.kind === 'seatlost' ? 'seatlost' : n.kind === 'left' || n.kind === 'away' ? 'gone' : 'back';
@@ -500,8 +638,9 @@ const Net = (() => {
   // Host: a guest is gone. In a room they simply leave; in a draft or match they keep their seat for the rejoin window.
   function dropLink(l, said) {
     const p = l.player; killLink(l); if (!p) return;
-    p.link = null; p.online = false; p.lostAt = now_();
-    if (api.phase === 'room') { players = players.filter(q => q !== p); }
+    if (p.spec) { spectators = spectators.filter(q => q !== p); delete api.cards[p.pid]; pushRoom(); return; }
+    p.link = null; p.online = false; p.lostAt = now_(); p.voice = null;
+    if (api.phase === 'room') { players = players.filter(q => q !== p); delete api.cards[p.pid]; promote(); }
     else if (api.phase === 'match') seatBot(p, true);
     noticeAll({ kind: 'left', pid: p.pid, name: p.name, said: !!said });
     pushRoom();
@@ -543,7 +682,7 @@ const Net = (() => {
     disarm(); l.linked = true; l.lastHeard = now_(); api.connected = true; phase = 'live'; api.pid = pid; seatToken = token; api.code = api.code; remember(token);
     clearInterval(beat); beat = setInterval(heartbeat, T.ping);
     const back = api.reconnecting; api.reconnecting = false;
-    if (back) { clearTimeout(retry.timer); retry.until = 0; retry.missingSince = 0; if (G && G.net) guestRelink(); emit('reconnected'); }
+    if (back) { clearTimeout(retry.timer); retry.until = 0; retry.missingSince = 0; if (G && G.net) guestRelink(); if (api._voiceOn) sendRel(l, ['V', 1]); emit('reconnected'); }
     else { emit('peer', pid); }
   }
 
@@ -604,6 +743,7 @@ const Net = (() => {
   let worker = null, hiddenLast = 0, matchCfg = null, prevSlow = null;
   // ---------- match links, guest side ----------
   let seatIdx = -1, short = false, frames = [], clockOff = null, delay = 3.2, pending = [], earlySlow = [], seq = 0, hist = [], ex = 0, ey = 0, srvX = 0, srvY = 0, srvDriven = false, reconcileHold = 0, pendCd = [0, 0, 0], pendRecast = [0, 0, 0], chargeLocal = 0, chargeBlock = 0, lastFrameAt = 0, inHist = [], aimSend = null, overShown = false, reseat = false;
+  const minDelay = () => (api.spectator ? 7 : 3.2); // spectators get a slower stream
   const nearer = (a, b) => ((a - b) & 0xffff) < 0x8000 && a !== b;
 
   function seatChamp(p) { return G && p && p.seat >= 0 ? G.s.champs[p.seat] : null; }
@@ -613,9 +753,9 @@ const Net = (() => {
   function attach() {
     const s = G.s, role = G.net.role;
     if (!api.stats) api.stats = freshStats();
-    localCast = []; frames = []; clockOff = null; delay = 3.2; hist = []; ex = ey = 0; seq = 0; srvDriven = false; pendCd = [0, 0, 0]; pendRecast = [0, 0, 0]; chargeLocal = 0; chargeBlock = 0; lastFrameAt = 0; overShown = false;
+    localCast = []; frames = []; clockOff = null; delay = minDelay(); hist = []; ex = ey = 0; seq = 0; srvDriven = false; pendCd = [0, 0, 0]; pendRecast = [0, 0, 0]; chargeLocal = 0; chargeBlock = 0; lastFrameAt = 0; overShown = false;
     if (role === 'guest') {
-      seatIdx = s.champs.indexOf(G.me); pending = [];
+      seatIdx = api.spectator ? -1 : s.champs.indexOf(G.me); pending = [];
       for (const d of earlySlow) Sim.applySlow(s, d); earlySlow = [];
       reseat = !!G.cfg.rejoin;
       if (G.cfg.rejoin) G.intro = 0;
@@ -692,8 +832,8 @@ const Net = (() => {
     }
   }
   function hostAfter() {
-    const s = G.s, st = api.stats, live = links.filter(l => l.linked && l.player && l.player.seat >= 0);
-    if (!live.length) return;
+    const s = G.s, st = api.stats, live = links.filter(l => l.linked && l.player && l.player.seat >= 0), specs = links.filter(l => l.linked && l.player && l.player.spec);
+    if (!live.length && !specs.length) return;
     if (s.ev.length) {
       st.evOut += s.ev.length;
       const byTeam = [null, null];
@@ -703,6 +843,7 @@ const Net = (() => {
         const b = byTeam[t], extra = packOwnEvents(s, s.champs[l.player.seat].id);
         if (b.length || extra.length) { const row = extra.length ? [s.tick, ...b, ...extra] : [s.tick, ...b]; l.evq.push(row); if (api._fault) witness(st, row); }
       }
+      if (specs.length) { const b = packEvents(s, -1); if (b.length) { const row = [s.tick, ...b]; for (const l of specs) l.evq.push(row); } }
     }
     // 7 guests is a lot of upload for a phone, so bigger rooms trade a little update rate for it, staggered across ticks.
     const big = live.length > 3;
@@ -715,9 +856,16 @@ const Net = (() => {
       st.snapsOut++; st.snapSum += buf.byteLength; st.maxSnap = Math.max(st.maxSnap, buf.byteLength);
       sendFast(l, buf);
     });
+    // Spectators see everything, at a gentler rate: a full-vision snapshot is the biggest thing the host sends.
+    if (s.tick % 3 === 0 || s.over) for (const l of specs) {
+      if (l.evq.length) { sendRel(l, ['e', ...l.evq]); l.evq = []; }
+      const buf = Sim.snapshot(s, -1, 0, cache);
+      st.snapsOut++; st.snapSum += buf.byteLength; st.maxSnap = Math.max(st.maxSnap, buf.byteLength);
+      sendFast(l, buf);
+    }
     if (s.tick % 6 === 0 || s.over) {
       const cur = Sim.slowFlat(s), d = Sim.slowDiff(prevSlow, cur); prevSlow = cur;
-      if (d.length) { const m = ['s', d]; for (const l of live) sendRel(l, m); }
+      if (d.length) { const m = ['s', d]; for (const l of live) sendRel(l, m); for (const l of specs) sendRel(l, m); }
     }
   }
   // Per-team event filter: sends only what a team can see, so a big fight across the map costs that team nothing.
@@ -727,6 +875,7 @@ const Net = (() => {
     return evMap.get(id);
   }
   function evNear(s, team, e) {
+    if (team < 0) return true; // spectators
     let x = e.x, y = e.y, u = null;
     if (x === undefined) { u = e.u !== undefined ? evUnit(s, e.u) : null; if (!u) return true; if (u.team === team) return true; x = u.x; y = u.y; }
     for (const v of Sim.visionSources(s, team)) { const r = v.r + 280, dx = v.x - x, dy = v.y - y; if (dx * dx + dy * dy < r * r) return true; }
@@ -821,10 +970,11 @@ const Net = (() => {
   }
   function guestResume() { hist = []; ex = ey = 0; frames.splice(0, Math.max(0, frames.length - 3)); }
   // A new link to the host, same match: everything about timing starts again, and the first snapshot re-seats the coin.
-  function guestRelink() { frames = []; clockOff = null; delay = 3.2; lastFrameAt = 0; hist = []; ex = ey = 0; inHist = []; aimSend = null; reseat = true; pending = pending.filter(p => !COSMETIC.has(p.e.e)); if (api.stalled) { api.stalled = false; emit('stall', false); } }
+  function guestRelink() { frames = []; clockOff = null; delay = minDelay(); lastFrameAt = 0; hist = []; ex = ey = 0; inHist = []; aimSend = null; reseat = true; pending = pending.filter(p => !COSMETIC.has(p.e.e)); if (api.stalled) { api.stalled = false; emit('stall', false); } }
   function onStart(cfg, rejoin) {
     api.phase = 'match'; matchCfg = cfg;
     if (rejoin) { if (G && G.net && !G.ended && G.cfg.seed === cfg.seed) { G.net.dead = false; guestRelink(); return; } cfg.rejoin = true; }
+    else { rematchVotes = new Set(); rememberMatch(cfg); }
     emit('start', cfg);
   }
 
@@ -927,13 +1077,17 @@ const Net = (() => {
   function guestFrame(dt, frameNow) {
     if (!G.net || G.net.dead) return;
     const s = G.s, now = frameNow || performance.now(), st = api.stats;
-    G.acc += dt; let n = 0;
-    while (G.acc >= DT && n++ < 8) { guestTick(); G.acc -= DT; }
-    if (n >= 8) G.acc = 0;
+    if (api.spectator) { G.acc = 0; G.me.q.length = 0; }
+    else {
+      G.acc += dt; let n = 0;
+      while (G.acc >= DT && n++ < 8) { guestTick(); G.acc -= DT; }
+      if (n >= 8) G.acc = 0;
+    }
+    Replay.guestSlow(s);
     if (frames.length) {
       let rt = now * .03 + clockOff - delay, i = frames.length - 1;
       const newest = frames[i].tick;
-      if (rt >= newest) { st.underflow++; if (!short) { short = true; delay = Math.min(9, delay + .7); } } else { short = false; delay = Math.max(3.2, delay - .008); }
+      if (rt >= newest) { st.underflow++; if (!short) { short = true; delay = Math.min(9, delay + .7); } } else { short = false; delay = Math.max(minDelay(), delay - .008); }
       st.delay = delay;
       rt = Math.min(rt, newest + 3);
       while (i > 0 && frames[i].tick > rt) i--;
@@ -954,8 +1108,9 @@ const Net = (() => {
       for (const p of pending.splice(0)) playEvent(p.e);
       const core = s.towers.find(t => t.sub === 'core' && !t.alive) || s.towers.find(t => t.sub === 'core' && t.team !== s.over.winner) || s.towers.find(t => t.sub === 'core');
       G.outro = { t: 0, x: core.x, y: core.y }; outroStart();
+      Replay.guestOver();
     }
   }
-  window.__fnet = { Net: api, startMatch: (cfg, net) => startMatch(cfg, net), g: () => G, ctl: () => Ctl };
+  window.__fnet = { Net: api, get Replay() { return Replay; }, get Voice() { return Voice; }, startMatch: (cfg, net) => startMatch(cfg, net), g: () => G, ctl: () => Ctl };
   return api;
 })();

@@ -54,16 +54,20 @@ const unitById = id => { const s = G.s; return s.champs.find(c => c.id === id) |
 // net: { role: 'host' | 'guest' } for an online match, otherwise leave it out.
 function startMatch(cfg, net) {
   const seed = cfg.seed === undefined ? Date.now() & 0xffffff : cfg.seed;
-  const s = Sim.createMatch({ seed, diff: cfg.diff, teams: cfg.teams, practice: cfg.practice });
+  const s = Sim.createMatch({ seed, diff: cfg.diff, teams: cfg.teams, practice: cfg.practice, mode: cfg.mode });
   // Online seats carry a player id; the guest finds its own coin by it.
   cfg.teams.flat().forEach((p, i) => { if (p.pid !== undefined) s.champs[i].pid = p.pid; });
-  const me = net && net.role === 'guest' ? (s.champs.find(c => c.pid !== undefined && c.pid === Net.pid) || s.champs.find(c => c.remote)) : (s.champs.find(c => c.human && !c.remote) || s.champs.find(c => c.human));
+  const spectator = !!(net && net.role === 'guest' && Net.spectator);
+  const me = spectator ? s.champs[0] : net && net.role === 'guest' ? (s.champs.find(c => c.pid !== undefined && c.pid === Net.pid) || s.champs.find(c => c.remote)) : (s.champs.find(c => c.human && !c.remote) || s.champs.find(c => c.human));
   G = { s, me, cfg, cam: { x: me.x, y: me.y }, acc: 0, t: 0, frames: 0, ms: 0, ended: false, intro: 2.6, outro: null, timeScale: 1, slowT: 0, stop: 0, shake: 0, punch: 0, flash: 0, hpq: [], net: net ? { role: net.role } : null };
+  G.spectator = spectator;
   initWorld(G); initHud(G); initSound(G);
+  Replay.reset(G);
   if (net) Net.attach();
   save.hints++; persist(); paused = false;
 }
 function finishMatch() {
+  if (G.spectator) { const m = G.me; G.ended = true; showEnd({ spectator: true, won: G.s.over.winner === m.team, gain: 0, before: pts(m.champ), after: pts(m.champ), me: m, s: G.s, rankBefore: save.rank, rankAfter: save.rank, rankDelta: 0, marks: 0 }); return; }
   const s = G.s, me = G.me, won = s.over.winner === me.team, gain = Sim.masteryGain(me.stats, won), before = pts(me.champ);
   save.m[me.champ] = before + gain;
   // Rating: scored against the average skill of the bots on the other team.
@@ -87,6 +91,7 @@ function stepMatch(dt) {
     if (net) Net.hostBefore();
     applyInput(); Sim.step(G.s); G.acc -= DT;
     if (net) Net.hostAfter();
+    Replay.tick(G.s);
     for (const e of G.s.ev) { if (!hidden) { fxEvent(e); soundEvent(e); } uiEvent(e); }
     G.s.ev.length = 0;
     // A surrender ends the match with the core still standing: the camera goes to the losing team's core.
@@ -102,6 +107,7 @@ function frame(now) {
   animMenus(dt);
   if (!G) return;
   G.t += dt;
+  if (G.replay) { Replay.frame(Math.min(.25, raw)); soundFrame(dt); if (!window.__skipRender) render(dt); return; }
   // Pause never holds back an online match. Before the intro ends, `paused` is the versus splash.
   const held = paused && !(G.net && !G.net.dead && G.intro <= 0);
   // A hidden tab has no rAF anyway; this keeps a hidden online host from double-stepping if one sneaks through.
