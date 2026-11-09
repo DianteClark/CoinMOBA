@@ -13,6 +13,14 @@ const towerOpenU = t => { try { return Sim.towerOpen(G.s, t); } catch (e) { retu
 // Read by relation, never by side: you are gold, friends are blue, enemies are red.
 const REL_COL = { me: '#ffe08a', ally: '#58b0ff', enemy: '#ff3f3a', allyName: '#a9d0f2', enemyName: '#ff9c92' };
 const EMPTY_LIST = [];
+// A seat's cosmetics travel in cfg; the sim may also put them on the unit. Yours can fall back to your saved choices.
+function cosOf(u, key) {
+  if (u[key]) return u[key];
+  const seats = G.cfg && G.cfg.teams && G.cfg.teams[u.team], seat = seats && seats[u.slot];
+  if (seat && seat[key]) return seat[key];
+  if (u === G.me && save.equip && save.equip[key]) return save.equip[key];
+  return null;
+}
 // The camera sits this far out: about 1350 world units across the screen width.
 const CAM_SPAN = 1350;
 // How large a unit is painted: its hit radius with a little extra for the rim, and never smaller than can be read.
@@ -61,12 +69,21 @@ const { initWorld, render, introTick, outroStart, outroTick, drawCoin, visOf, wo
     for (const f of map.fountains || []) pools.push({ x: f.x, y: f.y, r: 420, col: f.x > Sim.W / 2 ? '#ff4a5c' : '#ffdf9e', a: .24 });
     Terrain.bake(g.ground, pools);
     buildWater(g); buildLife(g);
+    preBake(g);
     resetFog();
     g.introIdx = new Map(s.champs.map((c, i) => [c.id, i])); g.introLanded = new Set();
     g.tAim = null;
     FX.reset();
   }
 
+  // Everything that will be seen right away is cut now, under the versus splash. The turntable's in-between frames follow, a few per frame.
+  function preBake(g) {
+    const s = g.s;
+    worldSprite(g.me); for (const c of s.champs) worldSprite(c);
+    for (const t of [0, 1]) for (const ranged of [false, true]) worldSprite({ kind: 'minion', team: t, ranged, r: ranged ? 14 : 17 });
+    for (const m of [[false, false], [true, false], [false, true]]) worldSprite({ kind: 'monster', team: 2, big: m[0], boss: m[1], r: m[1] ? 58 : m[0] ? 32 : 19 });
+    for (const t of s.towers) { const a = artOf(t); Terrain.towerCoin(t.team, a.R); Terrain.towerCrown(t.team, t.sub === 'core'); }
+  }
   function buildDecor(g) {
     const s = g.s, map = s.map, r = Art.seeded(4177), out = [], W = map.W, H = map.H, centre = map.center || { x: W / 2, y: H / 2 }, gd = g.ground, plazas = map.plazas || [];
     const inRiver = (x, y, m) => Math.abs(x - gd.riverX(y)) < m;
@@ -134,6 +151,16 @@ const { initWorld, render, introTick, outroStart, outroTick, drawCoin, visOf, wo
     const Rp = R * Z, alpha = opt.alpha === undefined ? 1 : opt.alpha, spin = opt.spin === undefined ? 1 : Math.max(.09, Math.abs(opt.spin)), sq = opt.squash || 0, lean = opt.lean || 0;
     if (!opt.noshadow) { ctx.globalAlpha = alpha * (opt.shadow === undefined ? 1 : opt.shadow); ctx.drawImage(Art.shadow(), X - Rp * 1.12, Y - Rp * .5 + 2, Rp * 2.24, Rp * 1.06); }
     ctx.globalAlpha = alpha;
+    if (spr.T) {
+      // A real turning coin: the frame is picked by angle, so thickness and the moving highlight are simply in the picture.
+      const yaw = opt.yaw || 0, k = Rp / spr.R, w = spr.S * k, sqx = 1 + sq * .1, sqy = 1 - sq * .12, cyT = -z * Z - sq * Rp * .02, img = spr.T.ready ? Art.frameAt(spr.T, yaw) : null;
+      ctx.setTransform(dpr * sqx, 0, -lean * dpr, dpr * sqy, dpr * X, dpr * Y);
+      if (img) ctx.drawImage(img, -w / 2, cyT - w / 2, w, w);
+      else { ctx.fillStyle = INK; ctx.beginPath(); ctx.ellipse(0, cyT + Rp * .08, Rp + 1, Rp * .9, 0, 0, TAU); ctx.fill(); ctx.fillStyle = '#6d7a8c'; ctx.beginPath(); ctx.ellipse(0, cyT, Rp * .93, Rp * .8, 0, 0, TAU); ctx.fill(); }
+      if (opt.flash > 0) { const wide = Math.abs(Math.cos(yaw)); ctx.globalCompositeOperation = 'lighter'; ctx.globalAlpha = opt.flash * .58 * alpha; ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.ellipse(0, cyT, Rp * Math.max(.12, wide) * .97, Rp * .82, 0, 0, TAU); ctx.fill(); ctx.globalCompositeOperation = 'source-over'; }
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0); ctx.globalAlpha = 1;
+      return Y - z * Z;
+    }
     const kx = spin * (1 + sq * .1), ky = 1 - sq * .12, cy = -z * Z - sq * Rp * .02;
     ctx.setTransform(dpr, 0, -lean * dpr, dpr, dpr * X, dpr * Y);
     if (opt.ink !== false) { const w = Math.max(1, Rp * .055); ctx.fillStyle = INK; ctx.beginPath(); ctx.ellipse(0, cy + Rp * .08 * ky, (Rp + w) * kx + .5, (Rp * .9 + w) * ky, 0, 0, TAU); ctx.fill(); }
@@ -152,13 +179,13 @@ const { initWorld, render, introTick, outroStart, outroTick, drawCoin, visOf, wo
   }
   // One reused options object: coins are drawn hundreds of times a second and must not allocate.
   const OPT = {};
-  function coinOpt(spin, flash, lean, squash, sheen, alpha, shadow, edge, noshadow) { OPT.spin = spin; OPT.flash = flash; OPT.lean = lean; OPT.squash = squash; OPT.sheen = sheen; OPT.alpha = alpha; OPT.shadow = shadow; OPT.edge = edge; OPT.noshadow = noshadow; OPT.ink = undefined; return OPT; }
-  // Sprites are made close to their on-screen size, so downscaling never softens an emblem.
-  const spriteR0 = u => Math.max(10, Math.ceil(artR(u) * (VW / CAM_SPAN) * Math.max(dpr, 1.5) * .58));
+  function coinOpt(spin, flash, lean, squash, sheen, alpha, shadow, edge, noshadow, yaw) { OPT.yaw = yaw || 0; OPT.spin = spin; OPT.flash = flash; OPT.lean = lean; OPT.squash = squash; OPT.sheen = sheen; OPT.alpha = alpha; OPT.shadow = shadow; OPT.edge = edge; OPT.noshadow = noshadow; OPT.ink = undefined; return OPT; }
+  // Baked close to their on-screen size in device pixels, a touch larger for camera kicks, so an emblem is never resampled soft.
+  const spriteR0 = u => Math.min(u.boss ? 110 : 80, Math.max(11, Math.ceil(artR(u) * (VW / CAM_SPAN) * dpr * 1.08)));
   function worldSprite(u) {
-    if (u.kind === 'champ') return Art.champCoin(u.champ, u.team, u.tier, spriteR0(u));
-    if (u.kind === 'minion') return Art.minionCoin(u.team, u.ranged, spriteR0(u));
-    return Art.monsterCoin(u.big, u.boss);
+    if (u.kind === 'champ') return Art.champTurn(u.champ, u.team, u.tier | 0, spriteR0(u), cosOf(u, 'finish'));
+    if (u.kind === 'minion') return Art.minionTurn(u.team, u.ranged, spriteR0(u));
+    return Art.monsterTurn(u.big, u.boss, spriteR0(u));
   }
   function sprOf(u, v) { const k = (u.tier | 0) * 100 + (dpr * 2 | 0); if (!v.spr || v.sprK !== k) { v.spr = worldSprite(u); v.sprK = k; } return v.spr; }
   const bar = (x, y, w, h, f, col) => { ctx.fillStyle = 'rgba(4,6,10,.9)'; ctx.fillRect(x - 1, y - 1, w + 2, h + 2); ctx.fillStyle = col; ctx.fillRect(x, y, w * f, h); };
@@ -407,7 +434,11 @@ const { initWorld, render, introTick, outroStart, outroTick, drawCoin, visOf, wo
     v.hop += dt * (moving ? 6.5 : 1.1);
     const landed = moving && Math.floor(v.hop / Math.PI) !== before;
     if (landed) v.squash = Math.max(v.squash, 1);
-    if (v.sheen < 1) v.sheen += dt * (v.sheen < 0 ? 1 : 2.2); else v.sheen = -rnd(3, 7);
+    if (v.sheen < 1) v.sheen += dt * (v.sheen < 0 ? 1 : 1.6); else v.sheen = -rnd(3, 8);
+    // Turning: lean into the direction of travel, breathe at rest, and every few seconds catch the light on purpose.
+    const toward = moving ? nx * (.32 + clamp01(sp / ms) * .4) : Math.sin(G.t * .9 + v.phase) * .07, glint = v.sheen > 0 && v.sheen < 1 ? Math.sin(v.sheen * Math.PI) * .62 * (v.phase % 2 ? 1 : -1) : 0;
+    v.yaw = (v.yaw || 0) + (toward + glint - (v.yaw || 0)) * (1 - Math.exp(-dt * 10));
+    FX.poseTick(v, dt);
     return landed;
   }
 
@@ -415,6 +446,7 @@ const { initWorld, render, introTick, outroStart, outroTick, drawCoin, visOf, wo
     const v = visOf(c), p = posNow(c, a), px = p.x, py = p.y, sp = Math.hypot(c.vx || 0, c.vy || 0), me = G.me, mine = c === me;
     const landed = tickVis(c, v, p, dt, sp, c.msBase || 300);
     if (!isUp(c)) { v.lx = undefined; v.br = -1; return v; }
+    if (dt > 0) FX.cosmeticTick(c, v, px, py, dt, sp);
     const inBr = c.inBrush === undefined ? -1 : c.inBrush;
     if (dt > 0 && v.lx !== undefined) { const d = Math.hypot(px - v.lx, py - v.ly); if (d > 120 && d < 1300 && seesU(c)) FX.ghostLine(sprOf(c, v), artR(c), v.lx, v.ly, px, py); }
     v.lx = px; v.ly = py;
@@ -443,6 +475,8 @@ const { initWorld, render, introTick, outroStart, outroTick, drawCoin, visOf, wo
     for (let i = 0; i < VIS_CHAMPS.length; i += 3) { const dy = y0 - VIS_CHAMPS[i + 1]; if (dy > -14 && dy < tallW && Math.abs(VIS_CHAMPS[i] - x0) < half + 44) return true; }
     return false;
   }
+  // How far anything tall leans away from the centre of the screen. This is the parallax: a strip of shear per frame.
+  const leanAt = X => (X / VW - .5) * .9;
   function drawDecor(o, me, dt) {
     const X = sx(o.x), Y = sy(o.y), spr = o.spr;
     if (o.fade) {
@@ -450,13 +484,24 @@ const { initWorld, render, introTick, outroStart, outroTick, drawCoin, visOf, wo
       o.al += ((rear ? .3 : 1) - o.al) * (1 - Math.exp(-dt * 10));
       if (o.al < .995) ctx.globalAlpha = o.al;
     }
+    const lean = leanAt(X);
     if (o.kind === 1) {
-      const sh = o.sway ? Math.sin(G.t * 2.6 + o.ph) * .1 : Math.sin(G.t * 1.9 + o.ph) * .03, img = spr.frames ? spr.frames[Math.floor(G.t * 5 + o.ph) % spr.frames.length] : spr.c, lift = (o.z || 0) * Z;
+      const sh = (o.sway ? Math.sin(G.t * 2.6 + o.ph) * .1 : Math.sin(G.t * 1.9 + o.ph) * .03) + lean * .5, img = spr.frames ? spr.frames[Math.floor(G.t * 5 + o.ph) % spr.frames.length] : spr.c, lift = (o.z || 0) * Z;
       ctx.setTransform(dpr * Z, 0, -dpr * Z * sh, dpr * Z, dpr * X, dpr * (Y - lift)); ctx.drawImage(img, -spr.ax, -spr.ay, spr.w, spr.h); ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    } else ctx.drawImage(spr.c, X - spr.ax * Z, Y - spr.ay * Z, spr.w * Z, spr.h * Z);
-    if (spr.L && o.kind >= 2) {
-      const on = o.kind === 3 ? 1 : litNow;
-      if (on > .02) { const al = ctx.globalAlpha; ctx.globalCompositeOperation = 'lighter'; ctx.globalAlpha = al * on * (.82 + Math.sin(G.t * 2.3 + o.ph) * .1); ctx.drawImage(spr.L, X - spr.ax * Z, Y - spr.ay * Z, spr.w * Z, spr.h * Z); ctx.globalCompositeOperation = 'source-over'; }
+    } else {
+      const shear = -lean * (o.kind >= 2 ? .6 : .34);
+      ctx.setTransform(dpr * Z, 0, dpr * Z * shear, dpr * Z, dpr * X, dpr * Y);
+      if (o.kind >= 2) {
+        // Extrusion: the same silhouette, offset up and toward the centre of the screen, a few slices deep. Lit from the side it faces.
+        const back = Terrain.backOf(spr, o.kind === 3 ? '#04060a' : '#060910', '#222c3c'), d = (o.kind === 3 ? 26 : 16), bx = -lean * d * 2.4, by = -d * .9, al = ctx.globalAlpha;
+        ctx.globalAlpha = al * .98; for (let i = 3; i >= 1; i--) { const f = i / 3; ctx.drawImage(back, -spr.ax + bx * f, -spr.ay + by * f, spr.w, spr.h); } ctx.globalAlpha = al;
+      }
+      ctx.drawImage(spr.c, -spr.ax, -spr.ay, spr.w, spr.h);
+      if (spr.L && o.kind >= 2) {
+        const on = o.kind === 3 ? 1 : litNow;
+        if (on > .02) { const al = ctx.globalAlpha; ctx.globalCompositeOperation = 'lighter'; ctx.globalAlpha = al * on * (.82 + Math.sin(G.t * 2.3 + o.ph) * .1); ctx.drawImage(spr.L, -spr.ax, -spr.ay, spr.w, spr.h); ctx.globalCompositeOperation = 'source-over'; }
+      }
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     }
     ctx.globalAlpha = 1;
   }
@@ -464,7 +509,8 @@ const { initWorld, render, introTick, outroStart, outroTick, drawCoin, visOf, wo
     const sp = o.spr, wl = o.w, rear = hides(wl.x + wl.w / 2, wl.w / 2 + 16, wl.y + 2, (sp.lift + 74) / TILT);
     o.al = o.al === undefined ? 1 : o.al + ((rear ? .36 : 1) - o.al) * (1 - Math.exp(-dt * 10));
     if (o.al < .995) ctx.globalAlpha = o.al;
-    ctx.drawImage(sp.c, sx(wl.x) - sp.P * Z, sy(wl.y) - (sp.lift + sp.P) * Z, sp.w * Z, sp.h * Z); ctx.globalAlpha = 1;
+    { const Xw = sx(wl.x + wl.w / 2), lean = leanAt(Xw) * .34; ctx.setTransform(dpr * Z, 0, -dpr * Z * lean, dpr * Z, dpr * (sx(wl.x) - sp.P * Z + lean * sp.h * Z), dpr * (sy(wl.y) - (sp.lift + sp.P) * Z)); ctx.drawImage(sp.c, 0, 0, sp.w, sp.h); ctx.setTransform(dpr, 0, 0, dpr, 0, 0); }
+    ctx.globalAlpha = 1;
   }
   // Brush is painted into the ground, so the only per-frame cost is this outline while you are inside it.
   function brushHint(dt) {
@@ -504,18 +550,30 @@ const { initWorld, render, introTick, outroStart, outroTick, drawCoin, visOf, wo
       }
     }
   }
-  function drawChamp(c, v, px, py, a, me) {
-    const X = sx(px + v.rx), Y = sy(py + v.ry), sp = Math.hypot(c.vx || 0, c.vy || 0), moving = sp > 20, hopH = moving ? 4 : 1, mine = c === me, ally = c.team === me.team;
-    const izf = introZ(c), air = Math.abs(Math.sin(v.hop)), z = 9 + air * hopH + (c.z || 0) + izf, R = artR(c);
-    const spin = v.spin > 0 ? Math.cos(v.spin * TAU) : 1, ringR = (R + 6) * Z;
-    spotlight(X, Y, R * Z, mine ? '#fff0c8' : ally ? '#8ec2f2' : '#ff6a5a', mine ? .42 : .3);
-    if (mine) meMarker(X, Y, ringR); else teamRing(X, Y, ringR, ally);
-    if (c.tier >= 3 && mine) { const gl = Art.glow(AURA[c.tier]), r = (40 + (c.tier - 3) * 5) * Z; ctx.globalCompositeOperation = 'lighter'; ctx.globalAlpha = .18 + Math.sin(G.t * 3 + v.phase) * .05; ctx.drawImage(gl, X - r, Y - z * Z - r, r * 2, r * 2); ctx.globalCompositeOperation = 'source-over'; ctx.globalAlpha = 1; }
-    const alpha = c.inBrush >= 0 ? (ally ? .82 : 1) : 1;
-    const top = drawCoin(sprOf(c, v), X, Y, z, R, coinOpt(spin, v.flash, v.lean, v.squash - (moving ? air * .1 : 0), v.sheen, alpha, clamp01(1 - izf / 900) * .9));
+  // Status marks are small and sit on the coin, so a fight stays readable.
+  function statusMarks(c, v, X, top, me, Rp) {
     if (c.parryT > 0) { ctx.strokeStyle = '#fff4d2'; ctx.lineWidth = 2.4; ctx.beginPath(); ctx.ellipse(X, top, 38 * Z, 33 * Z, 0, 0, TAU); ctx.stroke(); }
     if (c.markT > 0) { const rot = G.t * 2; ctx.strokeStyle = '#ff7ac0'; ctx.lineWidth = 2; ctx.beginPath(); for (let i = 0; i < 3; i++) { const a0 = rot + i * TAU / 3, r = 36 * Z; ctx.moveTo(X + Math.cos(a0) * r, top + Math.sin(a0) * r); ctx.arc(X, top, r, a0, a0 + 1.1); } ctx.stroke(); }
     if (c.stunT > 0) for (let i = 0; i < 3; i++) { const an = G.t * 7 + i * TAU / 3; ctx.fillStyle = '#ffe89e'; ctx.fillRect(X + Math.cos(an) * 20 * Z - 2, top - 30 * Z + Math.sin(an) * 5 - 2, 4, 4); }
+    if (c.rootT > 0) { ctx.strokeStyle = 'rgba(200,239,90,.9)'; ctx.lineWidth = Math.max(1.4, 2.2 * Z); ctx.beginPath(); for (let i = 0; i < 3; i++) { const an = -Math.PI / 2 + i * TAU / 3 + G.t * 1.2; ctx.moveTo(X + Math.cos(an) * Rp * 1.4, sy(c.y) + Math.sin(an) * Rp * 1.05); ctx.lineTo(X + Math.cos(an) * Rp * .75, top + Math.sin(an) * Rp * .5); } ctx.stroke(); }
+    if (c.shieldT > 0 && c.shieldHp > 0) { ctx.strokeStyle = 'rgba(190,232,255,.9)'; ctx.lineWidth = 1.6; ctx.beginPath(); ctx.ellipse(X, top, Rp * 1.34, Rp * 1.22, 0, 0, TAU); ctx.stroke(); }
+    if (c.curseT > 0 && c.curseN > 0) { const n = c.curseN | 0, rr = Rp * 1.34; for (let i = 0; i < n; i++) { const an = G.t * 2.4 + i * TAU / n, s0 = 3 * Z + 1, x0 = X + Math.cos(an) * rr, y0 = top + Math.sin(an) * rr * .5; ctx.fillStyle = '#c8ef5a'; ctx.beginPath(); ctx.moveTo(x0, y0 - s0); ctx.lineTo(x0 + s0, y0); ctx.lineTo(x0, y0 + s0); ctx.lineTo(x0 - s0, y0); ctx.closePath(); ctx.fill(); } }
+    if ((c.poisonT > 0 || c.bleedT > 0) && (c === me || c.team !== me.team)) { const col = c.poisonT > 0 ? '#b6ec3a' : '#ff5a44'; for (let i = 0; i < 2; i++) { const ph = (G.t * 1.6 + i * .5 + v.phase) % 1; ctx.globalAlpha = 1 - ph; ctx.fillStyle = col; ctx.fillRect(X + Math.sin(i * 7 + v.phase) * Rp * .9 - 1.5, top - ph * 22 * Z - Rp * .5 - 1.5, 3, 3); } ctx.globalAlpha = 1; }
+  }
+  function drawChamp(c, v, px, py, a, me) {
+    const X = sx(px + v.rx + (v.ox || 0)), Y = sy(py + v.ry + (v.oy || 0)), sp = Math.hypot(c.vx || 0, c.vy || 0), moving = sp > 20, hopH = moving ? 4 : 1, mine = c === me, ally = c.team === me.team;
+    const izf = introZ(c), air = Math.abs(Math.sin(v.hop)), knockZ = c.knockT > 0 && !c.z ? Math.sin(Math.min(1, 1 - c.knockT / (c.knockMax || c.knockT)) * Math.PI) * 54 : 0, z = 9 + air * hopH + (c.z || 0) + izf + (v.oz || 0) + knockZ, R = artR(c);
+    const spinAng = v.spin > 0 ? v.spin * TAU : 0, ringR = (R + 6) * Z, Rp = R * Z;
+    spotlight(X, Y, R * Z, mine ? '#fff0c8' : ally ? '#8ec2f2' : '#ff6a5a', mine ? .42 : .3);
+    if (mine) meMarker(X, Y, ringR); else teamRing(X, Y, ringR, ally);
+    if (c.tier >= 3 && mine) { const gl = Art.glow(AURA[c.tier]), r = (40 + (c.tier - 3) * 5) * Z; ctx.globalCompositeOperation = 'lighter'; ctx.globalAlpha = .18 + Math.sin(G.t * 3 + v.phase) * .05; ctx.drawImage(gl, X - r, Y - z * Z - r, r * 2, r * 2); ctx.globalCompositeOperation = 'source-over'; ctx.globalAlpha = 1; }
+    // Stealth: you and your friends see a shimmer of the coin; enemies have nothing to see unless the sim says so.
+    const hidden = c.stealthT > 0 ? (.32 + Math.sin(G.t * 7 + v.phase) * .12) : 1, alpha = (c.inBrush >= 0 ? (ally ? .82 : 1) : 1) * hidden;
+    // Polymorphed: for a moment this is just a plain spinning coin.
+    let top;
+    if (c.polyT > 0) top = drawCoin(FX.goldCoin(), X, Y, z, R * .9, coinOpt(Math.cos(G.t * 14), v.flash, 0, 0, undefined, 1, .9, '#6a5428'));
+    else top = drawCoin(sprOf(c, v), X, Y, z, R, coinOpt(1, v.flash, v.lean, Math.max(v.squash, 0) * .9 + (v.osq || 0) - (moving ? air * .1 : 0), undefined, alpha, clamp01(1 - izf / 900) * .9, undefined, undefined, v.yaw + (v.oyaw || 0) + spinAng));
+    statusMarks(c, v, X, top, me, Rp);
     if (c.chan && c.chan.recall && c.chan.total) { ctx.strokeStyle = TEAM[c.team]; ctx.lineWidth = 2.6; ctx.beginPath(); ctx.arc(X, top, 36 * Z, -Math.PI / 2, -Math.PI / 2 + TAU * (1 - c.chan.t / c.chan.total)); ctx.stroke(); }
     if (c.echo && c.recast && c.recast[1] > 0 && ally) drawCoin(sprOf(c, v), sx(c.echo.x), sy(c.echo.y), 9, R, coinOpt(1, 0, 0, 0, undefined, .4));
     if (mine) b_meTop = 1;
@@ -528,17 +586,17 @@ const { initWorld, render, introTick, outroStart, outroTick, drawCoin, visOf, wo
     const art = artOf(t), n = art.n, R = art.R, shown = Math.max(1, Math.ceil(n * pct(t.hp === undefined ? t.maxHp : t.hp, t.maxHp || 1))), core = t.sub === 'core';
     const X = sx(t.x), Y = sy(t.y), k = Z, step = R * STEP * k, open = towerOpenU(t), d = Terrain.towerCoin(t.team, R), stackS = v.stackS === undefined ? shown : v.stackS;
     // A tall stack must never hide a champion standing behind it.
-    const rear = hides(t.x, R * .9, t.y, (shown * R * STEP + art.crown) / TILT); v.al = v.al === undefined ? 1 : v.al + ((rear ? .42 : 1) - v.al) * (1 - Math.exp(-rdt * 10)); const al = v.al;
+    const rear = hides(t.x, R * .9, t.y, (shown * R * STEP + art.crown) / TILT); v.al = v.al === undefined ? 1 : v.al + ((rear ? .66 : 1) - v.al) * (1 - Math.exp(-rdt * 10)); const al = v.al;
     ctx.globalAlpha = al;
     ctx.drawImage(Art.shadow(), X - R * 1.3 * k, Y - R * .6 * k, R * 2.6 * k, R * 1.3 * k);
-    for (let i = 0; i < shown; i++) { const taper = 1 - i / n * .17, q = k * taper, off = Math.sin(i * 7.3) * 2.2 * k; ctx.drawImage(d.c, X - d.cx * q + off, Y - d.cy * q - i * step, d.w * q, d.h * q); }
+    const lean = leanAt(X) * .6; for (let i = 0; i < shown; i++) { const taper = 1 - i / n * .17, q = k * taper, off = Math.sin(i * 7.3) * 2.2 * k + i * step * lean; ctx.drawImage(d.c, X - d.cx * q + off, Y - d.cy * q - i * step, d.w * q, d.h * q); }
     // The crown rides the stack down smoothly instead of snapping a coin lower.
     const topY = Y - (stackS - 1) * step, crown = Terrain.towerCrown(t.team, core), bob = Math.sin(G.t * 2 + t.x) * 2.5 * k;
-    ctx.drawImage(crown.c, X - crown.ax * k, topY - crown.ay * k - d.cy * .16 * k + bob * .4, crown.w * k, crown.h * k);
+    ctx.setTransform(dpr * k, 0, -dpr * k * lean * 1.1, dpr * k, dpr * (X + (shown - 1) * step * lean), dpr * (topY - d.cy * .16 * k + bob * .4)); ctx.drawImage(crown.c, -crown.ax, -crown.ay, crown.w, crown.h); ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     ctx.globalAlpha = 1;
     if (v.flash > 0) { ctx.globalCompositeOperation = 'lighter'; ctx.globalAlpha = v.flash * .4 * al; ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.ellipse(X, Y - shown * step * .5, R * k, (shown * step + R * k * .7) * .55, 0, 0, TAU); ctx.fill(); ctx.globalCompositeOperation = 'source-over'; ctx.globalAlpha = 1; }
-    if (open) { const gl = Art.glow(t.team ? '#ff4a5c' : '#ffdf9e'), gr = (core ? 44 : 32) * k, gy = topY - (core ? 74 : 54) * k; ctx.globalCompositeOperation = 'lighter'; ctx.globalAlpha = (.32 + Math.sin(G.t * 3) * .08) * al; ctx.drawImage(gl, X - gr, gy - gr, gr * 2, gr * 2); ctx.globalCompositeOperation = 'source-over'; ctx.globalAlpha = 1; }
-    if (core) drawCoin(v.coreS || (v.coreS = Art.coin('corecoin' + t.team, 56, 'boss', Art.METAL['minion' + t.team], t.team, 3)), X, topY - 96 * k, 0, 24, coinOpt(Math.cos(G.t * 1.3), 0, 0, 0, undefined, al, undefined, '#6a5428', true));
+    if (open) { const gl = Art.glow(t.team ? '#ff4a5c' : '#ffdf9e'), gr = (core ? 44 : 32) * k, gy = topY - (core ? 74 : 54) * k, X_ = X + (shown - 1) * step * lean; ctx.globalCompositeOperation = 'lighter'; ctx.globalAlpha = (.32 + Math.sin(G.t * 3) * .08) * al; ctx.drawImage(gl, X_ - gr, gy - gr, gr * 2, gr * 2); ctx.globalCompositeOperation = 'source-over'; ctx.globalAlpha = 1; }
+    if (core) drawCoin(v.coreS || (v.coreS = Art.coin('corecoin' + t.team, 56, 'boss', Art.METAL['minion' + t.team], t.team, 3)), X + (shown - 1) * step * lean, topY - 96 * k, 0, 24, coinOpt(Math.cos(G.t * 1.3), 0, 0, 0, undefined, al, undefined, '#6a5428', true));
   }
   // What's left after a tower falls: a low, dark pile on its plinth.
   const PILE = [[-22, 2, .62], [20, 6, .58], [-2, -5, .7]];
@@ -619,6 +677,28 @@ const { initWorld, render, introTick, outroStart, outroTick, drawCoin, visOf, wo
     }
   }
 
+  // A vision beacon: a small brass mast, a turning lamp and one thin sweep on the ground.
+  const BEACON_SPR = [null, null];
+  function beaconSprite(team) {
+    if (BEACON_SPR[team]) return BEACON_SPR[team];
+    const S = 2, W = 44, H = 76, c = Art.cv(W * S, H * S), g = c.getContext('2d'), col = team ? '#ff4a5c' : '#ffdf9e', dk = team ? '#2a1820' : '#1a2c4a', mt = team ? '#a8b0bc' : '#e6d19c';
+    g.scale(S, S); g.fillStyle = 'rgba(0,0,0,.5)'; g.beginPath(); g.ellipse(22, 68, 15, 5, 0, 0, TAU); g.fill();
+    g.fillStyle = dk; g.beginPath(); g.moveTo(12, 68); g.lineTo(32, 68); g.lineTo(27, 60); g.lineTo(17, 60); g.closePath(); g.fill();
+    g.fillStyle = mt; g.fillRect(20, 22, 4, 40); g.fillStyle = 'rgba(0,0,0,.4)'; g.fillRect(22, 22, 2, 40);
+    g.fillStyle = dk; g.fillRect(14, 15, 16, 8); g.fillStyle = mt; g.fillRect(14, 22, 16, 1.5);
+    g.fillStyle = col; g.beginPath(); g.moveTo(22, 2); g.lineTo(29, 13); g.lineTo(15, 13); g.closePath(); g.fill();
+    return BEACON_SPR[team] = c;
+  }
+  function drawBeacon(b) {
+    const X = sx(b.x), Y = sy(b.y), R = 26 * Z, ally = b.team === G.me.team, col = ally ? 'rgba(170,220,255,' : 'rgba(255,110,90,', life = b.t && b.total ? b.t / b.total : 1, fade = clamp01(life * 8);
+    ctx.globalAlpha = fade;
+    ctx.strokeStyle = col + '.8)'; ctx.lineWidth = 1.4; ctx.beginPath(); ctx.ellipse(X, Y, R, R * TILT, 0, 0, TAU); ctx.stroke();
+    const an = G.t * 1.6 + b.x * .01, sw = (R + 34 * Z); ctx.strokeStyle = col + '.5)'; ctx.lineWidth = 1.2; ctx.beginPath(); ctx.ellipse(X, Y, sw, sw * TILT, 0, an, an + .9); ctx.stroke();
+    const spr = beaconSprite(b.team === 1 ? 1 : 0); ctx.drawImage(spr, X - 22 * Z, Y - 68 * Z, 44 * Z, 76 * Z);
+    const gl = Art.glow(ally ? '#bfe0ff' : '#ff8070'), r = (14 + Math.sin(G.t * 3 + b.x) * 2) * Z; ctx.globalCompositeOperation = 'lighter'; ctx.globalAlpha = fade * .7; ctx.drawImage(gl, X - r, Y - 60 * Z - r, r * 2, r * 2); ctx.globalCompositeOperation = 'source-over'; ctx.globalAlpha = 1;
+    if (b.hp !== undefined && b.maxHp && b.hp < b.maxHp) bar(X - 14 * Z, Y - 78 * Z, 28 * Z, 3, b.hp / b.maxHp, ally ? REL_COL.ally : REL_COL.enemy);
+  }
+
   function minionRing(u, X, Y) {
     const R = (artR(u) + 3) * Z; ctx.strokeStyle = u.team === G.me.team ? 'rgba(88,176,255,.65)' : 'rgba(255,63,58,.7)'; ctx.lineWidth = 1.2; ctx.beginPath(); ctx.ellipse(X, Y, R, R * TILT, 0, 0, TAU); ctx.stroke();
   }
@@ -626,6 +706,7 @@ const { initWorld, render, introTick, outroStart, outroTick, drawCoin, visOf, wo
   function render(dt) {
     const s = G.s, me = G.me; if (!s || !me) return;
     rdt = dt;
+    Art.pump(paused || G.intro > 0 ? 9 : 2.5);
     if (s.hope !== undefined) G.hopeS += (s.hope - G.hopeS) * (1 - Math.exp(-dt * 1.2));
     const a = Math.min(1, (G.acc || 0) / DT), wdt = G.intro > 0 || G.outro ? dt : dt * (G.stop > 0 ? .1 : (G.timeScale || 1));
     G.punch *= Math.exp(-dt * (G.outro ? 1.2 : 8));
@@ -654,6 +735,7 @@ const { initWorld, render, introTick, outroStart, outroTick, drawCoin, visOf, wo
     // Enemies only exist on screen where your team can see them.
     for (const q of minions) { if (!isUp(q) || q.delay > 0) continue; const v = tickMinion(q, a, wdt), px = WP.x, py = WP.y; if (onScreen(px, py, 70) && seesU(q)) { push(py - 40, 4, q, px, py, v); pushBar(q, px, py, v); VIS_UNITS.push(px, py); } }
     for (const q of monsters) { if (!isUp(q)) continue; const v = visOf(q), p = posNow(q, a), px = p.x, py = p.y, sp = Math.hypot(q.vx || 0, q.vy || 0); tickVis(q, v, p, wdt, sp, q.ms || 260); if (onScreen(px, py, 120) && seesU(q)) { push(py, 5, q, px, py, v); pushBar(q, px, py, v); VIS_UNITS.push(px, py); } }
+    if (s.beacons) for (const b of s.beacons) { if (onScreen(b.x, b.y, 120) && (b.team === me.team || litAt(b.x, b.y, 40))) push(b.y, 9, b); }
     for (const c of champs) {
       const v = tickChamp(c, a, wdt);
       if (!isUp(c) || !seesU(c)) continue;
@@ -684,11 +766,12 @@ const { initWorld, render, introTick, outroStart, outroTick, drawCoin, visOf, wo
         case 0: drawDecor(e.o, me, dt); break;
         case 1: drawWall(e.o, dt); break;
         case 3: drawTower(e.o, e.v); break;
-        case 4: { const u = e.o, v = e.v, z = 5 + Math.abs(Math.sin(v.hop)) * (u.vx || u.vy ? 3 : .5), X = sx(e.px + v.rx), Y = sy(e.py + v.ry); minionRing(u, X, Y); drawCoin(sprOf(u, v), X, Y, z, artR(u), coinOpt(1, v.flash, v.lean, v.squash, undefined, undefined, .8, u.team ? '#3a1a22' : '#22324c')); break; }
-        case 5: { const u = e.o, v = e.v, z = u.boss ? 16 + Math.sin(G.t * 1.8) * 3 : 6 + Math.abs(Math.sin(v.hop)) * 3; drawCoin(sprOf(u, v), sx(e.px + v.rx), sy(e.py + v.ry), z, artR(u), coinOpt(u.boss ? (.86 + Math.sin(G.t * .9) * .14) : 1, v.flash, v.lean, v.squash, undefined, undefined, undefined, u.boss ? '#5a3f22' : '#3a3226')); break; }
+        case 4: { const u = e.o, v = e.v, z = 5 + Math.abs(Math.sin(v.hop)) * (u.vx || u.vy ? 3 : .5), X = sx(e.px + v.rx), Y = sy(e.py + v.ry); minionRing(u, X, Y); drawCoin(sprOf(u, v), X, Y, z, artR(u), coinOpt(1, v.flash, v.lean, v.squash, undefined, undefined, .8, u.team ? '#3a1a22' : '#22324c', undefined, v.yaw || 0)); break; }
+        case 5: { const u = e.o, v = e.v, z = u.boss ? 16 + Math.sin(G.t * 1.8) * 3 : 6 + Math.abs(Math.sin(v.hop)) * 3; drawCoin(sprOf(u, v), sx(e.px + v.rx), sy(e.py + v.ry), z, artR(u), coinOpt(1, v.flash, v.lean, v.squash, undefined, undefined, undefined, u.boss ? '#5a3f22' : '#3a3226', undefined, u.boss ? Math.sin(G.t * .9) * .26 : (v.yaw || 0))); break; }
         case 6: drawChamp(e.o, e.v, e.px, e.py, a, me); break;
         case 7: drawCivilians(e.o); break;
         case 8: drawFallen(e.o, e.v); break;
+        case 9: drawBeacon(e.o); break;
       }
     }
     drawSmoke();

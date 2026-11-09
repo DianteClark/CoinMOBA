@@ -6,7 +6,7 @@ A real-time 4v4 superhero MOBA for phones, in a single HTML page. Each match you
 
 ## What's here
 
-- `src/sim.js`: the whole game (map, champions, roles, bots, the people). It has no browser code, so the same file can run in a Cloudflare Durable Object when online play is added.
+- `src/sim/`: game rules, 12 champion kits and builds, and bot brains, with no browser code. `build.py` generates `src/sim.js` from these.
 - `src/art.js`, `src/terrain.js`: coins, portraits, town and terrain, all drawn in code.
 - `src/audio.js`: generated music and sound, no audio files.
 - `src/client/`: rendering, effects, touch controls, HUD, menus and online play (host-authoritative over WebRTC, with PeerJS for finding each other), concatenated into one script.

@@ -18,8 +18,8 @@ const avg = (a, b) => b ? (a / b).toFixed(2) : '-';
 const ROLE_LANE = { top: 0, bottom: 1, support: 1 };
 
 // Lane assignment for support-less edge cases is not needed: autoRoles always fills four distinct roles.
-function roster(r) {
-  const list = ids.slice().sort(() => r() - .5).slice(0, 4), roles = Sim.autoRoles(list);
+function roster(r, team) {
+  const list = Sim.ROSTER[team].slice().sort(() => r() - .5).slice(0, 4), roles = Sim.autoRoles(list);
   return list.map((c, i) => ({ champ: c, role: roles[i], name: 'b' + i, tier: 0 }));
 }
 
@@ -27,7 +27,7 @@ function play(cfg) {
   // cfg: seed, skill0, skill1 (number, or array of 4), humans: seat-spec for filling seats with a scripted "person"
   let sd = cfg.seed * 131 + 17, r = () => (sd = (sd * 16807) % 2147483647) / 2147483647;
   const sk = v => Array.isArray(v) ? i => v[i] : () => v;
-  const a = roster(r), b = roster(r), sk0 = sk(cfg.skill0), sk1 = sk(cfg.skill1);
+  const a = roster(r, 0), b = roster(r, 1), sk0 = sk(cfg.skill0), sk1 = sk(cfg.skill1);
   if (cfg.human) { const seat = a.find(p => p.role === cfg.human); seat.human = true; }
   a.forEach((p, i) => { p.skill = sk0(i); }); b.forEach((p, i) => { p.skill = sk1(i); });
   const s = Sim.createMatch({ seed: cfg.seed + 200, teams: [a, b] });
@@ -193,8 +193,27 @@ function versus(a, b, games, side = 0) {
   return { wins, played, ka, kb, M };
 }
 
+// Balance sweep: mixed-skill bot matches with varied builds; per-kit, per-build, per-side win rates and pacing.
+// node test_bots.js GAMES balance SEEDBASE
+function balance(games, base) {
+  const lens = [], kit = {}, bld = {}, side = [0, 0], slots = { k: 0, d: 0, n: 0, g: 0, stomp: 0 };
+  for (const list of Sim.ROSTER) for (const c of list) { kit[c] = { w: 0, n: 0, k: 0, d: 0, a: 0, dmg: 0, g: 0 }; for (const b of Sim.KITS[c].builds) bld[b.id] = { w: 0, n: 0, kit: c }; }
+  for (let g = 0; g < games; g++) {
+    let sd = (base + g) * 7919 + 13, r = () => (sd = (sd * 16807) % 2147483647) / 2147483647;
+    const team = t => { const list = Sim.ROSTER[t].slice().sort(() => r() - .5).slice(0, 4), roles = Sim.autoRoles(list); return list.map((c, i) => ({ champ: c, role: roles[i], name: 'b', tier: 0, skill: .3 + r() * .55, build: Sim.KITS[c].builds[r() * 4 | 0].id })); };
+    const cfg = { seed: base * 1000 + g + 1, teams: [team(0), team(1)] }, s = Sim.createMatch(cfg);
+    while (!s.over && s.t < 2400) { Sim.step(s); s.ev.length = 0; }
+    lens.push(s.t / 60); if (s.over) side[s.over.winner]++;
+    let k0 = s.kills[0], k1 = s.kills[1]; slots.k += k0 + k1; slots.n++; if (Math.abs(k0 - k1) > 18) slots.stomp++;
+    for (const c of s.champs) { const K = kit[c.champ], B = bld[c.build], won = s.over && c.team === s.over.winner ? 1 : 0; K.w += won; K.n++; K.k += c.stats.kills; K.d += c.stats.deaths; K.a += c.stats.assists; K.dmg += c.stats.dmg; K.g += c.gold; B.w += won; B.n++; }
+    console.log(`g${g} ${(s.t / 60).toFixed(1)}m ${k0}-${k1} win ${s.over ? s.over.winner : 'none'}`);
+  }
+  console.log('RESULT ' + JSON.stringify({ lens, side, kit, bld, slots }));
+}
+
 async function main() {
   await Promise.resolve();
+  if (MODE === 'balance') { balance(N, +process.argv[4] || 1); return; }
   console.log('Sim exports:', ['RANKS', 'rankOf', 'rankDelta', 'botSkills'].map(k => k + ':' + typeof Sim[k]).join(' '));
   if (MODE === 'all' || MODE === 'even') {
     report(run(N, g => ({ seed: g, skill0: .5, skill1: .5 })), 'even match, skill 0.5 v 0.5');

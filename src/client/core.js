@@ -32,7 +32,7 @@ document.addEventListener('touchmove', e => { if (!e.target.closest('.scroll')) 
 const lerp = (a, b, t) => a + (b - a) * t;
 const pct = (a, b) => Math.max(0, Math.min(1, a / b));
 const pos = (u, a) => ({ x: lerp(u.px, u.x, a), y: lerp(u.py, u.y, a) });
-function spriteOf(u) { if (u.kind === 'champ') return Art.champCoin(u.champ, u.team, u.tier); if (u.kind === 'minion') return Art.minionCoin(u.team, u.ranged); if (u.kind === 'monster') return Art.monsterCoin(u.big, u.boss); return null; }
+function spriteOf(u) { if (u.kind === 'champ') return Art.champCoin(u.champ, u.team, u.tier, undefined, u.finish); if (u.kind === 'minion') return Art.minionCoin(u.team, u.ranged); if (u.kind === 'monster') return Art.monsterCoin(u.big, u.boss); return null; }
 const drawR = u => u.kind === 'champ' ? 27 : u.kind === 'minion' ? (u.ranged ? 13 : 16) : u.boss ? 60 : u.big ? 34 : 19;
 const unitById = id => { const s = G.s; return s.champs.find(c => c.id === id) || s.minions.find(c => c.id === id) || s.monsters.find(c => c.id === id) || s.towers.find(c => c.id === id); };
 
@@ -40,7 +40,7 @@ const unitById = id => { const s = G.s; return s.champs.find(c => c.id === id) |
 // net: { role: 'host' | 'guest' } for an online match, otherwise leave it out.
 function startMatch(cfg, net) {
   const seed = cfg.seed === undefined ? Date.now() & 0xffffff : cfg.seed;
-  const s = Sim.createMatch({ seed, diff: cfg.diff, teams: cfg.teams });
+  const s = Sim.createMatch({ seed, diff: cfg.diff, teams: cfg.teams, practice: cfg.practice });
   const me = net && net.role === 'guest' ? s.champs.find(c => c.remote) : (s.champs.find(c => c.human && !c.remote) || s.champs.find(c => c.human));
   G = { s, me, cfg, cam: { x: me.x, y: me.y }, acc: 0, t: 0, frames: 0, ms: 0, ended: false, intro: 2.6, outro: null, timeScale: 1, slowT: 0, stop: 0, shake: 0, punch: 0, flash: 0, hpq: [], net: net ? { role: net.role } : null };
   initWorld(G); initHud(G); initSound(G);
@@ -54,8 +54,9 @@ function finishMatch() {
   const rankBefore = save.rank === undefined ? 1000 : save.rank, foes = G.cfg.teams[1 - me.team].filter(p => !p.human && p.skill !== undefined);
   const avg = foes.length ? foes.reduce((a, p) => a + p.skill, 0) / foes.length : .5;
   const rankDelta = Sim.rankDelta ? Sim.rankDelta(rankBefore, won, me.stats, avg) : 0, rankAfter = Math.max(0, Math.round(rankBefore + rankDelta));
-  save.rank = rankAfter; persist();
-  G.ended = true; showEnd({ won, gain, before, after: before + gain, me, s, rankBefore, rankAfter, rankDelta: rankAfter - rankBefore });
+  const marks = Sim.marksEarned(won, me.stats);
+  save.rank = rankAfter; save.marks = (save.marks || 0) + marks; persist();
+  G.ended = true; showEnd({ won, gain, before, after: before + gain, me, s, rankBefore, rankAfter, rankDelta: rankAfter - rankBefore, marks });
 }
 // Called by effects code: pause the simulation for a beat, or run it in slow motion.
 // Both are local-only moods, so an online match never uses them.

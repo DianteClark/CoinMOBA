@@ -1,13 +1,13 @@
 // Connects the simulation to Sound: decides what deserves to be heard, then per-frame music, weather and heartbeat control.
 // Mix tiers: the player's own actions and hits on the player are full level; nearby champions and objectives sit below that;
 // routine minion fights are nearly silent and rate-limited. Everything tolerates partial data, because a guest's state is rebuilt from snapshots.
-const SND = { level: 0, dmg: 0, send: 0, slow: 0, heart: 0, bolt: 0, coin: 0, coinT: 0, over: false, quiet: false, t: 0, paused: false, shots: [], zones: new Set(), chans: new Set(), danger: 0, keys: new Map() };
+const SND = { level: 0, dmg: 0, send: 0, slow: 0, heart: 0, bolt: 0, coin: 0, coinT: 0, over: false, quiet: false, t: 0, paused: false, shots: [], zones: new Set(), chans: new Set(), danger: 0, keys: new Map(), beacons: null, ruptT: -9, ruptN: 0, combo: new Map(), charging: new Map(), wreck: new Map() };
 const SND_LADDER = [1, 1.125, 1.25, 1.335, 1.5];
 let SND_SEEN = new WeakSet();
 
 function initSound(g) {
-  Object.assign(SND, { level: 0, dmg: 0, send: 0, slow: 0, heart: 0, bolt: 0, coin: 0, coinT: 0, over: false, quiet: false, t: 0, paused: false, shots: [], danger: 0 });
-  SND.zones.clear(); SND.chans.clear(); SND.keys.clear(); SND_SEEN = new WeakSet();
+  Object.assign(SND, { level: 0, dmg: 0, send: 0, slow: 0, heart: 0, bolt: 0, coin: 0, coinT: 0, over: false, quiet: false, t: 0, paused: false, shots: [], danger: 0, beacons: null, ruptT: -9, ruptN: 0 });
+  SND.zones.clear(); SND.chans.clear(); SND.keys.clear(); SND.combo.clear(); SND.charging.clear(); SND.wreck.clear(); SND_SEEN = new WeakSet();
   if (g && g.me) Sound.setSide(g.me.team === 0 ? 'hero' : 'villain');
   Sound.intensity(0); Sound.late(0); Sound.hope(.5);
   Sound.setMode('match');
@@ -27,6 +27,8 @@ function soundUnit(id) {
   const s = G.s, by = a => a ? a.find(c => c && c.id === id) : null;
   return by(s.champs) || by(s.minions) || by(s.monsters) || by(s.towers) || null;
 }
+// Enemies in the fog must not give themselves away by sound.
+function sndSeen(u, me) { if (!u || u.team === me.team || !Sim.canSee) return true; try { return !!Sim.canSee(G.s, me.team, u); } catch (err) { return true; } }
 const sndScaled = (o, k, low) => Object.assign(o, { vol: o.vol * k, low: !!low });
 
 // True for an event already handled. The same object is never played twice, and a guest also compares content over a
@@ -34,21 +36,57 @@ const sndScaled = (o, k, low) => Object.assign(o, { vol: o.vol * k, low: !!low }
 function soundDup(e) {
   if (SND_SEEN.has(e)) return true; SND_SEEN.add(e);
   if (!G.net || G.net.role !== 'guest') return false;
-  const now = performance.now(), k = [e.e, e.u, e.a, e.fx, e.by, e.t, e.team, sndNum(e.x) ? Math.round(e.x) : '', sndNum(e.y) ? Math.round(e.y) : ''].join('|');
+  const now = performance.now(), k = [e.e, e.u, e.a, e.fx, e.by, e.t, e.team, e.kind, e.slot, e.charge, e.id, sndNum(e.x) ? Math.round(e.x) : '', sndNum(e.y) ? Math.round(e.y) : ''].join('|');
   if (now - (SND.keys.get(k) || -1e9) < 200) return true;
   SND.keys.set(k, now);
   if (SND.keys.size > 240) for (const [key, at] of SND.keys) { if (now - at > 400) SND.keys.delete(key); }
   return false;
 }
 
-const SND_CAST = { snipe: 'snipe', snipeFull: 'snipeFull', deadeye: 'deadeye', orb: 'orb', ray: 'ray', chain: 'chain', bolt: 'bolt', mbolt: 'mbolt', tower: 'tshot', dash: 'dash', parry: 'parry', slash: 'slash', dome: 'dome', crash: 'whoosh', heal: 'heal', rupture: 'orb', stomp: 'stomp', break: 'break' };
-const SND_BOOM = { crash: 'crash', stomp: 'stomp', rupture: 'rupture', heal: 'heal', break: 'break', dome: 'dome', deadeye: 'blast', snipeFull: 'blast' };
+// Which named effect a cast plays. One fx string can serve several kits, so `kit:fx` is checked first.
+const SND_CAST = {
+  snipe: 'snipe', snipeFull: 'snipeFull', deadeye: 'deadeye', orb: 'orb', ray: 'ray', chain: 'chain', bolt: 'bolt', mbolt: 'mbolt', tower: 'tshot', dash: 'dash', parry: 'parry', slash: 'slash', dome: 'dome', crash: 'leap', heal: 'heal', rupture: 'ruptureCast', stomp: 'stomp', break: 'break',
+  tripwire: 'tripwire', ricochet: 'ricochet', lockdown: 'lockdown', flourish: 'flourish', feint: 'feint', salute: 'salute', hexbolt: 'hexbolt', polymorph: 'polymorph', coven: 'coven', miasma: 'miasma', leech: 'leech', quarantine: 'quarantine', shank: 'shank', vanish: 'vanish', cuts: 'cuts', wrecking: 'wrecking', grab: 'grab', demolish: 'demolish',
+};
+// Cast events carry the slot, so `kit:slot` names the exact ability and this wins over the fx string.
+const SND_SLOT = {
+  'vesper:1': 'smokeStep', 'vesper:2': 'deadeyeCharge', 'kade:0': 'lunge', 'kade:2': 'leap', 'ione:0': 'orb', 'ione:1': 'ruptureCast', 'ione:2': 'cascadeCast', 'solenne:0': 'ray', 'solenne:2': 'dayCharge',
+  'sable:0': 'slash', 'sable:1': 'blink', 'sable:2': 'reap', 'gravel:0': 'chain', 'gravel:2': 'avalanche',
+};
+const SND_KIT_CAST = { 'vesper:dash': 'smokeStep', 'kade:dash': 'lunge', 'gravel:dash': 'avalanche' };
+const SND_BOOM = { crash: 'crash', stomp: 'stomp', rupture: 'rupture', heal: 'heal', break: 'break', dome: 'dome', deadeye: 'blast', snipeFull: 'blast', tripwire: 'tripwireHit', ricochet: 'ricochetHit', lockdown: 'lockdownHit', salute: 'salute', hexbolt: 'hexboltHit', coven: 'covenHit', feint: 'feintPop', miasma: 'miasma', quarantine: 'quarantine', cuts: 'cuts', wrecking: 'wreckingHit', grab: 'grab', demolish: 'demolishHit' };
+const SND_PHIT = { chain: 'chainHit', ricochet: 'ricochetHit', hexbolt: 'hexboltHit', tripwire: 'tripwireHit', lockdown: 'lockdownHit', wrecking: 'wreckingHit', dome: 'domeBlock' };
+// A wind-up's cast sound plays on the press; the `fire` event is the shot itself, when it finally goes.
+const SND_FIRE = { deadeye: 'deadeye', snipeFull: 'snipeFull', snipe: 'snipe' };
+const SND_PING = { attack: 'pingAttack', retreat: 'pingRetreat', omw: 'pingOmw', help: 'pingHelp', danger: 'pingDanger' };
 // Seconds until a shot of the player's can no longer connect; if nothing has been hit by then, it missed.
-const SND_SHOT = { snipe: .62, snipeFull: .72, deadeye: .6, orb: .85, ray: .8, chain: .78, slash: .22 };
+const SND_SHOT = { snipe: .62, snipeFull: .72, deadeye: .6, orb: .85, ray: .8, chain: .78, slash: .22, ricochet: .7, hexbolt: .8, shank: .22, polymorph: .85, grab: .3 };
+const sndKit = u => (u && typeof u.champ === 'string') ? u.champ : '';
+// The kit name an event's position belongs to, for events that carry no unit: the champion standing on the spot.
+function sndKitAt(x, y) {
+  if (!G || !G.s || !sndNum(x) || !sndNum(y)) return '';
+  let best = '', bd = 80; for (const c of G.s.champs || []) { if (!c || !c.alive || !sndNum(c.x)) continue; const d = Math.hypot(c.x - x, c.y - y); if (d < bd) { bd = d; best = sndKit(c); } }
+  return best;
+}
+// The three parts of Flourish step up in pitch and weight, whether or not the sim says which part this is.
+function sndComboStep(u, e) {
+  if (sndNum(e.n)) return e.n;
+  const now = (G && G.t) || 0, c = SND.combo.get(u.id);
+  const i = c && now - c.t < 2.4 ? (c.i + 1) % 3 : 0;
+  SND.combo.set(u.id, { t: now, i }); return i;
+}
+function sndBoomName(e) {
+  const fx = e.fx, now = G.t || 0;
+  if (fx === 'rupture') { SND.ruptN = now - SND.ruptT < .5 ? SND.ruptN + 1 : 0; SND.ruptT = now; return SND.ruptN ? 'cascade' : 'rupture'; }
+  if (fx === 'crash' && sndKitAt(e.x, e.y) === 'gravel') return 'avalancheHit';
+  if (SND_BOOM[fx]) return SND_BOOM[fx];
+  return Sound.has && Sound.has(fx + 'Hit') ? fx + 'Hit' : 'blast';
+}
 
 function soundHit(e, me) {
   const u = soundUnit(e.u), by = e.by ? soundUnit(e.by) : null; if (!u) return;
   const a = sndNum(e.a) ? e.a : 0, onMe = u.id === me.id, byMe = !!by && by.id === me.id, champTarget = u.kind === 'champ';
+  if (e.sk && by && sndKit(by) === 'ironjaw' && (G.t || 0) - (SND.wreck.get(by.id) || -9) < 3.2) { const w = soundAt(u.x, u.y); if (w) Sound.play('wreckingHit', undefined, 160, byMe || onMe ? { pan: w.pan } : sndScaled(w, .6)); }
   if (onMe) SND.dmg = Math.min(1, SND.dmg + a / Math.max(1, me.maxHp || 1) * 2.4);
   // Scaled by the size of the hit, so a minion's chip damage does not thump like a champion's combo.
   if (onMe) { Sound.play('thud', undefined, 130, { vol: Math.min(1, .38 + a / Math.max(1, me.maxHp || 1) * 7) }); return; }
@@ -56,7 +94,7 @@ function soundHit(e, me) {
   if (byMe) {
     if (e.sk) SND.shots.shift();
     if (!o) return;
-    // Matches the comic words in fx.js: a word shows on a skill, a crit, or 70+ damage, and it is the big size from 110.
+    // Heavy feedback on a skill, a crit, or 70+ damage, the big size from 110.
     const word = (e.sk || e.crit || a >= 70) && u.kind !== 'tower', heavy = a >= 110 || e.crit, pan = { pan: o.pan };
     if (word) Sound.play(heavy ? 'bam' : 'pow', undefined, 60, champTarget ? pan : { pan: o.pan, vol: .7 });
     else Sound.play('hit', undefined, 55, { pan: o.pan, vol: champTarget ? 1 : .75 });
@@ -75,17 +113,51 @@ function soundEv(e, me) {
   const at = u => u ? soundAt(u.x, u.y) : null, mine = id => id === me.id;
   switch (e.e) {
     case 'cast': {
-      const u = soundUnit(e.u), name = SND_CAST[e.fx]; if (!u || !name) return;
-      if (mine(u.id)) {
-        Sound.play(name, undefined, 30);
+      const u = soundUnit(e.u); if (!u) return;
+      const kit = sndKit(u), mineNow = mine(u.id), now = G.t || 0;
+      // Holding a charge is the player's own feedback only; the shot is what everyone hears.
+      if (e.charge) { SND.charging.set(u.id, now); if (mineNow && kit === 'vesper') Sound.play('snipeCharge', undefined, 200); return; }
+      let name = SND_SLOT[kit + ':' + e.slot] || SND_KIT_CAST[kit + ':' + e.fx] || SND_CAST[e.fx] || (Sound.has(e.fx) ? e.fx : null);
+      if (e.fx === 'snipe' && kit === 'vesper' && SND.charging.has(u.id)) { if (now - SND.charging.get(u.id) >= 1.1) name = 'snipeFull'; SND.charging.delete(u.id); }
+      if (!name || !sndSeen(u, me)) return;
+      if (kit === 'ironjaw' && e.fx === 'wrecking') SND.wreck.set(u.id, now);
+      const arg = name === 'flourish' ? sndComboStep(u, e) : name === 'lunge' ? sndComboStep(u, e) : undefined;
+      if (mineNow) {
+        Sound.play(name, arg, 30); Sound.duck(.24, .3); // room for the player's own ability
         if (SND_SHOT[e.fx]) { SND.shots.push(G.t + SND_SHOT[e.fx]); if (SND.shots.length > 4) SND.shots.shift(); }
         return;
       }
-      const o = at(u); if (o && o.d < 1.4) Sound.play(name, undefined, 70, sndScaled(o, u.team === me.team ? .4 : .62, u.team === me.team));
+      const o = at(u); if (o && o.d < 1.4) Sound.play(name, arg, 70, sndScaled(o, u.team === me.team ? .4 : .62, u.team === me.team));
       return;
     }
-    case 'boom': { const name = SND_BOOM[e.fx] || 'blast', o = soundAt(e.x, e.y); if (o) Sound.play(name, undefined, 90, sndScaled(o, o.d < 1 ? .75 : .45)); return; }
-    case 'phit': { if (e.fx === 'dome') { const o = soundAt(e.x, e.y); if (o && o.d < 1.2) Sound.play('clink', 1.15, 90, sndScaled(o, .6)); } return; }
+    case 'fire': {
+      const u = soundUnit(e.u), name = SND_FIRE[e.fx]; if (!u || !name || !sndSeen(u, me)) return;
+      if (mine(u.id)) { Sound.play(name, undefined, 30); if (SND_SHOT[e.fx]) { SND.shots.push(G.t + SND_SHOT[e.fx]); if (SND.shots.length > 4) SND.shots.shift(); } return; }
+      const o = at(u); if (o && o.d < 1.6) Sound.play(name, undefined, 70, sndScaled(o, u.team === me.team ? .45 : .7));
+      return;
+    }
+    case 'poly': { const u = soundUnit(e.u); if (u && mine(u.id)) Sound.play('polymorphHit', undefined, 150); else { const o = at(u); if (o && o.d < 1.3) Sound.play('polymorphHit', undefined, 150, sndScaled(o, .7)); } return; }
+    case 'root': { const u = soundUnit(e.u); if (u && mine(u.id)) Sound.play('rooted', undefined, 150); else { const o = at(u); if (o && o.d < 1.2) Sound.play('rooted', undefined, 180, sndScaled(o, .5)); } return; }
+    case 'knock': { const u = soundUnit(e.u); if (u && mine(u.id)) Sound.play('thud', undefined, 130, { vol: .9 }); return; }
+    case 'curse': { const u = soundUnit(e.u), o = at(u); if (o && o.d < 1.1) Sound.play('curse', sndNum(e.n) ? e.n : 0, 120, sndScaled(o, u.id === me.id ? .9 : .55, true)); return; }
+    case 'shield': { const u = soundUnit(e.u); if (u && (mine(u.id) || u.team === me.team)) { const o = at(u); Sound.play('shieldUp', undefined, 200, mine(u.id) ? undefined : (o ? sndScaled(o, .5) : { vol: .3 })); } return; }
+    case 'stealth': { const u = soundUnit(e.u); if (u && mine(u.id) && !e.on) Sound.play('stealthBreak', undefined, 160); return; }
+    case 'buy': case 'sell': {
+      if (!mine(e.u)) return;
+      const item = e.e === 'buy' && Sim.ITEMS && Sim.ITEMS.find(i => i.id === e.id), name = e.e === 'sell' ? 'sell' : item && item.upgradesFrom ? 'buyUp' : 'buy';
+      if (!Sound.recent(name, 700)) Sound.play(name, undefined, 150);
+      return;
+    }
+    case 'evolve': { if (mine(e.u) && !Sound.recent('evolve', 700)) Sound.play('evolve', undefined, 200); return; }
+    case 'beacon': {
+      if (e.team !== me.team) return;
+      if (mine(e.u)) Sound.play('beaconPlace', undefined, 200);
+      else { const o = soundAt(e.x, e.y, .3); if (o) Sound.play('beaconPlace', undefined, 300, sndScaled(o, .55)); }
+      return;
+    }
+    case 'bhit': { const o = soundAt(e.x, e.y); if (o && o.d < 1.3) Sound.play('beaconHit', undefined, 60, sndScaled(o, e.team === me.team ? .75 : .85)); return; }
+    case 'boom': { const name = sndBoomName(e), o = soundAt(e.x, e.y); if (o) Sound.play(name, name === 'cascade' ? SND.ruptN : undefined, 90, sndScaled(o, o.d < 1 ? .75 : .45)); return; }
+    case 'phit': { const name = SND_PHIT[e.fx] || null; if (name) { const o = soundAt(e.x, e.y); if (o && o.d < 1.2) Sound.play(name, undefined, 90, sndScaled(o, .7)); } return; }
     case 'blink': { const o = soundAt(e.x, e.y); if (o && o.d < 1.3) Sound.play('blink', undefined, 70, sndScaled(o, .8)); return; }
     case 'hit': soundHit(e, me); return;
     case 'die': {
@@ -117,15 +189,20 @@ function soundEv(e, me) {
     }
     case 'atk': {
       const u = soundUnit(e.u); if (!u || u.kind !== 'champ') return;
-      const kit = Sim.KITS && Sim.KITS[u.champ], name = kit && kit.melee ? 'swing' : 'bolt';
-      if (mine(u.id)) Sound.play(name, undefined, 40, { vol: .85 });
-      else { const o = at(u); if (o && o.d < 1) Sound.play(name, undefined, 130, sndScaled(o, .3, true)); }
+      if (mine(u.id)) Sound.play('atk', u.champ, 40, { vol: .85 });
+      else if (sndSeen(u, me)) { const o = at(u); if (o && o.d < 1) Sound.play('atk', u.champ, 130, sndScaled(o, .3, true)); }
       return;
     }
     case 'heal': { if (mine(e.u) && sndNum(e.a) && e.a >= 40) Sound.play('mark', undefined, 350, { vol: .7 }); return; }
     case 'stun': { const u = soundUnit(e.u); if (u && mine(u.id)) Sound.play('stun', undefined, 150); else { const o = at(u); if (o && o.d < 1.2) Sound.play('stun', undefined, 200, sndScaled(o, .5)); } return; }
     case 'mark': { const u = soundUnit(e.u), o = at(u); if (o && o.d < 1.2) Sound.play('mark', undefined, 150, sndScaled(o, .6)); return; }
     case 'civ': { const o = soundAt(e.x, e.y, .3); if (o) Sound.play(e.team === 0 ? 'rescued' : 'seized', undefined, 300, sndScaled(o, .8)); return; }
+    case 'ping': {
+      const name = SND_PING[e.kind] || SND_PING.danger, u = soundUnit(e.u);
+      if (u && mine(u.id)) { Sound.play(name, undefined, 120); return; }
+      const o = soundAt(e.x, e.y, .75); if (o) Sound.play(name, undefined, 400, Object.assign(o, { vol: Math.min(o.vol, .8) }));
+      return;
+    }
     case 'hope': { if (e.on) Sound.play(e.team === 0 ? 'hopeSwell' : 'dread', undefined, 1200, { vol: .8 }); return; }
   }
 }
@@ -146,6 +223,10 @@ function soundDanger(s, me) {
     if (!z || z.kind !== 'blast' || z.team === me.team || !sndNum(z.x) || !sndNum(z.y) || SND.zones.has(z.id)) continue;
     if (Math.hypot(z.x - me.x, z.y - me.y) < (z.r || 0) + 36) { SND.zones.add(z.id); hit = true; }
   }
+  for (const z of s.zones || []) {
+    if (!z || z.kind !== 'fissure' || z.team === me.team || SND.zones.has(z.id) || !sndNum(z.x1) || !sndNum(z.x2)) continue;
+    if (sndSegDist(me.x, me.y, z.x1, z.y1, z.x2, z.y2) < (z.r || 40) + 50) { SND.zones.add(z.id); hit = true; }
+  }
   if (SND.zones.size > 64) SND.zones.clear();
   for (const c of s.champs || []) {
     if (!c || c.team === me.team) continue;
@@ -156,6 +237,19 @@ function soundDanger(s, me) {
     if (sndSegDist(me.x, me.y, c.x, c.y, c.x + ch.dx * len, c.y + ch.dy * len) < (ch.w || 0) / 2 + 60) { SND.chans.add(c.id); hit = true; }
   }
   if (hit) Sound.play('danger', undefined, 500);
+}
+
+// A beacon's end has no event of its own: gone with health to spare is only out of sight, and a timed-out one fades silently.
+function soundBeacons(s, me) {
+  if (!Array.isArray(s.beacons)) return;
+  const cur = new Map();
+  for (const b of s.beacons) { if (b && sndNum(b.x) && sndNum(b.y) && b.alive !== false) cur.set(b.id !== undefined ? b.id : Math.round(b.x) + ':' + Math.round(b.y), b); }
+  if (SND.beacons) for (const [id, b] of SND.beacons) {
+    if (cur.has(id) || (sndNum(b.t) && b.t < .6) || (sndNum(b.hp) && b.hp > 1)) continue;
+    const ally = b.team === me.team, o = soundAt(b.x, b.y, ally ? .5 : 0);
+    if (o) Sound.play('beaconKill', undefined, 250, ally ? o : sndScaled(o, .85));
+  }
+  SND.beacons = new Map([...cur].map(([k, v]) => [k, { x: v.x, y: v.y, hp: v.hp, t: v.t, team: v.team }]));
 }
 
 function soundTick(dt) {
@@ -195,6 +289,8 @@ function soundTick(dt) {
   const b = G.bolt || 0;
   if (b > .9 && SND.bolt <= .9) Sound.play('thunder', undefined, 700, { vol: .7 });
   SND.bolt = b;
+
+  try { soundBeacons(s, me); } catch (err) { }
 
   SND.danger -= dt;
   if (SND.danger <= 0 && me.alive && sndNum(me.x) && sndNum(me.y)) { SND.danger = .08; soundDanger(s, me); }

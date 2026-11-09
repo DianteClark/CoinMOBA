@@ -279,6 +279,15 @@ const Terrain = (() => {
       return { c, L: L.c, w: W0, h: H0, ax, ay };
     });
   }
+  // The rear silhouette of a sprite, for extruding buildings into depth. Cached on the sprite.
+  function backOf(spr, shade = '#05070c', lit = '#1a2230') {
+    if (spr.back) return spr.back;
+    const w = spr.c.width, h = spr.c.height, c = cv(w, h), g = c.getContext('2d');
+    g.drawImage(spr.c, 0, 0);
+    g.globalCompositeOperation = 'source-in'; g.fillStyle = shade; g.fillRect(0, 0, w, h);
+    g.globalCompositeOperation = 'source-atop'; g.fillStyle = lit; g.fillRect(0, 0, w * .32, h);
+    return spr.back = c;
+  }
   function banner(team) {
     return once('ban' + team, () => {
       const col = team ? '#1a1218' : '#14233c', trim = team ? VIL.crim : HERO.gold, W0 = 72, H0 = 150, frames = [];
@@ -302,14 +311,14 @@ const Terrain = (() => {
   // One disc of a stack: a machined top over a thin dark side.
   function towerCoin(team, R) {
     return once(`tc${team}R${R}`, () => {
-      const T = R * .3, ry = R * .72, W0 = R * 2 + 12, H0 = ry * 2 + T + 12, { c, g } = mk(W0, H0), cx = W0 / 2, cy = ry + 6, side = team ? '#0c0c10' : '#0a1426', top = team ? '#1c1d24' : '#16284a', lit = team ? '#3a3b48' : '#30507e', trim = team ? VIL.crim : HERO.gold;
-      g.fillStyle = side; g.beginPath(); g.ellipse(cx, cy + T, R, ry, 0, 0, TAU); g.fill(); g.fillRect(cx - R, cy, R * 2, T);
-      g.fillStyle = lit; g.fillRect(cx - R, cy + 1, R * .3, T * .9);
+      // A flat placeholder now; the relief-lit disc arrives from the job queue a moment later, in place.
+      const T = R * .3, ry = R * .72, W0 = R * 2 + 12, H0 = ry * 2 + T + 12, { c, g } = mk(W0, H0), cx = W0 / 2, cy = ry + 6, top = team ? '#1c1d24' : '#16284a';
+      g.fillStyle = team ? '#0c0c10' : '#0a1426'; g.beginPath(); g.ellipse(cx, cy + T, R, ry, 0, 0, TAU); g.fill(); g.fillRect(cx - R, cy, R * 2, T);
       g.fillStyle = top; g.beginPath(); g.ellipse(cx, cy, R, ry, 0, 0, TAU); g.fill();
-      g.save(); g.beginPath(); g.ellipse(cx, cy, R, ry, 0, 0, TAU); g.clip(); g.fillStyle = lit; g.beginPath(); g.moveTo(cx - R, cy + ry); g.lineTo(cx + R * .2, cy - ry); g.lineTo(cx - R, cy - ry); g.closePath(); g.fill(); g.restore();
-      g.strokeStyle = trim; g.lineWidth = 1.8; g.beginPath(); g.ellipse(cx, cy, R * .78, ry * .78, 0, 0, TAU); g.stroke();
-      g.strokeStyle = 'rgba(0,0,0,.8)'; g.lineWidth = 1.6; g.beginPath(); g.ellipse(cx, cy, R, ry, 0, 0, TAU); g.stroke();
-      return { c, w: W0, h: H0, cx, cy };
+      g.strokeStyle = team ? VIL.crim : HERO.gold; g.lineWidth = 1.8; g.beginPath(); g.ellipse(cx, cy, R * .78, ry * .78, 0, 0, TAU); g.stroke();
+      const out = { c, w: W0, h: H0, cx, cy };
+      Art.defer(() => { const px = Math.ceil(R * SS), d = Art.reliefStack(team, px), S = d.w; out.c = d.c; out.w = S / SS; out.h = S / SS; out.cx = S / SS / 2; out.cy = S / SS / 2 - R * .1; });
+      return out;
     });
   }
   // The finial on a stack: Hero beacons a slim gold deco spire, Villain towers a black blade with a burning eye-slit.
@@ -370,5 +379,5 @@ const Terrain = (() => {
       return c;
     });
   }
-  return { paint, bake, cliff, tree, lantern, pillar, banner, house, hq, towerCoin, towerCrown, wave, spark, smoke, bubble, pool, nearRoad, spline, HALF, INK };
+  return { paint, bake, cliff, tree, lantern, pillar, banner, house, hq, towerCoin, towerCrown, backOf, wave, spark, smoke, bubble, pool, nearRoad, spline, HALF, INK };
 })();

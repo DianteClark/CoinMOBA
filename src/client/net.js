@@ -2,7 +2,7 @@
 //   reliable channel (PeerJS, JSON): lobby, commands, events, slow-state deltas
 //   unreliable channel (our own, binary): 20 Hz snapshots, stick input, ping
 const Net = (() => {
-  const PREFIX = 'flipside3-', PROTOCOL = 1, ALPHA = '23456789ABCDEFGHJKMNPQRSTVWXYZ', CODE_LEN = 5;
+  const PREFIX = 'flipside3-', PROTOCOL = 2, ALPHA = '23456789ABCDEFGHJKMNPQRSTVWXYZ', CODE_LEN = 5;
   const T = { signal: 12000, connect: 20000, hello: 8000, lostHost: 20000, lostFriend: 20000, away: 4000, stall: 1500, ping: 1000, retry: 5 };
   const MSG = {
     server: "Can't reach the matchmaking server. Check your internet, wait a minute and try again.",
@@ -220,7 +220,8 @@ const Net = (() => {
   addEventListener('pagehide', e => { if (!e.persisted && api.connected) sendRel(['B']); });
 
   // ---------- match links, host side ----------
-  let holdDebt = 0, seatIdx = -1, ack = 0, rxSeq = -1, inq = [], idleTicks = 0, rxAtk = false, rxAim = null, cmdq = [], awayBot = false, guestVisible = true, guestHiddenAt = 0, prevSlow = null, evq = [], worker = null, hiddenLast = 0;
+  const ATK_MODES = ['champ', 'minion', 'tower'];
+  let rxMode = 'champ', holdDebt = 0, seatIdx = -1, ack = 0, rxSeq = -1, inq = [], idleTicks = 0, rxAtk = false, rxAim = null, cmdq = [], awayBot = false, guestVisible = true, guestHiddenAt = 0, prevSlow = null, evq = [], worker = null, hiddenLast = 0;
   // ---------- match links, guest side ----------
   let short = false, frames = [], clockOff = null, delay = 3.2, pending = [], earlySlow = [], seq = 0, hist = [], ex = 0, ey = 0, srvX = 0, srvY = 0, srvDriven = false, reconcileHold = 0, pendCd = [0, 0, 0], pendRecast = [0, 0, 0], chargeLocal = 0, chargeBlock = 0, lastFrameAt = 0, inHist = [], aimSend = null, overShown = false;
   const nearer = (a, b) => ((a - b) & 0xffff) < 0x8000 && a !== b;
@@ -234,7 +235,7 @@ const Net = (() => {
     seatIdx = s.champs.findIndex(c => c.remote);
     if (!api.stats) api.stats = freshStats();
     prevSlow = null; evq = []; inq = []; cmdq = []; rxSeq = -1; ack = 0; idleTicks = 0; rxAtk = false; rxAim = null; holdDebt = 0; awayBot = false; guestVisible = true; guestHiddenAt = 0;
-    frames = []; clockOff = null; delay = 3.2; hist = []; ex = ey = 0; seq = 0; srvDriven = false; pendCd = [0, 0, 0]; pendRecast = [0, 0, 0]; chargeLocal = 0; chargeBlock = 0; lastFrameAt = 0; overShown = false;
+    localCast = []; frames = []; clockOff = null; delay = 3.2; hist = []; ex = ey = 0; seq = 0; srvDriven = false; pendCd = [0, 0, 0]; pendRecast = [0, 0, 0]; chargeLocal = 0; chargeBlock = 0; lastFrameAt = 0; overShown = false;
     if (role === 'guest') { pending = []; for (const d of earlySlow) Sim.applySlow(s, d); earlySlow = []; }
     if (role === 'host') {
       prevSlow = Sim.slowFlat(s);
@@ -255,6 +256,7 @@ const Net = (() => {
     const d = new DataView(buf), st = api.stats;
     st.inputsIn++;
     const newest = d.getUint16(1, true), flags = d.getUint8(3), have = d.getUint8(4);
+    rxMode = ATK_MODES[(flags >> 2) & 3] || 'champ';
     if (rxSeq >= 0 && (newest === rxSeq || nearer(rxSeq, newest))) return; // late or duplicate
     if (flags & 2) { rxAim = { x: d.getInt16(5 + have * 2, true), y: d.getInt16(7 + have * 2, true) }; }
     rxAtk = !!(flags & 1);
@@ -275,7 +277,7 @@ const Net = (() => {
     if (inq.length) { if (holdDebt && inq.length > 1) { inq.shift(); holdDebt--; } const e = inq.shift(); c.mv.x = e.x; c.mv.y = e.y; ack = e.seq; idleTicks = 0; }
     else if (++idleTicks > 8) c.mv.x = c.mv.y = 0;
     else if (holdDebt < 5) holdDebt++;
-    c.atk = rxAtk;
+    c.atk = rxAtk; c.atkMode = rxMode;
     if (rxAim && c.charge) c.q.push({ t: 'aim', tx: c.x + rxAim.x, ty: c.y + rxAim.y });
     rxAim = null;
     for (const m of cmdq) {
@@ -284,14 +286,18 @@ const Net = (() => {
       else if (v === 1 && sl >= 0 && sl <= 2) c.q.push({ t: 'charge', slot: sl });
       else if (v === 2) c.q.push({ t: 'cancel' });
       else if (v === 3) c.q.push({ t: 'recall' });
-      else if (v === 4 && ['edge', 'guard', 'haste'].includes(m[1])) c.q.push({ t: 'forge', track: m[1] });
+      else if (v === 5 && typeof m[1] === 'string') c.q.push({ t: 'buy', id: m[1] });
+      else if (v === 6) c.q.push({ t: 'sell', slot: sl });
+      else if (v === 7) c.q.push({ t: 'evolve', tier: sl, choice: m[2] | 0 });
+      else if (v === 8 && ok(m[1], m[2])) c.q.push({ t: 'beacon', tx: c.x + m[1], ty: c.y + m[2] });
+      else if (v === 9 && ok(m[2], m[3])) c.q.push({ t: 'ping', kind: String(m[1]), x: m[2], y: m[3] });
     }
     cmdq.length = 0;
   }
   function hostAfter() {
     const s = G.s, st = api.stats;
     if (!api.connected) return;
-    if (s.ev.length) { const b = [s.tick]; for (const e of s.ev) b.push(Sim.packEvent(e)); st.evOut += s.ev.length; evq.push(b); if (api._fault) witness(st, b); }
+    if (s.ev.length) { const b = [s.tick], ct = seatChamp(); for (const e of s.ev) if (!(e.e === 'ping' && ct && e.team !== ct.team)) b.push(Sim.packEvent(e)); st.evOut += s.ev.length; evq.push(b); if (api._fault) witness(st, b); }
     if (s.tick % 3 !== 0 || s.over) {
       if (evq.length) { sendRel(['e', ...evq]); evq = []; }
       const buf = Sim.snapshot(s, seatIdx, ack);
@@ -316,6 +322,8 @@ const Net = (() => {
   function addFrame(fr) {
     const st = api.stats, now = performance.now(), ticks = now * .03;
     st.snapsIn++;
+    // A leftover packet from the previous match has a huge tick; without this it would shut out every new frame.
+    if (fr.mid !== ((G.s.seed || 0) & 255)) return; // a packet from the previous match
     if (frames.length && fr.tick <= frames[0].tick) { st.lateDrop++; return; }
     let i = frames.length; while (i > 0 && frames[i - 1].tick > fr.tick) i--;
     frames.splice(i, 0, fr);
@@ -326,22 +334,30 @@ const Net = (() => {
     lastFrameAt = now;
     if (fr === frames[frames.length - 1]) ownFrame(fr, now);
   }
+  function syncTimer(local, srv) { const d = srv - local; if (Math.abs(d) > .3) return srv; const v = local + d * .15; return srv <= 0 && v < .03 ? 0 : v; }
   function ownFrame(fr, now) {
     const s = G.s, me = G.me, a = fr.champs[seatIdx], own = fr.own; if (!a || !own) return;
     const keepFx = me.fx, keepFy = me.fy, pch = me.charge, keepDash = me.dash, wasAlive = me.alive;
-    Sim.applyChampState(me, a);
+    Sim.applyChampState(me, a, true);
     me.fx = keepFx; me.fy = keepFy;
     srvDriven = !!(a.fl & 4) && !me.pdash || !me.alive || !!me.air || !!me.leap;
     if (me.pdash) me.dash = keepDash || { net: true };
-    me.slowA = own.slowA;
+    me.slowA = own.slowA; me.hasteA = own.hasteA;
+    while (localCast.length && localCast[0].at < now) localCast.shift();
     // Own charge: trust the local one until the host has had time to answer.
     const srvCh = me.charge;
     if (chargeLocal) { if (srvCh) { me.charge = pch || srvCh; chargeLocal = 0; } else if (now < chargeLocal) me.charge = pch; else { chargeLocal = 0; me.charge = null; } }
     else if (srvCh && now < chargeBlock) me.charge = null;
     else if (srvCh && pch) me.charge = pch;
+    // Our clock runs on its own between frames. The host's number is old by one-way latency, so ahead-correct it,
+    // and only correct small drift gently: a timer that jitters by a few hundredths every frame reads as broken.
+    const lag = Math.min(.25, api.ping / 2000);
     for (let i = 0; i < 3; i++) {
-      if (pendCd[i]) { if (own.cd[i] > 0 || now > pendCd[i]) { pendCd[i] = 0; me.cd[i] = own.cd[i]; } } else me.cd[i] = own.cd[i];
-      if (pendRecast[i]) { if (now > pendRecast[i]) { pendRecast[i] = 0; me.recast[i] = own.recast[i]; } } else me.recast[i] = own.recast[i];
+      const srv = Math.max(0, own.cd[i] - lag);
+      if (pendCd[i]) { if (Math.abs(srv - me.cd[i]) < .6 + lag || now > pendCd[i]) { pendCd[i] = 0; me.cd[i] = syncTimer(me.cd[i], srv); } }
+      else me.cd[i] = syncTimer(me.cd[i], srv);
+      const rsrv = Math.max(0, own.recast[i] - lag);
+      if (pendRecast[i]) { if (now > pendRecast[i]) { pendRecast[i] = 0; me.recast[i] = rsrv; } } else me.recast[i] = syncTimer(me.recast[i], rsrv);
     }
     if (own.atkCd > me.atkCd + .25) me.atkCd = own.atkCd;
     srvX = a.x; srvY = a.y;
@@ -369,7 +385,8 @@ const Net = (() => {
       if (me.alive || frames.length) { me.x += (srvX - me.x) * (Math.hypot(srvX - me.x, srvY - me.y) > 600 ? 1 : .4); me.y += (srvY - me.y) * (Math.hypot(srvX - me.x, srvY - me.y) > 600 ? 1 : .4); }
       me.vx = (me.x - me.px) / DT; me.vy = (me.y - me.py) / DT;
       // cooldown displays keep counting while the host owns the coin
-      for (let i = 0; i < 3; i++) { if (me.cd[i] > 0) me.cd[i] -= DT; if (me.recast[i] > 0) me.recast[i] -= DT; } if (me.charge) me.charge.t += DT;
+      if (me.alive) { for (let i = 0; i < 3; i++) { if (me.cd[i] > 0) me.cd[i] -= DT; if (me.recast[i] > 0) me.recast[i] -= DT; } }
+      if (me.charge) me.charge.t += DT;
     } else {
       Sim.predict(s, me);
       if (ex || ey) {
@@ -384,14 +401,15 @@ const Net = (() => {
   }
   function sendInput(me) {
     const n = inHist.length / 2, b = new DataView(new ArrayBuffer(9 + n * 2)); b.setUint8(0, 1); b.setUint16(1, seq, true);
-    let fl = me.atk ? 1 : 0; if (aimSend) fl |= 2;
+    let fl = me.atk ? 1 : 0; if (aimSend) fl |= 2; fl |= Math.max(0, ATK_MODES.indexOf(me.atkMode)) << 2;
     b.setUint8(3, fl); b.setUint8(4, n);
     for (let i = 0; i < n; i++) { b.setInt8(5 + i * 2, inHist[inHist.length - 2 - i * 2]); b.setInt8(6 + i * 2, inHist[inHist.length - 1 - i * 2]); }
     if (aimSend) { b.setInt16(5 + n * 2, aimSend.x, true); b.setInt16(7 + n * 2, aimSend.y, true); aimSend = null; }
     sendFast(b.buffer);
   }
   function sendCmd(c) { api.stats.cmdsOut++; sendRel(['c', c]); }
-  function canAct(me, a, slot) { return me.alive && me.stunT <= 0 && !me.air && !me.chan && !me.dash && !me.pdash && a && !(slot === 2 && me.lvl < 3); }
+  let localCast = [], lastWindup = null, localCharge = 0;
+  function canAct(me, a, slot) { return me.alive && me.stunT <= 0 && !me.air && !me.chan && !me.dash && !me.pdash && a && !(slot === 2 && me.lvl < 3) && !(me.rootT > 0 && a.pd); }
   function drainQueue(now) {
     const me = G.me, wait = api.ping + 350;
     while (me.q.length) {
@@ -402,34 +420,50 @@ const Net = (() => {
         if (a && canAct(me, a, q.slot) && (recast || me.cd[q.slot] <= 0)) {
           const pd = recast ? a.pdr : a.pd, l = Math.hypot(dx, dy) || 1, ndx = l > 1 ? dx / l : me.fx, ndy = l > 1 ? dy / l : me.fy;
           if (pd) { const reach = Math.max(0, Math.min(pd[0], Sim.rayWall(me.x, me.y, ndx, ndy, pd[0] + me.r) - me.r)); me.pdash = { vx: ndx * pd[1], vy: ndy * pd[1], t: reach / pd[1] }; me.dash = me.dash || { net: true }; reconcileHold = now + wait + 250; }
-          if (recast) { me.recast[q.slot] = 0; pendRecast[q.slot] = now + wait; }
-          else { me.cd[q.slot] = q.slot === 1 && me.champ === 'kade' ? a.cd : a.cd * (1 - me.up.haste * .08); pendCd[q.slot] = now + wait; }
+          if (recast) {
+            const more = a.chain && (me.fstepL || 1) < a.chain;
+            me.fstepL = more ? (me.fstepL || 1) + 1 : 0; me.recast[q.slot] = more ? a.window : 0; pendRecast[q.slot] = now + wait;
+          } else {
+            me.cd[q.slot] = Sim.cdOf(me, q.slot); pendCd[q.slot] = now + wait;
+            if (a.armsRecast) { me.recast[q.slot] = a.window; me.fstepL = 1; pendRecast[q.slot] = now + wait; }
+            if (a.windup) lastWindup = { slot: q.slot, at: now };
+          }
           me.fx = ndx; me.fy = ndy;
+          localCast.push({ at: now + 1500, slot: q.slot }); playEvent({ e: 'cast', u: me.id, fx: a.fx, dx: ndx, dy: ndy, slot: q.slot });
         }
         sendCmd([0, q.slot, Math.round(dx), Math.round(dy)]);
       } else if (q.t === 'charge') {
-        if (me.alive && me.cd[q.slot] <= 0 && me.stunT <= 0 && !me.chan && !me.air) { me.charge = { slot: q.slot, t: 0, dx: me.fx, dy: me.fy }; chargeLocal = now + wait + 200; }
+        if (me.alive && me.cd[q.slot] <= 0 && me.stunT <= 0 && !me.chan && !me.air) { me.charge = { slot: q.slot, t: 0, dx: me.fx, dy: me.fy }; chargeLocal = now + wait + 200; playEvent({ e: 'cast', u: me.id, fx: me.kit[q.slot].fx, dx: me.fx, dy: me.fy, slot: q.slot, charge: 1 }); localCharge = now + 1500; }
         sendCmd([1, q.slot]);
       } else if (q.t === 'aim') {
         if (me.charge) { const n = Math.hypot(q.tx - me.x, q.ty - me.y) || 1; me.charge.dx = (q.tx - me.x) / n; me.charge.dy = (q.ty - me.y) / n; me.fx = me.charge.dx; me.fy = me.charge.dy; }
         aimSend = { x: Math.max(-30000, Math.min(30000, Math.round(q.tx - me.x))), y: Math.max(-30000, Math.min(30000, Math.round(q.ty - me.y))) };
       } else if (q.t === 'cancel') {
         if (me.charge) { me.charge = null; chargeLocal = 0; chargeBlock = now + wait; }
+        // Cancelling a wind-up refunds its cooldown at once, as it will on the host.
+        const ws = me.chan && me.chan.slot !== undefined ? me.chan.slot : lastWindup && now - lastWindup.at < 1200 ? lastWindup.slot : -1;
+        if (ws >= 0) { me.cd[ws] = 0; pendCd[ws] = 0; lastWindup = null; }
         sendCmd([2]);
       } else if (q.t === 'recall') sendCmd([3]);
-      else if (q.t === 'forge') sendCmd([4, q.track]);
+      else if (q.t === 'buy') sendCmd([5, String(q.id)]);
+      else if (q.t === 'sell') sendCmd([6, q.slot | 0]);
+      else if (q.t === 'evolve') sendCmd([7, q.tier | 0, q.choice | 0]);
+      else if (q.t === 'beacon') sendCmd([8, Math.round(q.tx - me.x), Math.round(q.ty - me.y)]);
+      else if (q.t === 'ping') sendCmd([9, String(q.kind), Math.round(q.x), Math.round(q.y)]);
     }
   }
 
   // The event queue is only visible to the player as it plays out, so time it with the interpolated world.
-  const COSMETIC = new Set(['hit', 'heal', 'gold', 'phit', 'boom', 'blink', 'parry', 'cast', 'tshot', 'cancelled', 'stun', 'mark', 'atk', 'matk']);
+  const COSMETIC = new Set(['hit', 'heal', 'gold', 'phit', 'boom', 'blink', 'parry', 'cast', 'tshot', 'cancelled', 'stun', 'mark', 'atk', 'matk', 'fire', 'root', 'knock', 'poly', 'curse', 'shield', 'stealth']);
   function playEvent(e) { const st = api.stats; st.evApplied++; fxEvent(e); uiEvent(e); soundEvent(e); }
   function releaseEvents(rt) {
-    const me = G.me, st = api.stats;
+    const me = G.me, st = api.stats, now2 = performance.now();
     for (let i = 0; i < pending.length; i++) {
       const p = pending[i], mine = p.e.u === me.id || p.e.by === me.id;
       if (!(mine || p.t <= rt + .5)) continue;
       pending.splice(i, 1); i--;
+      if (p.e.e === 'cast' && p.e.u === me.id && p.e.charge && now2 < localCharge) { localCharge = 0; continue; }
+      if (p.e.e === 'cast' && p.e.u === me.id && p.e.charge === undefined) { const k = localCast.findIndex(l => l.slot === p.e.slot); if (k >= 0) { localCast.splice(k, 1); continue; } }
       if (rt - p.t > 36 && COSMETIC.has(p.e.e)) { st.evDropped++; continue; }
       playEvent(p.e);
     }

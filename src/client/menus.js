@@ -1,16 +1,9 @@
 // Title, main menu, how to play, online room and join, the coin flip, lobby, seat setup, versus splash, end screen and the coin wipe between them.
 const { initMenus, animMenus, showEnd } = (() => {
-  const ids = Object.keys(Sim.KITS), TIERS = Sim.TIERS;
+  const TIERS = Sim.TIERS;
+  const rosterOf = team => Sim.ROSTER && Sim.ROSTER[team] ? Sim.ROSTER[team] : Object.keys(Sim.KITS);
   const BOT_NAMES = ['Penny', 'Florin', 'Ducat', 'Groat', 'Thaler', 'Guinea', 'Tanner', 'Sovereign', 'Bezant', 'Kopek'];
-  const STATS = {
-    vesper: { Damage: 5, Tough: 1, Speed: 2, Skill: 4 },
-    kade: { Damage: 4, Tough: 3, Speed: 4, Skill: 5 },
-    ione: { Damage: 4, Tough: 2, Speed: 2, Skill: 3 },
-    solenne: { Damage: 2, Tough: 2, Speed: 3, Skill: 2 },
-    sable: { Damage: 5, Tough: 1, Speed: 5, Skill: 5 },
-    gravel: { Damage: 2, Tough: 5, Speed: 2, Skill: 2 },
-  };
-  const L = { seats: null, team: 0, slot: 0, sheet: null };
+  const L = { seats: null, team: 0, slot: 0, sheet: null, tab: 'builds', practice: false };
   // Online session. mode is 'host', 'guest' or null for a match against bots.
   const N = { mode: null, code: '', peer: false, joining: false, input: '', pairing: 'same', ranks: { h: null, g: null }, ready: { h: false, g: false }, seq: 0, ack: 0, lobby: false, side: 0, timer: 0, wasReady: false };
   const myWho = () => N.mode === 'host' ? 'h' : N.mode === 'guest' ? 'g' : null;
@@ -25,6 +18,20 @@ const { initMenus, animMenus, showEnd } = (() => {
   const seatTier = s => isMe(s) ? Sim.tierOf(pts(s.champ)) : s.tier;
   const roleName = r => Sim.ROLE_INFO[r].name;
   const charName = (team, id) => Sim.charOf(team, id).name;
+  // Names on the small coins lose their honorifics so they stay on one line.
+  const shortName = n => n.replace(/^(The|Captain|Madame) /, '');
+  const buildsOf = id => (Sim.KITS[id] && Sim.KITS[id].builds) || [];
+  const myBuild = id => { const b = buildsOf(id), v = save.builds && save.builds[id]; return b.some(x => x.id === v) ? v : b[0] ? b[0].id : undefined; };
+  const botBuild = (id, role) => Sim.defaultBuild ? Sim.defaultBuild(id, role, Math.random()) : undefined;
+  const cosmeticIds = kind => (Art.COSMETICS || []).filter(c => c.kind === kind).map(c => c.id);
+  const equipOf = () => { const e = save.equip || {}, ok = k => e[k] && isOwned(e[k]) ? e[k] : undefined; return { finish: ok('finish'), trail: ok('trail'), recall: ok('recall') }; };
+  const cleanCos = (kind, v) => cosmeticIds(kind).includes(v) ? v : undefined;
+  function wearMine(s) { const e = equipOf(); s.finish = e.finish; s.trail = e.trail; s.recall = e.recall; s.build = myBuild(s.champ); }
+  // Fit for a role reads as a plain sentence: the best lane, and any other lane it does well in.
+  function bestLine(k) {
+    const r = Sim.ROLES.slice().sort((a, b) => k.fit[b] - k.fit[a]), first = r[0], also = r.filter((x, i) => i && k.fit[x] >= 2);
+    return `Best in: ${roleName(first)}${also.length ? `<span>, also ${also.map(roleName).join(' and ')}</span>` : ''}`;
+  }
   const MISSION = ['Save the people', 'Terrorize the city'];
   // ---------- rank ----------
   const myRank = () => save.rank === undefined ? 1000 : save.rank;
@@ -55,22 +62,23 @@ const { initMenus, animMenus, showEnd } = (() => {
   function coinCanvas(spr, size) { const c = document.createElement('canvas'); c.width = c.height = size; Hud.coinTo(c, spr); return c; }
 
   // ---------- seats ----------
+  const wantFor = team => { const r = rosterOf(team), v = (save.lastBy || {})[team]; return r.includes(v) ? v : r.includes(save.last) ? save.last : r[0]; };
   function rollSeats() {
     const names = shuffle(BOT_NAMES.slice()); let n = 0;
-    const want = ids.includes(save.last) ? save.last : ids[0];
     L.seats = [0, 1].map(team => {
-      const pool = shuffle(ids.slice()).slice(0, 4);
-      if (team === L.team) { const at = pool.indexOf(want); if (at >= 0) [pool[at], pool[L.slot]] = [pool[L.slot], pool[at]]; else pool[L.slot] = want; }
+      const pool = shuffle(rosterOf(team).slice()).slice(0, 4);
+      if (team === L.team) { const want = wantFor(team), at = pool.indexOf(want); if (at >= 0) [pool[at], pool[L.slot]] = [pool[L.slot], pool[at]]; else pool[L.slot] = want; }
       const roles = Sim.autoRoles(pool);
-      return pool.map((champ, i) => ({ champ, role: roles[i], tier: Math.min(5, Math.floor(Math.random() * Math.random() * 6)), human: false, name: names[n++], who: null }));
+      return pool.map((champ, i) => ({ champ, role: roles[i], tier: Math.min(5, Math.floor(Math.random() * Math.random() * 6)), human: false, name: names[n++], who: null, build: botBuild(champ, roles[i]) }));
     });
-    const me = mine(); me.human = true; me.name = 'You';
+    const me = mine(); me.human = true; me.name = 'You'; wearMine(me);
   }
   function setChamp(team, i, id) {
     const row = L.seats[team], s = row[i], other = row.find(o => o !== s && o.champ === id);
     if (other) other.champ = s.champ;
     s.champ = id;
-    if (isMe(s)) { save.last = id; persist(); flipT = 1; }
+    if (isMe(s)) { save.last = id; (save.lastBy || (save.lastBy = {}))[team] = id; s.build = myBuild(id); persist(); flipT = 1; }
+    else s.build = botBuild(id, s.role);
   }
   function setRole(team, i, role) {
     const row = L.seats[team], s = row[i], other = row.find(o => o !== s && o.role === role);
@@ -85,19 +93,17 @@ const { initMenus, animMenus, showEnd } = (() => {
     Sound.play('coin');
   }
   // The side is random. The player's seat setup travels with them.
-  function rollSide() {
-    const side = Math.random() < .5 ? 0 : 1;
-    if (side !== L.team) { L.seats.reverse(); L.team = side; }
-  }
+  function rollSide() { L.team = Math.random() < .5 ? 0 : 1; rollSeats(); }
   function autoFill() { L.seats.forEach(row => { const r = Sim.autoRoles(row.map(s => s.champ)); row.forEach((s, i) => { s.role = r[i]; }); }); }
   const friendSeat = () => { for (const row of L.seats) for (const s of row) if (isFriend(s)) return s; return null; };
   // On your own team the friend's champion and role are off limits.
   const friendHolds = (key, val) => !!N.mode && L.seats[L.team].some(o => isFriend(o) && o[key] === val);
-  const buildCfg = () => withSkills({ seed: skillSeed(), teams: L.seats.map(row => row.map(s => ({ champ: s.champ, role: s.role, tier: seatTier(s), human: s.human, name: s.name }))) }, myRank());
+  const seatOut = s => ({ champ: s.champ, role: s.role, tier: seatTier(s), name: s.name, build: s.build, finish: s.finish, trail: s.trail, recall: s.recall });
+  const buildCfg = () => { wearMine(mine()); return withSkills({ seed: skillSeed(), practice: L.practice || undefined, teams: L.seats.map(row => row.map(s => Object.assign(seatOut(s), { human: s.human }))) }, myRank()); };
   function netCfg() {
     N.ranks[myWho()] = myRank();
     const known = [N.ranks.h, N.ranks.g].filter(v => v !== null), avg = known.reduce((a, b) => a + b, 0) / known.length;
-    return withSkills({ seed: skillSeed(), teams: L.seats.map(row => row.map(s => ({ champ: s.champ, role: s.role, tier: seatTier(s), human: !!s.who, remote: s.who === 'g', name: s.name }))) }, avg);
+    return withSkills({ seed: skillSeed(), teams: L.seats.map(row => row.map(s => Object.assign(seatOut(s), { human: !!s.who, remote: s.who === 'g' }))) }, avg);
   }
 
   // ---------- side ----------
@@ -106,14 +112,12 @@ const { initMenus, animMenus, showEnd } = (() => {
 
   // ---------- lobby ----------
   function renderLobby() {
-    const seat = mine(), id = seat.champ, k = Sim.KITS[id], p = pts(id), tier = Sim.tierOf(p), next = TIERS[tier + 1], base = TIERS[tier].at, prog = next ? (p - base) / (next.at - base) : 1;
-    const who = Sim.charOf(L.team, id), N = $('wN');
-    if (N.textContent !== who.name) { N.textContent = who.name; N.classList.toggle('long', who.name.length > 11); N.classList.remove('pop'); void N.offsetWidth; N.classList.add('pop'); }
-    $('mission').innerHTML = `<b>${Sim.TEAM_NAMES[L.team]}</b><span>${MISSION[L.team]}</span>`;
-    $('wT').innerHTML = `<span>${k.role}</span><span>${roleName(seat.role)}</span>`;
+    const seat = mine(), id = seat.champ, p = pts(id), tier = Sim.tierOf(p), next = TIERS[tier + 1], base = TIERS[tier].at, prog = next ? (p - base) / (next.at - base) : 1;
+    const who = Sim.charOf(L.team, id), nm = $('wN');
+    if (nm.textContent !== who.name) { nm.textContent = who.name; nm.classList.toggle('long', who.name.length > 11); nm.classList.remove('pop'); void nm.offsetWidth; nm.classList.add('pop'); }
+    $('mission').innerHTML = `<b>${L.practice ? 'Practice' : Sim.TEAM_NAMES[L.team]}</b><span>${L.practice ? `${Sim.TEAM_NAMES[L.team]}, no pressure` : MISSION[L.team]}</span>`;
     $('wB').textContent = who.title;
-    $('wA').innerHTML = k.kit.map((a, i) => `<div><img src="${iconOf(id, i)}" alt=""><span><em>${a.name}</em><u>${a.range ? `Range ${a.range}` : 'Self'}</u><br>${a.d}</span></div>`).join('');
-    $('wS').innerHTML = Object.entries(STATS[id]).map(([n, v]) => `<span>${n}<i><b style="width:${v * 20}%"></b></i></span>`).join('') + `<span>Range<em>${k.range}</em></span>`;
+    renderWho(true);
     const lad = $('ladder'); lad.textContent = '';
     TIERS.forEach((t, i) => {
       const r = document.createElement('div'); r.className = 'rung' + (i < tier ? ' done' : i === tier ? ' now' : ''); r.title = t.name;
@@ -122,47 +126,77 @@ const { initMenus, animMenus, showEnd } = (() => {
     });
     $('wTier').textContent = next ? `${TIERS[tier].name}, ${next.at - p} to ${next.name}` : `${TIERS[tier].name}, the highest border`;
     const pk = $('picks'); pk.textContent = '';
-    ids.forEach(cid => {
-      const b = document.createElement('button'); b.className = 'pick'; b.setAttribute('aria-label', charName(L.team, cid)); b.setAttribute('aria-pressed', cid === id);
+    rosterOf(L.team).forEach(cid => {
+      const b = document.createElement('button'), nm0 = charName(L.team, cid); b.className = 'pick'; b.setAttribute('aria-label', nm0); b.setAttribute('aria-pressed', cid === id);
       b.append(coinCanvas(Art.champCoin(cid, L.team, Sim.tierOf(pts(cid)), 54), 112));
-      b.insertAdjacentHTML('beforeend', pipsHtml(Sim.KITS[cid].fit[seat.role]));
+      b.insertAdjacentHTML('beforeend', `<span class="pn">${shortName(nm0)}</span>${pipsHtml(Sim.KITS[cid].fit[seat.role])}`);
       const taken = friendHolds('champ', cid);
-      if (taken) { b.classList.add('taken'); b.setAttribute('aria-label', `${charName(L.team, cid)}, taken by your friend`); }
+      if (taken) { b.classList.add('taken'); b.setAttribute('aria-label', `${nm0}, taken by your friend`); }
       b.onclick = () => { if (cid === id) return; if (taken) { Sound.play('cancel'); return; } setChamp(L.team, L.slot, cid); Sound.play('coin'); netPicked(); renderLobby(); };
       pk.append(b);
     });
     [0, 1].forEach(team => {
       const el = $('s' + team); el.textContent = '';
       L.seats[team].forEach((s, i) => {
-        const me_ = isMe(s), fr = isFriend(s), d = document.createElement('div'); d.className = 'seat' + (me_ ? ' me' : '');
+        const me_ = isMe(s), fr = isFriend(s), d = document.createElement('div'); d.className = 'seat' + (me_ ? ' me' : fr ? ' fr' : '');
         const b = document.createElement('button'); b.className = 'seatc';
         b.setAttribute('aria-label', `${me_ ? 'Your seat' : fr ? 'Your friend' : s.name}, ${charName(team, s.champ)}, ${roleName(s.role)}`);
-        b.append(coinCanvas(Art.champCoin(s.champ, team, seatTier(s), 46), 96));
+        b.append(coinCanvas(Art.champCoin(s.champ, team, seatTier(s), 46, s.finish), 96));
         b.insertAdjacentHTML('beforeend', pipsHtml(Sim.KITS[s.champ].fit[s.role]));
         b.onclick = () => { if (N.mode && !me_) { Sound.play('tick'); return; } Sound.play('tap'); openSheet(team, i); };
         const chip = document.createElement('span'); chip.className = 'chip'; chip.textContent = roleName(s.role);
         d.append(b, chip);
-        if (me_) { const y = document.createElement('span'); y.className = 'you'; y.textContent = 'You'; d.append(y); }
-        else if (fr) { const y = document.createElement('span'), rd = friendReady(); y.className = 'you fr' + (rd ? ' yes' : '') + (rd && !N.wasReady ? ' pop' : ''); y.textContent = rd ? 'Ready!' : 'Friend'; d.append(y); }
-        else if (team === L.team && !N.mode) { const sit = document.createElement('button'); sit.className = 'sit'; sit.textContent = 'Sit here'; sit.setAttribute('aria-label', `Sit in ${s.name}'s seat`); sit.onclick = () => { moveMe(i); renderLobby(); }; d.append(sit); }
         el.append(d);
       });
     });
+    const lane = $('lane'), fit = Sim.KITS[id].fit[seat.role];
+    lane.innerHTML = `<small>Your lane</small><b>${roleName(seat.role)}</b>${pipsHtml(fit)}`;
+    lane.classList.toggle('lo', fit === 0);
+    lane.setAttribute('aria-label', `Your lane: ${roleName(seat.role)}. Tap for the next lane.`);
     paintRank($('lRank'), myRank(), true);
+    $('pSide').classList.toggle('hide', !L.practice);
     lobbyNet();
+  }
+  // The part of the lobby that changes with a build or tab tap, redrawn on its own so the coins stay still.
+  function renderWho(animate) {
+    const seat = mine(), id = seat.champ, k = Sim.KITS[id], builds = buildsOf(id), showKit = L.tab === 'kit' || !builds.length;
+    $('wBest').innerHTML = bestLine(k);
+    const pass = $('wP');
+    pass.classList.toggle('hide', !k.passive);
+    if (k.passive) pass.innerHTML = `<b>${k.passive.name}</b>${k.passive.d}`;
+    document.querySelectorAll('#wTab [data-t]').forEach(b => b.setAttribute('aria-pressed', (b.dataset.t === 'kit') === showKit));
+    $('wTab').classList.toggle('hide', !builds.length);
+    const wb = $('wBuilds'), wk = $('wKit');
+    wb.classList.toggle('hide', showKit); wk.classList.toggle('hide', !showKit);
+    if (showKit) {
+      $('wA').innerHTML = k.kit.map((a, i) => `<div><img src="${iconOf(id, i)}" alt=""><span><em>${a.name}</em><u>${a.range ? `Range ${a.range}` : 'Self'}</u><br>${a.d}</span></div>`).join('');
+    } else {
+      if (!builds.some(b => b.id === seat.build)) seat.build = builds[0].id;
+      const g = document.createElement('div'); g.className = 'bgrid';
+      builds.slice(0, 4).forEach((bu, i) => {
+        const b = document.createElement('button'); b.className = 'bld'; b.style.setProperty('--i', i); b.setAttribute('aria-pressed', bu.id === seat.build);
+        b.innerHTML = `<span><b>${bu.name}</b>${bu.tag ? `<em>${bu.tag}</em>` : ''}</span><small>${bu.d}</small>`;
+        b.setAttribute('aria-label', `${bu.name} build. ${bu.d}`);
+        b.onclick = () => { if (mine().build === bu.id) return; mine().build = bu.id; (save.builds || (save.builds = {}))[id] = bu.id; persist(); Sound.play('clink'); netPicked(); renderWho(); };
+        g.append(b);
+      });
+      wb.textContent = ''; wb.append(g);
+      if (animate) { wb.classList.remove('in'); void wb.offsetWidth; wb.classList.add('in'); }
+    }
   }
   const myReady = () => !!N.ready[myWho()];
   const friendReady = () => !!N.ready[N.mode === 'host' ? 'g' : 'h'];
   // The parts of the lobby that change when a friend is in it.
   function lobbyNet() {
     const net = !!N.mode, st = $('start');
-    $('lnet').classList.toggle('hide', !net); $('auto').classList.toggle('hide', net);
-    if (!net) { st.textContent = 'Start match'; st.classList.remove('off', 'hot'); return; }
+    $('lnet').classList.toggle('hide', !net); $('auto').classList.toggle('hide', net || L.practice);
+    if (!net && !L.practice) { st.textContent = 'Start match'; st.classList.remove('off'); st.classList.add('hot'); return; }
+    if (L.practice) { st.textContent = 'Start practice'; st.classList.add('hot'); st.classList.remove('off'); return; }
     const f = friendSeat(), rd = friendReady(), box = $('lnet'); box.textContent = '';
     if (f) {
       const t = L.seats.findIndex(r => r.includes(f));
-      box.append(coinCanvas(Art.champCoin(f.champ, t, f.tier || 0, 30), 68));
-      const nm = document.createElement('span'); nm.textContent = `Friend: ${charName(t, f.champ)}`;
+      box.append(coinCanvas(Art.champCoin(f.champ, t, f.tier || 0, 30, f.finish), 68));
+      const fb = buildsOf(f.champ).find(x => x.id === f.build), nm = document.createElement('span'); nm.textContent = `Friend: ${charName(t, f.champ)}${fb ? `, ${fb.name}` : ''}`;
       const tag = document.createElement('em'); tag.textContent = rd ? 'Ready!' : 'Picking'; if (rd && !N.wasReady) tag.className = 'yes'; else if (rd) { tag.className = 'yes'; tag.style.animation = 'none'; }
       box.append(nm, tag);
     }
@@ -184,10 +218,10 @@ const { initMenus, animMenus, showEnd } = (() => {
     $('shT').innerHTML = `${isMe(s) ? 'Your seat' : s.name}<small>${Sim.TEAM_NAMES[team]}, ${charName(team, s.champ)}</small>`;
     $('shSit').classList.toggle('hide', isMe(s) || team !== L.team || !!N.mode);
     const c = $('shC'); c.textContent = '';
-    ids.forEach(id => {
+    rosterOf(team).forEach(id => {
       const k = Sim.KITS[id], nm = charName(team, id), b = document.createElement('button'); b.className = 'schamp'; b.setAttribute('aria-pressed', id === s.champ);
       b.setAttribute('aria-label', `${nm}, fit ${k.fit[s.role]} of 3 for ${roleName(s.role)}`);
-      b.append(coinCanvas(Art.champCoin(id, team, isMe(s) ? Sim.tierOf(pts(id)) : s.tier, 46), 100));
+      b.append(coinCanvas(Art.champCoin(id, team, isMe(s) ? Sim.tierOf(pts(id)) : s.tier, 46, isMe(s) ? s.finish : undefined), 100));
       b.insertAdjacentHTML('beforeend', `<span>${nm}</span>${pipsHtml(k.fit[s.role])}`);
       const taken = friendHolds('champ', id);
       if (taken) { b.classList.add('taken'); b.style.opacity = .45; }
@@ -212,8 +246,116 @@ const { initMenus, animMenus, showEnd } = (() => {
     for (const id of ['pMusic', 'sMusic']) $(id).setAttribute('aria-pressed', !!save.music);
     for (const id of ['pSfx', 'sSfx']) $(id).setAttribute('aria-pressed', !!save.sfx);
     document.querySelectorAll('#gfx [data-g]').forEach(b => b.setAttribute('aria-pressed', b.dataset.g === save.gfx));
+    const sens = save.aimSens || 1;
+    document.querySelectorAll('#sAim [data-a]').forEach(b => b.setAttribute('aria-pressed', Math.abs(+b.dataset.a - sens) < .01));
+    $('sLeft').setAttribute('aria-pressed', !!(save.hud && save.hud.left));
+    paintTip();
   }
+  // ---------- add to home screen ----------
+  let installEvt = null;
+  addEventListener('beforeinstallprompt', e => { e.preventDefault(); installEvt = e; paintTip(); });
+  const isStandalone = () => matchMedia('(display-mode: standalone)').matches || navigator.standalone === true;
+  function paintTip() {
+    const el = $('sTip'); if (!el) return;
+    if (isStandalone()) { el.classList.add('hide'); return; }
+    const ios = /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+    el.innerHTML = `<b>Add to home screen</b>${ios ? 'Tap Share, then Add to Home Screen, to play fullscreen with no browser bars.' : installEvt ? 'Install Flipside to play fullscreen with no browser bars.' : 'Open your browser menu and choose Add to Home screen to play fullscreen.'}${installEvt ? '<br><button class="tok" id="sInstall">Install</button>' : ''}`;
+    const b = $('sInstall'); if (b) b.onclick = async () => { const e = installEvt; installEvt = null; Sound.play('tap'); e.prompt(); try { await e.userChoice; } catch (_) { } paintTip(); };
+  }
+  // ---------- hud editor ----------
+  const hudSave = () => save.hud || (save.hud = { left: false, pos: {} });
+  function setLeft(on) {
+    const h = hudSave(); if (!!h.left === !!on) return;
+    h.left = !!on;
+    for (const k of Object.keys(h.pos)) if (!['shop', 'recall', 'ping'].includes(k)) h.pos[k][0] *= -1;
+    persist(); hud();
+  }
+  const edge = (a, b) => Math.hypot(a.x - b.x, a.y - b.y) - a.r - b.r;
+  function overlaps(key) { const a = Hud.placed(key); return Hud.layoutKeys.some(([k]) => k !== key && edge(a, Hud.placed(k)) < -2); }
+  function buildHudEd() {
+    const host = $('hedBoard'); host.textContent = '';
+    const map = document.createElement('div'); map.className = 'hmap'; map.style.cssText = `left:${Hud.ui.map.x}px;top:${Hud.ui.map.y}px;width:${Hud.ui.map.w}px;height:${Hud.ui.map.h}px`; host.append(map);
+    const bar = document.createElement('div'); bar.className = 'hbar'; bar.style.width = Hud.ui.hpW + 'px'; host.append(bar);
+    for (const [key, name] of Hud.layoutKeys) {
+      const d = document.createElement('div'), b = Hud.placed(key); d.className = 'hk'; d.textContent = name; d.setAttribute('role', 'button'); d.setAttribute('aria-label', `Move ${name}`);
+      const set = (x, y) => { d.style.left = (x - b.r) + 'px'; d.style.top = (y - b.r) + 'px'; };
+      d.style.width = d.style.height = b.r * 2 + 'px'; set(b.x, b.y);
+      if (b.r < 22) d.style.fontSize = '10px';
+      let drag = null;
+      d.addEventListener('pointerdown', e => { e.preventDefault(); try { d.setPointerCapture(e.pointerId); } catch (_) { } const p = Ctl.pt(e), c = Hud.placed(key), o = hudSave().pos[key]; drag = { dx: c.x - p.x, dy: c.y - p.y, keep: o ? o.slice() : null }; d.classList.add('drag'); Sound.play('tap'); });
+      d.addEventListener('pointermove', e => {
+        if (!drag) return; e.preventDefault();
+        const p = Ctl.pt(e), base = Hud.basePos(key), x = p.x + drag.dx, y = p.y + drag.dy, snap = v => Math.round(v / 4) * 4;
+        hudSave().pos[key] = [snap(x - base.x), snap(y - base.y)]; const now = Hud.placed(key); set(now.x, now.y); d.classList.toggle('bad', overlaps(key));
+      });
+      const up = () => {
+        if (!drag) return;
+        if (overlaps(key)) { if (drag.keep) hudSave().pos[key] = drag.keep; else delete hudSave().pos[key]; Sound.play('cancel'); const c = Hud.placed(key); set(c.x, c.y); } else Sound.play('clink');
+        drag = null; d.classList.remove('drag', 'bad'); persist(); hud();
+      };
+      d.addEventListener('pointerup', up); d.addEventListener('pointercancel', up);
+      host.append(d);
+    }
+  }
+  function openHudEd() { hide('settings'); hud(); buildHudEd(); show('hudEd'); Sound.play('menuOpen'); }
+
   function toggle(key) { save[key] = !save[key]; persist(); Sound.setOn(save.music, save.sfx); Sound.play('tap'); syncToggles(); }
+
+  // ---------- store ----------
+  const St = { tab: 'finish', sel: null, ang: 0, shine: 0 };
+  const catalog = () => Art.COSMETICS || [];
+  const bestMastery = () => Math.max(0, ...[0, 1].flatMap(t => rosterOf(t).map(id => Sim.tierOf(pts(id)))));
+  function masteryMet(c) { const m = c.mastery; return !!m && (m.champ ? Sim.tierOf(pts(m.champ)) >= m.tier : bestMastery() >= m.tier); }
+  function isOwned(id) { const c = catalog().find(x => x.id === id); if (!c) return false; return c.mastery ? masteryMet(c) : (save.owned || []).includes(id); }
+  function champName(id) { for (const t of [0, 1]) if (rosterOf(t).includes(id)) return charName(t, id); return id; }
+  function unlockText(c) { const m = c.mastery, tier = TIERS[m.tier] ? TIERS[m.tier].name : `tier ${m.tier}`; return m.champ ? `Reach ${tier} with ${champName(m.champ)}` : `Reach ${tier} with any champion`; }
+  function previewCoin(c, size) {
+    // Finishes wear themselves on the coin you play most; trails and recalls show on it too.
+    const team = L.team, id = wantFor(team), finish = c && c.kind === 'finish' ? c.id : (save.equip || {}).finish;
+    return Art.champCoin(id, team, Sim.tierOf(pts(id)), size, isOwned(finish) || (c && c.id === finish) ? finish : undefined);
+  }
+  function renderStore() {
+    $('stMarks').textContent = save.marks || 0;
+    document.querySelectorAll('#stTab [data-k]').forEach(b => b.setAttribute('aria-pressed', b.dataset.k === St.tab));
+    const grid = $('stGrid'), list = catalog().filter(c => c.kind === St.tab);
+    grid.textContent = '';
+    if (!catalog().length) { grid.innerHTML = '<p class="stcmp">The shelves are being stocked.</p>'; paintSel(); return; }
+    if (!list.some(c => c.id === St.sel)) St.sel = list.length ? list[0].id : null;
+    for (const c of list) {
+      const owned = isOwned(c.id), eq = (save.equip || {})[c.kind] === c.id, b = document.createElement('button');
+      b.className = 'stc' + (c.id === St.sel ? ' sel' : '') + (eq ? ' eq' : '') + (owned ? '' : ' lockd');
+      b.append(coinCanvas(previewCoin(c, 46), 92));
+      b.insertAdjacentHTML('beforeend', `<span class="t"><b>${c.name}</b><small${owned ? '' : c.mastery ? ' class="lock"' : ' class="cost"'}>${eq ? 'Equipped' : owned ? 'Owned' : c.mastery ? 'Mastery' : `${c.cost} Marks`}</small></span>`);
+      b.onclick = () => { St.sel = c.id; Sound.play('tick'); renderStore(); };
+      grid.append(b);
+    }
+    paintSel();
+  }
+  function paintSel() {
+    const c = catalog().find(x => x.id === St.sel), act = $('stAct');
+    if (!c) { $('stN').textContent = ''; $('stD').textContent = ''; act.classList.add('hide'); return; }
+    const owned = isOwned(c.id), eq = (save.equip || {})[c.kind] === c.id, price = c.cost || 0, can = !c.mastery && !owned && (save.marks || 0) >= price, kindW = { finish: 'Coin finish', trail: 'A wake behind your coin', recall: 'Plays when you recall' }[c.kind];
+    $('stN').textContent = c.name;
+    $('stD').textContent = !owned && c.mastery ? unlockText(c) : kindW;
+    act.classList.remove('hide');
+    act.innerHTML = owned ? (eq ? 'Equipped' : 'Equip') : c.mastery ? 'Locked' : `Buy<span class="mks"><i></i>${price}</span>`;
+    act.classList.toggle('off', eq || (!owned && !can)); act.classList.toggle('hot', (owned && !eq) || can);
+    act.onclick = () => {
+      if (eq) return;
+      if (owned) { (save.equip || (save.equip = {}))[c.kind] = c.id; persist(); Sound.play('equip'); St.shine = 0; renderStore(); return; }
+      if (!can) { shake(act); Sound.play('cancel'); return; }
+      save.marks = (save.marks || 0) - price; (save.owned || (save.owned = [])).push(c.id); (save.equip || (save.equip = {}))[c.kind] = c.id; persist(); Sound.play('storeBuy'); flipT = 1; St.shine = 0; renderStore();
+    };
+  }
+  function storeStep(dt) {
+    if (curScr !== 'store') return;
+    const g = $('stCoin').getContext('2d'), c = catalog().find(x => x.id === St.sel), spr = previewCoin(c, 200);
+    if (!calm) { St.ang += dt * 1.1; St.shine = Math.min(1.2, St.shine + dt * 1.2); }
+    g.clearRect(0, 0, 280, 280); g.drawImage(halo(L.team), 0, 0, 280, 280);
+    const ang = calm ? 0 : Math.sin(St.ang) * .5;
+    spinCoin(g, spr, 140, 140, 104, ang);
+    sweepCoin(g, 140, 140, 104, ang, St.shine < 1 ? St.shine : (St.ang % 4) / 4);
+  }
 
   // ---------- coin drawing ----------
   const edgeOf = () => L.team ? ['#8d1425', '#2a2c33'] : ['#c2a766', '#6e5c34'];
@@ -431,7 +573,7 @@ const { initMenus, animMenus, showEnd } = (() => {
       L.seats[team].forEach((s, i) => {
         const d = document.createElement('div'); d.className = 'vcell'; d.style.setProperty('--i', i);
         const cv = document.createElement('canvas'); cv.width = cv.height = 168;
-        Hud.coinTo(cv, Art.champCoin(s.champ, team, seatTier(s), 80));
+        Hud.coinTo(cv, Art.champCoin(s.champ, team, seatTier(s), 80, s.finish));
         const b = document.createElement('b'); b.textContent = charName(team, s.champ);
         d.append(cv, b);
         if (isMe(s)) { const y = document.createElement('i'); y.textContent = 'You'; d.append(y); }
@@ -467,7 +609,7 @@ const { initMenus, animMenus, showEnd } = (() => {
   let flipT = 0, heroA = .3, heroSweep = 0;
   function heroStep(dt) {
     if (hidden('lobby') || !L.seats) return;
-    const c = $('big'), g = c.getContext('2d'), id = mine().champ, spr = Art.champCoin(id, L.team, Sim.tierOf(pts(id)), 230);
+    const c = $('big'), g = c.getContext('2d'), id = mine().champ, spr = Art.champCoin(id, L.team, Sim.tierOf(pts(id)), 230, mine().finish);
     if (!calm) { heroA += dt * .9; heroSweep = (heroSweep + dt / 4) % 1; }
     if (flipT > 0) flipT = Math.max(0, flipT - dt * 2.4);
     const ang = calm ? 0 : Math.sin(heroA) * .28 + flipT * TAU;
@@ -481,7 +623,7 @@ const { initMenus, animMenus, showEnd } = (() => {
   let E = null;
   function showEnd(r) {
     const st = Object.assign({ kills: 0, deaths: 0, assists: 0, skillHits: 0, casts: 0, parries: 0 }, r.me.stats), tier = Sim.tierOf(r.before);
-    hide('forge'); hide('pause'); Ctl.reset();
+    hide('shop'); hide('evo'); hide('prac'); hide('pause'); Ctl.reset();
     L.team = r.me.team; applySide();
     $('again').textContent = N.mode ? 'Back to room' : 'Play again';
     $('again').classList.toggle('hide', N.mode === 'guest' && !N.peer);
@@ -501,6 +643,11 @@ const { initMenus, animMenus, showEnd } = (() => {
       paintRank($('endRank'), r.rankBefore);
       box.textContent = d > 0 ? `+${d}` : d < 0 ? `\u2212${-d}` : '0'; box.classList.toggle('down', d < 0);
     }
+    // Marks were banked by finishMatch; this rolls the number up.
+    const earned = Math.max(0, Math.round(r.marks || 0));
+    E.marks = earned ? { from: 0, to: earned, shown: -1, balance: save.marks } : null;
+    $('endMk').classList.toggle('hide', !earned);
+    if (earned) { $('endMks').textContent = '+0'; $('endBal').textContent = ''; }
     hide('rankup');
     show('end');
     Sound.play('thud');
@@ -511,9 +658,10 @@ const { initMenus, animMenus, showEnd } = (() => {
     const lead = risen ? `Your ${E.name} coin is now ${TIERS[t].name}. ` : '';
     $('endM').textContent = `${lead}+${r.gain} proficiency${n ? `, ${Math.ceil(n.at - E.p)} to ${n.name}` : ''}`;
   }
-  const tierUp = () => Sound.play('level');
+  const tierUp = () => Sound.play('masteryUnlock');
   // A new rank gets its own moment over the results, and a tap or two seconds clears it.
   function rankUp(info) {
+    Sound.play('rankUp');
     const x = $('rankup'), col = RANK_COL[Math.min(5, info.tier)];
     x.style.setProperty('--rc', col);
     x.innerHTML = `<div class="rkup">${rankBadge(info.tier, col)}<em>New rank</em><b>${info.name}</b></div>`;
@@ -534,6 +682,11 @@ const { initMenus, animMenus, showEnd } = (() => {
   function endStep(dt) {
     if (!E || hidden('end')) return;
     const r = E.r; E.t += dt; rankStep();
+    if (E.marks && !E.marks.done) {
+      const f = calm ? 1 : Math.min(1, Math.max(0, (E.t - 1.1) / .9)), n = Math.round(E.marks.to * (1 - Math.pow(1 - f, 3)));
+      if (n !== E.marks.shown) { E.marks.shown = n; $('endMks').textContent = `+${n}`; if (!calm && f < 1 && n % 3 === 0) Sound.play('tick'); }
+      if (f >= 1) { E.marks.done = true; $('endBal').textContent = `${E.marks.balance} total`; Sound.play('coin'); }
+    }
     const f = calm ? 1 : Math.min(1, Math.max(0, (E.t - .5) / 1.5)), ease = 1 - Math.pow(1 - f, 3), p = r.before + r.gain * ease;
     if (p !== E.p) {
       E.p = p; $('endBar').style.width = endFrac(p) * 100 + '%'; endText();
@@ -556,6 +709,7 @@ const { initMenus, animMenus, showEnd } = (() => {
   function begin(reroll) {
     if (V.on || F.on || W.on) return false;
     if (N.mode) { const cfg = netCfg(); Net.send('lobby', stateMsg()); Net.start(cfg); versus(cfg); return true; }
+    L.practice = L.practice && !reroll;
     if (!reroll) { versus(); return true; }
     // Play again: the flip decides the new side, then straight to the versus splash.
     rollSide(); applySide();
@@ -565,12 +719,12 @@ const { initMenus, animMenus, showEnd } = (() => {
   }
 
   // ---------- screens ----------
-  let curScr = null;
+  let curScr = null, pressed = null;
   function scr(id) {
     if (curScr === id) return;
     const out = curScr; curScr = id;
     if (out) { const o = $(out); o.classList.remove('in'); o.classList.add('out'); setTimeout(() => { if (curScr !== out) o.classList.add('hide'); o.classList.remove('out'); }, 170); }
-    if (id === 'menu') paintRank($('mRank'), myRank());
+    if (id === 'menu') { paintRank($('mRank'), myRank()); paintMarks(); }
     if (id) { const e = $(id); e.classList.remove('hide', 'out', 'in'); void e.offsetWidth; e.classList.add('in'); }
   }
   function shake(el) { el.classList.remove('shake'); void el.offsetWidth; el.classList.add('shake'); setTimeout(() => el.classList.remove('shake'), 320); }
@@ -592,7 +746,7 @@ const { initMenus, animMenus, showEnd } = (() => {
     show('notice'); Sound.play('cancel');
   }
   function clearAll() {
-    for (const id of ['lobby', 'end', 'rankup', 'pause', 'forge', 'sheet', 'settings', 'notice', 'flip', 'vs']) hide(id);
+    for (const id of ['lobby', 'end', 'rankup', 'pause', 'shop', 'evo', 'prac', 'sheet', 'settings', 'hudEd', 'notice', 'flip', 'vs']) hide(id);
     $('flip').classList.remove('out'); $('vs').classList.remove('out');
     V.on = false; F.on = false; F.done = null; L.sheet = null;
   }
@@ -684,19 +838,20 @@ const { initMenus, animMenus, showEnd } = (() => {
     if (best) bots.forEach((s, i) => { s.role = best[i]; });
   }
   function rollNetSeats(side) {
-    const names = shuffle(BOT_NAMES.slice()), gTeam = N.pairing === 'same' ? side : 1 - side, want = ids.includes(save.last) ? save.last : ids[0];
+    const names = shuffle(BOT_NAMES.slice()), gTeam = N.pairing === 'same' ? side : 1 - side;
     let n = 0;
     L.seats = [0, 1].map(team => {
-      const pool = shuffle(ids.slice()).slice(0, 4), humans = [];
-      if (team === side) { humans.push('h'); const at = pool.indexOf(want); if (at >= 0) [pool[at], pool[0]] = [pool[0], pool[at]]; else pool[0] = want; }
+      const ros = rosterOf(team), pool = shuffle(ros.slice()).slice(0, 4), humans = [];
+      if (team === side) { humans.push('h'); const want = wantFor(team), at = pool.indexOf(want); if (at >= 0) [pool[at], pool[0]] = [pool[0], pool[at]]; else pool[0] = want; }
       if (team === gTeam) humans.push('g');
       const roles = Sim.autoRoles(pool);
       return pool.map((champ, i) => {
         const who = humans[i] || null;
-        return { champ, role: roles[i], tier: who ? 0 : Math.min(5, Math.floor(Math.random() * Math.random() * 6)), human: !!who, name: who === 'h' ? 'Host' : who === 'g' ? 'Guest' : names[n++], who };
+        return { champ, role: roles[i], tier: who ? 0 : Math.min(5, Math.floor(Math.random() * Math.random() * 6)), human: !!who, name: who === 'h' ? 'Host' : who === 'g' ? 'Guest' : names[n++], who, build: botBuild(champ, roles[i]) };
       });
     });
     L.team = side; L.slot = 0;
+    wearMine(L.seats[side][0]);
   }
   function stateMsg() {
     for (const row of L.seats) for (const s of row) if (isMe(s)) s.tier = seatTier(s);
@@ -708,26 +863,28 @@ const { initMenus, animMenus, showEnd } = (() => {
     if (N.mode === 'host') { N.ready.h = false; refitBots(L.team); say(stateMsg()); }
     else { N.ready.g = false; sendPick(); }
   }
-  function sendPick() { const m = mine(); N.seq++; say({ k: 'pick', seq: N.seq, champ: m.champ, role: m.role, tier: seatTier(m), ready: N.ready.g }); }
+  function sendPick() { const m = mine(); wearMine(m); N.seq++; say({ k: 'pick', seq: N.seq, champ: m.champ, role: m.role, tier: seatTier(m), build: m.build, finish: m.finish, trail: m.trail, recall: m.recall, ready: N.ready.g }); }
   function hostPick(o) {
     N.ack = o.seq;
     let team = -1, i = -1;
     L.seats.forEach((r, t) => r.forEach((s, x) => { if (s.who === 'g') { team = t; i = x; } }));
     if (team < 0) return;
     const row = L.seats[team], g = row[i], blocked = (key, v) => row.some(o2 => o2 !== g && o2.who && o2[key] === v);
-    if (ids.includes(o.champ) && !blocked('champ', o.champ)) setChamp(team, i, o.champ);
+    if (rosterOf(team).includes(o.champ) && !blocked('champ', o.champ)) setChamp(team, i, o.champ);
     if (Sim.ROLES.includes(o.role) && !blocked('role', o.role)) setRole(team, i, o.role);
     g.tier = Math.max(0, Math.min(5, o.tier | 0));
+    g.build = buildsOf(g.champ).some(b => b.id === o.build) ? o.build : botBuild(g.champ, g.role);
+    g.finish = cleanCos('finish', o.finish); g.trail = cleanCos('trail', o.trail); g.recall = cleanCos('recall', o.recall);
     refitBots(team);
     N.ready.g = !!o.ready;
     say(stateMsg());
     if (N.lobby) { renderLobby(); if (L.sheet) renderSheet(); }
   }
   function applyState(o) {
-    const had = L.seats && N.lobby ? mine() : null, keep = had && o.ack < N.seq ? { champ: had.champ, role: had.role, ready: N.ready.g } : null;
+    const had = L.seats && N.lobby ? mine() : null, keep = had && o.ack < N.seq ? { champ: had.champ, role: had.role, build: had.build, ready: N.ready.g } : null;
     L.seats = o.seats; N.ready = o.ready; N.pairing = o.pairing; N.side = o.side;
     L.seats.forEach((r, t) => r.forEach((s, i) => { if (s.who === 'g') { L.team = t; L.slot = i; } }));
-    if (keep) { const m = mine(); m.champ = keep.champ; m.role = keep.role; N.ready.g = keep.ready; }
+    if (keep) { const m = mine(); m.champ = keep.champ; m.role = keep.role; m.build = keep.build; N.ready.g = keep.ready; }
     applySide();
     if (N.lobby) { renderLobby(); if (L.sheet) renderSheet(); }
   }
@@ -738,8 +895,9 @@ const { initMenus, animMenus, showEnd } = (() => {
     flipStart(L.team, () => {
       scr(null); N.lobby = true; renderLobby(); show('lobby'); lobbyEnter();
       if (N.mode === 'guest') {
-        const m = mine(), want = save.last;
-        if (ids.includes(want) && want !== m.champ && !friendHolds('champ', want)) { setChamp(L.team, L.slot, want); renderLobby(); }
+        const m = mine(), want = wantFor(L.team);
+        if (rosterOf(L.team).includes(want) && want !== m.champ && !friendHolds('champ', want)) { setChamp(L.team, L.slot, want); renderLobby(); }
+        wearMine(mine());
         sendPick();
       }
     });
@@ -941,7 +1099,7 @@ const { initMenus, animMenus, showEnd } = (() => {
       thumb(g, 153, 208, .35);
     });
     page('h2', 1, g => {
-      blitS(g, Art.champCoin('gravel', 1, 2, 50), 106, 82, 50);
+      blitS(g, Art.champCoin(rosterOf(1)[0], 1, 2, 50), 106, 82, 50);
       Deco.glint(g, 178, 116, 42, CRIM);
       blitS(g, Art.champCoin('kade', 0, 2, 66), 265, 194, 66);
       ring(g, 265, 194, 76, GOLD, 2.5);
@@ -980,12 +1138,21 @@ const { initMenus, animMenus, showEnd } = (() => {
   // ---------- wiring ----------
   function playBots() {
     if (F.on || W.on || V.on) return;
-    netDrop(); L.slot = 0; L.team = 0; rollSeats();
+    netDrop(); L.practice = false; L.slot = 0; L.team = 0; rollSeats();
     Sound.play('tap');
     scr(null);
     enterLobby();
   }
+  function startPractice() {
+    if (F.on || W.on || V.on) return;
+    netDrop(); L.practice = true; L.slot = 0; L.team = Math.random() < .5 ? 0 : 1; rollSeats();
+    Sound.play('menuOpen');
+    const go = () => { scr(null); applySide(); renderLobby(); show('lobby'); lobbyEnter(); };
+    if (!wipe(go)) go();
+  }
+  function paintMarks() { $('mMarks').textContent = save.marks ? `${save.marks}` : ''; }
   function initMenus() {
+    save.marks = save.marks || 0; save.owned = save.owned || []; save.equip = save.equip || {};
     rollSeats(); applySide(); renderLobby(); syncToggles(); buildKeypad(); wireNet();
     [0, 1].forEach(side => stage.style.setProperty('--bg' + side, `url(${Deco.backdrop(side).toDataURL('image/webp', .9)})`));
     paintRank($('mRank'), myRank());
@@ -1001,7 +1168,18 @@ const { initMenus, animMenus, showEnd } = (() => {
     addEventListener('hashchange', () => { const c = hashCode(); if (c && !G && !N.mode) { hide('title'); eatHash(); openJoin(c); } });
 
     // main menu
+    // Every press answers on touch-down, before the browser decides it was a click.
+    addEventListener('pointerdown', e => { const b = e.target.closest && e.target.closest('button'); if (b) { b.classList.add('down'); pressed = b; } }, true);
+    const lift = () => { if (pressed) { pressed.classList.remove('down'); pressed = null; } };
+    addEventListener('pointerup', lift, true); addEventListener('pointercancel', lift, true);
+    if (isStandalone()) { try { screen.orientation.lock('landscape').catch(() => { }); } catch (e) { } }
+    paintMarks();
+
     $('mBots').onclick = playBots;
+    $('mPrac').onclick = startPractice;
+    $('mStore').onclick = () => { Sound.play('menuOpen'); renderStore(); scr('store'); };
+    $('stBack').onclick = () => { Sound.play('menuBack'); paintMarks(); scr('menu'); };
+    document.querySelectorAll('#stTab [data-k]').forEach(b => { b.onclick = () => { St.tab = b.dataset.k; St.sel = null; Sound.play('tap'); renderStore(); }; });
     $('mHost').onclick = () => { Sound.play('coin'); startHost(); };
     $('mJoin').onclick = () => { Sound.play('coin'); openJoin(''); };
     $('mHow').onclick = () => { Sound.play('menuOpen'); buildHow(); scr('how'); };
@@ -1009,6 +1187,10 @@ const { initMenus, animMenus, showEnd } = (() => {
     // The coin is a toy: flip it and it answers.
     const QUIPS = [['Hold the line', 'The city is watching', 'Someone has to stand up', 'Not tonight'], ['Everyone has a price', 'The city sleeps. We do not', 'Flip it again. I dare you', 'Heads or tails, you lose']];
     let quip = 0, quipT = 0;
+    $('shClose').onclick = () => { Hud.closeShop(); Sound.play('tap'); };
+    $('prGold').onclick = () => Hud.practice('gold');
+    $('prXp').onclick = () => Hud.practice('level');
+    $('prCd').onclick = () => Hud.practice('reset');
     $('mcoin').onclick = () => {
       T.t = T.hold + .001; Sound.play('coin');
       const next = T.face ? 0 : 1, b = $('mbub'); // three half-turns land on the other face
@@ -1037,6 +1219,18 @@ const { initMenus, animMenus, showEnd } = (() => {
     $('flip').onkeydown = e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); flipSkip(); } };
     $('openSet').onclick = () => { Sound.play('tap'); syncToggles(); show('settings'); };
     $('setDone').onclick = () => { Sound.play('tap'); hide('settings'); };
+    $('sLeft').onclick = () => { setLeft(!(save.hud && save.hud.left)); Sound.play('tap'); syncToggles(); };
+    document.querySelectorAll('#sAim [data-a]').forEach(b => { b.onclick = () => { save.aimSens = +b.dataset.a; persist(); Sound.play('tap'); syncToggles(); }; });
+    $('sEdit').onclick = openHudEd;
+    $('hDone').onclick = () => { Sound.play('tap'); hide('hudEd'); persist(); hud(); syncToggles(); show('settings'); };
+    $('hReset').onclick = () => { hudSave().pos = {}; persist(); hud(); buildHudEd(); Sound.play('coin'); };
+    $('hLeft').onclick = () => { setLeft(!hudSave().left); buildHudEd(); Sound.play('tap'); };
+    $('pSide').onclick = () => { if (!L.practice) return; L.team = 1 - L.team; rollSeats(); applySide(); Sound.play('flipSpin'); renderLobby(); flipT = 1; };
+    document.querySelectorAll('#wTab [data-t]').forEach(b => { b.onclick = () => { L.tab = b.dataset.t; Sound.play('tick'); renderWho(true); }; });
+    $('lane').onclick = () => {
+      const seat = mine(), rs = Sim.ROLES, at = rs.indexOf(seat.role);
+      for (let i = 1; i <= rs.length; i++) { const r = rs[(at + i) % rs.length]; if (friendHolds('role', r)) continue; setRole(L.team, L.slot, r); Sound.play('tap'); netPicked(); renderLobby(); return; }
+    };
     $('sMusic').onclick = $('pMusic').onclick = () => toggle('music');
     $('sSfx').onclick = $('pSfx').onclick = () => toggle('sfx');
     document.querySelectorAll('#gfx [data-g]').forEach(b => { b.onclick = () => { save.gfx = b.dataset.g; persist(); if (save.gfx === 'auto') quality = 2; applyQuality(); Sound.play('tap'); syncToggles(); }; });
@@ -1051,7 +1245,7 @@ const { initMenus, animMenus, showEnd } = (() => {
     $('tolobby').onclick = () => { Sound.play('tap'); toMenu(); };
   }
 
-  function animMenus(dt) { wipeStep(dt); flipStep(dt); vsStep(); titleStep(dt); heroStep(dt); endStep(dt); if (N.joining && hasNet() && Net.connected) guestIn(); }
+  function animMenus(dt) { wipeStep(dt); flipStep(dt); vsStep(); titleStep(dt); heroStep(dt); endStep(dt); storeStep(dt); if (N.joining && hasNet() && Net.connected) guestIn(); }
 
   return { initMenus, animMenus, showEnd };
 })();

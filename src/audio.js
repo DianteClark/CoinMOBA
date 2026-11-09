@@ -2,11 +2,20 @@
 // Struck and plucked timbres are rendered once into small buffers; sustained voices are live oscillators sharing per-layer filters.
 // Gain staging, in linear peaks at the compressor input: music sits near .25, routine effects near .15, the player's own big moments near .5.
 // The compressor only has to catch stacks of effects, and a soft clipper after it makes digital clipping impossible.
+//
+// Named effects for the UI: Sound.play(name, arg, gapMs, {vol, pan}).
+//   Shop and items: shopOpen shopClose buy buyUp sell denied
+//   Choices: evolveReady evolve buildPick
+//   Attack-mode buttons: atkChamp atkMinion atkTower
+//   Store and progress: storeBuy equip masteryUnlock rankUp rankDown
+//   Stingers: stingOk stingBad stingHero stingVillain
+//   Handled by soundhooks from match events, no UI call needed: beaconPlace beaconHit beaconKill pingAttack pingRetreat pingOmw pingHelp pingDanger, every ability, and buy/sell/evolve as a backstop.
+// Sound.has(name) says whether an effect exists. Sound.recent(name, ms) says whether it played in the last ms.
 const Sound = (() => {
   let ac = null, master, hush, ducker, duckWet, mus, musWet, sfx, farBus, revIn, rev, noise, rainG, windG, padA, padB, padF, arpF, timer = null, lean = false, autoLean = false, fxReady = false, musReady = false, susT = 0;
-  const L = {}, W = {}, B = { pluck: [], mal: [], bell: [], clink: [] }, last = {}, live = [], early = [], mixL = [];
-  const S = { mode: null, sting: false, dim: false, step: 0, next: 0, sec: 'intro', bar: 0, nextSec: null, jump: false, pass: {}, key: 0, cycle: 0, sinceBig: 99, chorusRun: 0, intensity: 0, I: 0, music: true, sfx: true, late: 0, night: 0, mixT: 0, hand: 0, stingAt: -99, duckAt: 0, duckAmt: 0, side: null, sideAt: 0, hope: .5, bright: null, darkL: false, flip: null, lowAt: 0 };
-  const OUT_TRIM = 1, MUS = .34, SFX = .85, FX_WET = .45, LOW_GAP = 90, LAYERS = ['pad', 'bass', 'arp', 'lead', 'horn', 'ctr', 'perc', 'taiko'];
+  const L = {}, W = {}, B = { pluck: [], clink: [], spic: [], cbell: [] }, last = {}, live = [], early = [], mixL = [];
+  const S = { mode: null, sting: false, dim: false, step: 0, next: 0, sec: 'intro', bar: 0, nextSec: null, jump: false, pass: {}, key: 0, cycle: 0, sinceBig: 99, chorusRun: 0, intensity: 0, I: 0, music: true, sfx: true, late: 0, night: 0, mixT: 0, hand: 0, stingAt: -99, duckAt: 0, duckAmt: 0, side: null, sideAt: 0, hope: .5, bright: null, darkL: false, flip: null, lowAt: 0, thLast: 0 };
+  const OUT_TRIM = 1, MUS = .4, SFX = .85, FX_WET = .45, LOW_GAP = 90, LAYERS = ['pad', 'bass', 'arp', 'lead', 'horn', 'ctr', 'perc', 'taiko'];
   const SEND = { pad: .5, bass: 0, arp: .28, lead: .5, horn: .36, ctr: .28, perc: .04, taiko: .08 };
   const m2f = n => 440 * Math.pow(2, (n - 69) / 12);
   const clamp = (v, a = 0, b = 1) => v < a ? a : v > b ? b : v;
@@ -16,13 +25,15 @@ const Sound = (() => {
   const pick = a => a[Math.random() * a.length | 0];
   const rp = s => 1 + (Math.random() - .5) * 2 * s;
   const num = v => typeof v === 'number' && isFinite(v);
+  // The villains' tone: a lopsided fold, stepped so it sounds crushed. Used per effect, so panning and level still apply.
+  const GRIT = new Float32Array(1025); for (let i = 0; i < 1025; i++) { const x = i / 512 - 1, y = Math.tanh(2.2 * x + .25) + .18 * Math.sin(7 * x); GRIT[i] = Math.round(y * 14) / 14 * .9; }
 
   // ---------- voice budget ----------
   // Voices are counted by their scheduled end time, so notes queued ahead of the clock count as well.
   const musEnds = [], fxEnds = [];
   function count(a) { const now = ac.currentTime; let j = 0; for (let i = 0; i < a.length; i++) if (a[i] > now) a[j++] = a[i]; a.length = j; return j; }
   const musCap = () => lean ? 20 : 32, fxCap = () => lean ? 12 : 18, fxFull = () => count(fxEnds) >= fxCap() + (lean ? 4 : 6);
-  const room = pri => count(musEnds) < musCap() * [.62, .85, 1][pri];
+  const room = (pri, n = 1) => count(musEnds) + n <= musCap() * [.62, .85, 1][pri];
   function track(end, fx) { (fx ? fxEnds : musEnds).push(end); }
   // Every music note registers here so a mode change can release what is sounding and cancel what is queued.
   let group = null;
@@ -55,7 +66,7 @@ const Sound = (() => {
     const un = ac.createBufferSource(); un.buffer = ac.createBuffer(1, 1, 22050); un.connect(ac.destination); un.start(0); wake();
     autoLean = (navigator.deviceMemory || 4) < 3 || (navigator.hardwareConcurrency || 4) < 4; lean = lean || autoLean;
 
-    // Output chain: rumble cut, tamed presence and air, glue compressor, makeup compensation, soft clipper, fade.
+    // Output chain: rumble cut, a light trim of the very top, glue compressor, makeup compensation, soft clipper, fade.
     // The compressor adds about 4 dB of automatic makeup gain. OUT_TRIM was set from offline renders: heavy stacks peak near -3 dBFS.
     hush = gain(1, ac.destination);
     const clip = ac.createWaveShaper(), n = 4097, curve = new Float32Array(n);
@@ -63,12 +74,17 @@ const Sound = (() => {
     clip.curve = curve; clip.connect(hush);
     const trim = gain(OUT_TRIM * .5, clip);
     const comp = ac.createDynamicsCompressor(); comp.threshold.value = -14; comp.knee.value = 8; comp.ratio.value = 4; comp.attack.value = .003; comp.release.value = .16; comp.connect(trim);
-    const shelf = filt('highshelf', 6800, 0, comp); shelf.gain.value = -4.5;
-    const dip = filt('peaking', 3300, .8, shelf); dip.gain.value = -2;
-    const hp = filt('highpass', 42, .7, dip);
-    master = gain(.9, hp); ducker = gain(1, master); mus = gain(S.music ? MUS : 0, ducker);
+    const shelf = filt('highshelf', 8200, 0, comp); shelf.gain.value = -2;
+    const hp = filt('highpass', 55, .7, shelf);
+    master = gain(.9, hp); ducker = gain(1, master);
+    // Music EQ, voiced for phone speakers: little below 120 Hz, which they cannot play, and a lift where melody and consonants live.
+    const mAir = filt('highshelf', 5200, 0, ducker); mAir.gain.value = 3;
+    const mPres = filt('peaking', 2700, .8, mAir); mPres.gain.value = 5;
+    const mMid = filt('peaking', 1150, .9, mPres); mMid.gain.value = 2;
+    const mLow = filt('lowshelf', 170, 0, mMid); mLow.gain.value = -5;
+    mus = gain(S.music ? MUS : 0, filt('highpass', 78, .8, mLow));
     sfx = gain(S.sfx ? SFX : 0, master); farBus = filt('lowpass', 1500, .4, sfx);
-    rev = ac.createConvolver(); rev.connect(gain(.2, master)); revIn = gain(1, rev);
+    rev = ac.createConvolver(); rev.connect(filt('highpass', 220, .7, gain(.2, master))); revIn = gain(1, rev);
     // Music reverb is ducked with the dry music, so its tail never washes over an effect.
     duckWet = gain(1, revIn); musWet = gain(S.music ? MUS * 1.6 : 0, duckWet);
     const nb = ac.createBuffer(1, ac.sampleRate * 2, ac.sampleRate), nd = nb.getChannelData(0); for (let i = 0; i < nd.length; i++) nd[i] = Math.random() * 2 - 1; noise = nb;
@@ -85,7 +101,8 @@ const Sound = (() => {
     W.ah = wave([1, .95, .62, .42, .3, .2, .15, .1, .08, .05, .04, .03]);
     W.oo = wave([1, .42, .14, .07, .04, .02]);
     // Strong upper harmonics: a phone speaker cannot play a 50 Hz fundamental, so the ear has to infer it.
-    W.bass = wave([.5, .85, .62, .42, .26, .15, .08, .04]);
+    W.bass = wave([.3, .85, .7, .52, .36, .22, .13, .07]);
+    W.th = wave([1, .34, .2, .11, .07, .05]);
 
     const bed = (fr, q, type) => { const s = ac.createBufferSource(); s.buffer = noise; s.loop = true; const g = gain(0, sfx), f = filt(type, fr, q, g); s.connect(f); s.start(); return g; };
     rainG = bed(1500, .5, 'bandpass'); windG = bed(420, .7, 'bandpass');
@@ -154,11 +171,26 @@ const Sound = (() => {
       for (let ch = 0; ch < 2; ch++) { const d = ir.getChannelData(ch); let e = 1, lp = 0; for (let i = 0; i < len; i++) { lp += (Math.random() * 2 - 1 - lp) * (.6 - .5 * i / len); d[i] = lp * e; e *= dk; } }
       rev.buffer = ir;
     });
-    for (const n of [72, 86]) mode(B.bell, n, f => render(2.2, [[f, 1, .9], [f * 2.01, .4, .5], [f * 2.76, .24, .22], [f * 4.1, .1, .1]], .08, .002, .5));
+    J.push(() => { B.crack = render(.16, [[3300, .5, .012], [1900, .6, .016], [210, .9, .04, 620, .01], [420, .4, .02]], 1.2, .02, .9); });
+    J.push(() => { B.flick = render(.28, [[3520, 1, .09], [5180, .6, .055], [7040, .28, .03], [2240, .3, .04]], .25, .002, .8); });
+    J.push(() => { B.blade = render(.3, [[2900, .4, .12, 2200, .2], [4300, .3, .1, 3400, .2], [6100, .2, .07]], .9, .09, .75); });
+    J.push(() => { B.anvil = render(.8, [[620, 1, .22], [1010, .8, .18], [1730, .65, .12], [2390, .45, .08], [3300, .3, .05]], .8, .01, .7); });
+    // A polished glint: close inharmonic partials that beat against each other, high but under the range phones turn piercing.
+    J.push(() => { B.shine = render(.9, [[3010, .7, .22], [3070, .7, .2], [4480, .55, .15], [4560, .5, .13], [6240, .32, .09], [7400, .2, .06]], .1, .003, .85); });
+    // Noise held in steps, which is what makes it sound dirty rather than airy.
+    J.push(() => {
+      const sr = ac.sampleRate, n = sr * .7 | 0, b = ac.createBuffer(1, n, sr), d = b.getChannelData(0), k = Math.exp(-1 / (sr * .13)); let e = 1, v = 0, lp = 0;
+      for (let i = 0; i < n; i++) { if (i % 9 === 0) v = Math.random() * 2 - 1; lp += (v - lp) * .35; d[i] = (v - lp * .7) * e; e *= k; }
+      B.rasp = finish(b, d, sr);
+    });
+    // A handful of links landing at random moments.
+    J.push(() => {
+      const sr = ac.sampleRate, n = sr * .55 | 0, b = ac.createBuffer(1, n, sr), d = b.getChannelData(0), w = 2 * Math.PI / sr;
+      for (let c = 0; c < 11; c++) { const at = Math.random() * .42 * sr | 0, f = 1300 + Math.random() * 2400, g = .4 + Math.random() * .6, k = Math.exp(-1 / (sr * .018)); let e = g; for (let i = at; i < n && e > .001; i++) { d[i] += Math.sin((i - at) * w * f) * e + Math.sin((i - at) * w * f * 1.73) * e * .4; e *= k; } }
+      B.chainL = finish(b, d, sr);
+    });
     J.fxN = J.length;
     J.push(() => { B.kick = render(.26, [[78, .75, .09, 210, .03], [156, .55, .04, 280, .015]], .14, .005, .5); });
-    J.push(() => { B.taiko = render(.9, [[78, .65, .28, 140, .045], [118, .75, .14, 190, .03], [236, .36, .05]], .5, .012, .22); });
-    J.push(() => { B.frame = render(.3, [[98, 1, .09, 135, .02], [196, .35, .05], [420, .12, .02]], .6, .01, .35); });
     J.push(() => { B.clack = render(.14, [[420, .5, .02], [980, .25, .012]], 1, .035, .6); });
     J.push(() => { B.shk = render(.06, [[4200, .35, .014], [5600, .25, .01], [7200, .15, .008]], .7, .01, .7); });
     J.push(() => {
@@ -167,7 +199,14 @@ const Sound = (() => {
       for (let i = 0; i < n; i++) z[i] = a[n - 1 - i]; B.swell = r;
     });
     for (const [n, s, t] of lean ? [[62, .5, 3], [76, .38, 2], [88, .25, 1.3]] : [[57, .5, 3.2], [64, .46, 2.9], [71, .42, 2.5], [78, .35, 2], [85, .28, 1.6], [92, .2, 1.2]]) J.push(() => B.pluck.push(string(n, s, t)));
-    for (const n of [60, 72, 84]) mode(B.mal, n, f => render(1.1, [[f, 1, .42], [f * 3.93, .3, .08], [f * 9.2, .08, .02]], .15, .003, .5));
+    // Short bowed strings: harmonics that die off fast, over a little bow noise.
+    const saws = (f, n, dec, tilt) => Array.from({ length: n }, (_, k) => [f * (k + 1), 1 / Math.pow(k + 1, tilt), dec / (1 + k * .16)]);
+    for (const n of [50, 60, 72]) mode(B.spic, n, f => render(.36, saws(f, 12, .11, .85), .4, .012, .6));
+    J.push(() => { B.snr = render(.34, [[195, .55, .06, 240, .012], [330, .3, .035]], 1.1, .11, .85); });
+    J.push(() => { B.rim = render(.06, [[1700, .6, .012], [2650, .35, .008]], .4, .008, .6); });
+    // Timpani sampled at D3, with no real fundamental below it: phones keep the attack, and larger speakers get the rest.
+    J.push(() => { B.timp = render(.9, [[146.83, .75, .36, 165, .03], [220.2, .45, .24], [293.7, .34, .16], [381, .16, .08], [73.4, .3, .22, 90, .04]], .28, .012, .4); });
+    for (const n of [72, 84, 96]) mode(B.cbell, n, f => render(1.7, [[f, 1, .7], [f * 2.38, .45, .34], [f * 3.91, .3, .17], [f * 5.6, .16, .09], [f * 7.8, .08, .05]], .12, .002, .6));
     return J;
   }
 
@@ -189,8 +228,6 @@ const Sound = (() => {
     smp(e.b, t, m2f(n) / e.f, v, bus, stop, false, pri);
   }
   const pluck = (t, n, v, bus = arpF, stop = .55, pri = 0) => note(B.pluck, t, n, v, bus, stop, pri);
-  const mallet = (t, n, v, bus = L.ctr, pri = 1) => note(B.mal, t, n, v, bus, 0, pri);
-  const bell = (t, n, v, bus = L.lead) => note(B.bell, t, n, v, bus, 0, 2);
   function bass(t, n, v, d) {
     if (!room(2)) return; const g = gain(0, L.bass), end = t + d;
     g.gain.setValueAtTime(.0001, t); g.gain.linearRampToValueAtTime(v, t + .012); g.gain.linearRampToValueAtTime(v * .62, Math.max(t + .04, end - .01)); g.gain.linearRampToValueAtTime(.0001, end + .05);
@@ -198,7 +235,7 @@ const Sound = (() => {
   }
   // Choir-like pad: harmonically shaped oscillators, one detuned voice each side of the stereo field.
   function choir(t, ns, dur, v, w = W.ah) {
-    if (!room(1)) return;
+    if (!room(1, ns.length)) return;
     const end = t + dur, atk = Math.min(.5, dur * .25), gA = gain(0, padA), gB = gain(0, padB), thin = lean || count(musEnds) > musCap() * .55;
     for (const g of [gA, gB]) { g.gain.setValueAtTime(.0001, t); g.gain.linearRampToValueAtTime(v, t + atk); g.gain.setValueAtTime(v, Math.max(t + atk, end - .1)); g.gain.linearRampToValueAtTime(.0001, end + .36); }
     voice([gA, gB], t, end + .4);
@@ -206,8 +243,8 @@ const Sound = (() => {
   }
   // Soft brass chord: filtered saws through one shared swelling filter.
   function brass(t, ns, dur, v) {
-    if (!room(1)) return;
-    const g = gain(0, L.horn), f = filt('lowpass', 400, .7, g), c = 800 + S.I * 1200, end = t + dur;
+    if (!room(1, ns.length)) return;
+    const g = gain(0, L.horn), f = filt('lowpass', 400, .7, g), c = 1500 + S.I * 2600, end = t + dur;
     f.frequency.setValueAtTime(c * .35, t); f.frequency.exponentialRampToValueAtTime(c, t + .09); f.frequency.setTargetAtTime(c * .55, t + .14, dur * .5);
     g.gain.setValueAtTime(.0001, t); g.gain.linearRampToValueAtTime(v, t + .05); g.gain.setValueAtTime(v, Math.max(t + .06, end - .05)); g.gain.linearRampToValueAtTime(.0001, end + .12);
     voice([g], t, end + .14);
@@ -216,8 +253,8 @@ const Sound = (() => {
   }
   // Horn lead: two saws, a filter that follows pitch, a small scoop into the note, late vibrato on long notes.
   function horn(t, n, dur, v, bus = L.horn) {
-    if (!room(2)) return;
-    const hz = m2f(n), end = t + dur, c = Math.min(3200, hz * (2.6 + S.I * 1.9)), g = gain(0, bus), f = filt('lowpass', hz, .6, g);
+    if (!room(2, dur > .5 ? 3 : 2)) return;
+    const hz = m2f(n), end = t + dur, c = Math.min(4400, hz * (3.2 + S.I * 2.4)), g = gain(0, bus), f = filt('lowpass', hz, .6, g);
     f.frequency.setValueAtTime(hz * 1.2, t); f.frequency.exponentialRampToValueAtTime(c, t + .09); f.frequency.setTargetAtTime(c * .6, t + .15, Math.max(.2, dur * .6));
     g.gain.setValueAtTime(.0001, t); g.gain.linearRampToValueAtTime(v, t + .045); g.gain.linearRampToValueAtTime(v * .92, Math.max(t + .05, end - .05)); g.gain.linearRampToValueAtTime(.0001, end + .1);
     voice([g], t, end + .12);
@@ -226,141 +263,142 @@ const Sound = (() => {
     if (b) { b.detune.setValueAtTime(-16, t); b.detune.linearRampToValueAtTime(5, t + .07); }
     if (dur > .5 && !lean) { const lg = gain(0); osc('sine', 5.2, t + .3, end + .1, 0, lg); lg.gain.setValueAtTime(0, t + .3); lg.gain.linearRampToValueAtTime(7, t + .65); lg.connect(a.detune); if (b) lg.connect(b.detune); }
   }
+  const coinbell = (t, n, v, bus = L.lead) => note(B.cbell, t, n, v, bus, 0, 2);
+  const spic = (t, n, v) => note(B.spic, t, n, v, arpF, .22, 1);
+  // Trumpet lead: two saws, a filter that opens with the attack, a small lip into the note. Muted, it becomes a narrow nasal band that carries on any speaker.
+  function trumpet(t, n, dur, v, bus = L.horn, muted = false) {
+    if (!room(2, dur > .55 ? 3 : 2)) return;
+    const hz = m2f(n), end = t + dur, g = gain(0, bus), c = Math.min(7200, hz * (4.5 + S.I * 3.5)), f = filt(muted ? 'bandpass' : 'lowpass', muted ? 1500 : hz * 2, muted ? 1.3 : .7, g);
+    if (!muted) { f.frequency.setValueAtTime(hz * 2, t); f.frequency.exponentialRampToValueAtTime(c, t + .05); f.frequency.setTargetAtTime(c * .68, t + .12, Math.max(.15, dur * .7)); }
+    g.gain.setValueAtTime(.0001, t); g.gain.linearRampToValueAtTime(v * 1.25, t + .018); g.gain.linearRampToValueAtTime(v, t + .07); g.gain.linearRampToValueAtTime(v * .9, Math.max(t + .08, end - .05)); g.gain.linearRampToValueAtTime(.0001, end + .08);
+    voice([g], t, end + .1);
+    const a = osc('sawtooth', hz, t, end + .1, -3, f), b = lean ? null : osc('sawtooth', hz, t, end + .1, 4, f);
+    a.detune.setValueAtTime(-28, t); a.detune.linearRampToValueAtTime(-3, t + .05);
+    if (dur > .55 && !lean) { const lg = gain(0); osc('sine', 5.4, t + .28, end + .08, 0, lg); lg.gain.setValueAtTime(0, t + .28); lg.gain.linearRampToValueAtTime(9, t + .6); lg.connect(a.detune); if (b) lg.connect(b.detune); }
+  }
+  // Theremin lead for the villains: slides from the last note, with a wide vibrato that arrives late.
+  function theremin(t, n, dur, v) {
+    if (!room(2, dur > .4 ? 3 : 2)) return;
+    const hz = m2f(n), end = t + dur, from = S.thLast && Math.abs(S.thLast - n) < 14 ? m2f(S.thLast) : hz, g = gain(0, L.lead), f = filt('peaking', 2200, 1, g); f.gain.value = 9;
+    S.thLast = n;
+    g.gain.setValueAtTime(.0001, t); g.gain.linearRampToValueAtTime(v, t + .04); g.gain.setValueAtTime(v, Math.max(t + .05, end - .06)); g.gain.linearRampToValueAtTime(.0001, end + .1);
+    voice([g], t, end + .12);
+    const a = osc(W.th, hz, t, end + .12, 0, f);
+    a.frequency.setValueAtTime(from, t); a.frequency.exponentialRampToValueAtTime(hz, t + Math.min(.12, dur * .4));
+    if (dur > .4 && !lean) { const lg = gain(0); osc('sine', 6.2, t + .1, end + .1, 0, lg); lg.gain.setValueAtTime(0, t + .1); lg.gain.linearRampToValueAtTime(28, t + .45); lg.connect(a.detune); }
+  }
 
   // ---------- score ----------
+  // Two themes, one coin. The hero hook climbs: long, neighbour below and back, leap up a third, then the same cell a third higher each bar.
+  // The villain hook is its reflection: the neighbour above, then a fall of a tritone, sinking a fourth each bar, in a limping 12/8.
   const CH = {
     Dm: [38, 62, 65, 69], Dm7: [38, 60, 65, 69], D: [38, 62, 66, 69], Bb: [34, 62, 65, 70], Bbma: [34, 62, 65, 69], F: [41, 60, 65, 69], Fa9: [41, 60, 67, 69],
     C: [36, 60, 64, 67], Cs: [36, 60, 65, 67], Gm: [31, 62, 67, 70], Gm7: [31, 62, 65, 70], A: [33, 61, 64, 69], As: [33, 62, 64, 69], Am: [33, 60, 64, 69],
-    D7: [38, 60, 66, 69], G: [31, 62, 67, 71], G7: [31, 62, 65, 71], Eb: [39, 63, 67, 70], Bbm: [34, 61, 65, 70], Fm: [41, 60, 65, 68], Cm: [36, 60, 63, 67], Gsd: [32, 62, 65, 68],
+    D7: [38, 60, 66, 69], G: [31, 62, 67, 71], G7: [31, 62, 65, 71], Eb: [39, 63, 67, 70], Ebma: [39, 62, 67, 70], Bbm: [34, 61, 65, 70], Fm: [41, 60, 65, 68], Cm: [36, 60, 63, 67], Gsd: [32, 62, 65, 68],
   };
-  // The main motif: long, short, short, long, climbing a triad. Everything grows from it.
-  const mot = (n, third = 3, drop = 5) => [[0, n, 6], [6, n - drop, 2], [8, n, 2], [10, n + third, 6]];
+  const hook = n => [[0, n, 6], [6, n - 2, 2], [8, n, 2], [10, n + 3, 6]];
+  const HOOK_END = [[0, 85, 4], [4, 81, 2], [6, 76, 2], [8, 73, 8]];
   const THEME = [
-    mot(74),
-    [[0, 82, 6], [6, 81, 2], [8, 79, 2], [10, 77, 6]],
-    [[0, 81, 4], [4, 77, 2], [6, 81, 2], [8, 84, 8]],
-    [[0, 79, 6], [6, 76, 2], [8, 72, 8]],
-    mot(74),
+    hook(74),
+    [[0, 77, 6], [6, 76, 2], [8, 77, 2], [10, 81, 6]],
     [[0, 82, 6], [6, 81, 2], [8, 82, 2], [10, 86, 6]],
-    [[0, 86, 4], [4, 84, 2], [6, 82, 2], [8, 79, 8]],
-    [[0, 81, 10], [10, 76, 2], [12, 73, 4]],
-  ];
-  const THEME2 = [
-    mot(77, 4),
-    [[0, 86, 6], [6, 84, 2], [8, 82, 2], [10, 81, 6]],
-    [[0, 84, 4], [4, 81, 2], [6, 84, 2], [8, 89, 8]],
-    [[0, 88, 6], [6, 84, 2], [8, 79, 8]],
-    mot(77, 4),
-    [[0, 82, 6], [6, 86, 2], [8, 89, 2], [10, 86, 6]],
-    [[0, 86, 4], [4, 89, 2], [6, 88, 2], [8, 86, 8]],
+    HOOK_END,
+    hook(74),
+    [[0, 77, 6], [6, 76, 2], [8, 77, 2], [10, 82, 6]],
+    [[0, 86, 4], [4, 89, 8], [12, 86, 2], [14, 84, 2]],
     [[0, 85, 10], [10, 81, 2], [12, 76, 4]],
   ];
-  // Countermelody moves where the theme holds still.
+  // Moves where the hook holds still, in the horns.
   const COUNTER = [
-    [[2, 62, 2], [4, 65, 2], [12, 69, 2], [14, 72, 2]],
-    [[2, 70, 2], [4, 69, 2], [12, 65, 2], [14, 67, 2]],
-    [[2, 69, 2], [4, 72, 2], [12, 69, 2], [14, 67, 2]],
-    [[2, 64, 2], [4, 67, 2], [10, 72, 2], [12, 76, 2], [14, 79, 2]],
-    [[2, 62, 2], [4, 65, 2], [12, 69, 2], [14, 72, 2]],
-    [[2, 70, 2], [4, 74, 2], [12, 77, 2], [14, 74, 2]],
-    [[2, 67, 2], [4, 70, 2], [12, 74, 2], [14, 72, 2]],
-    [[2, 69, 2], [4, 73, 2], [10, 76, 2], [12, 73, 2], [14, 69, 2]],
+    [[12, 62, 2], [14, 65, 2]], [[12, 65, 2], [14, 69, 2]], [[12, 70, 2], [14, 74, 2]], [[12, 69, 2], [14, 64, 2]],
+    [[12, 62, 2], [14, 65, 2]], [[12, 65, 2], [14, 70, 2]], [[6, 74, 2], [8, 70, 4]], [[12, 69, 2], [14, 73, 2]],
   ];
-  // B section: relative major, pickup-into-long phrasing to contrast the main motif.
+  // B section: the broad cascade, falling thirds in the relative major.
   const BTHEME = [
-    [[0, 72, 2], [2, 77, 6], [8, 76, 2], [10, 77, 6]],
-    [[0, 76, 2], [2, 81, 6], [8, 79, 2], [10, 76, 6]],
-    [[0, 74, 2], [2, 77, 6], [8, 79, 2], [10, 82, 6]],
-    [[0, 84, 8], [8, 79, 4], [12, 76, 4]],
-    [[0, 77, 2], [2, 81, 6], [8, 79, 2], [10, 77, 6]],
-    [[0, 74, 2], [2, 82, 6], [8, 81, 2], [10, 79, 6]],
-    [[0, 77, 2], [2, 86, 6], [8, 84, 2], [10, 82, 6]],
-    [[0, 81, 12], [12, 85, 2], [14, 88, 2]],
+    [[0, 84, 8], [8, 81, 4], [12, 77, 4]],
+    [[0, 79, 8], [8, 76, 4], [12, 72, 4]],
+    [[0, 74, 4], [4, 77, 4], [8, 81, 8]],
+    [[0, 82, 4], [4, 86, 4], [8, 84, 8]],
+    [[0, 82, 8], [8, 79, 4], [12, 74, 4]],
+    [[0, 76, 4], [4, 79, 4], [8, 84, 8]],
+    [[0, 86, 6], [6, 84, 2], [8, 82, 2], [10, 81, 6]],
+    [[0, 85, 12], [12, 81, 2], [14, 76, 2]],
   ];
-  const MENU_P = ['F', 'C', 'Dm7', 'Bbma', 'F', 'C', 'Bbma', 'Cs', 'Dm', 'Bbma', 'F', 'C', 'Dm7', 'Gm7', 'Bbma', 'A'];
-  const MENU_T = [
-    mot(77, 4),
-    [[0, 79, 6], [6, 76, 2], [8, 72, 8]],
-    [[0, 74, 6], [6, 77, 2], [8, 81, 8]],
-    [[0, 82, 6], [6, 81, 2], [8, 77, 8]],
-    mot(77, 4),
-    [[0, 84, 6], [6, 79, 2], [8, 76, 8]],
-    [[0, 82, 4], [4, 81, 2], [6, 79, 2], [8, 77, 8]],
-    [[0, 79, 12], [12, 76, 2], [14, 74, 2]],
-    mot(74),
-    [[0, 82, 6], [6, 81, 2], [8, 79, 2], [10, 77, 6]],
-    [[0, 81, 4], [4, 77, 2], [6, 81, 2], [8, 84, 8]],
-    [[0, 79, 6], [6, 76, 2], [8, 72, 8]],
-    [[0, 74, 6], [6, 77, 2], [8, 81, 2], [10, 84, 6]],
-    [[0, 82, 6], [6, 79, 2], [8, 74, 8]],
-    [[0, 77, 4], [4, 79, 2], [6, 81, 2], [8, 82, 8]],
-    [[0, 81, 8], [8, 79, 2], [10, 77, 2], [12, 76, 4]],
-  ];
-  // The villain score bends the motif: the falling fifth becomes a falling tritone, over Phrygian and diminished harmony.
+  const vhook = n => [[0, n, 5], [5, n + 1, 1], [6, n, 2], [8, n - 6, 4]];
   const VTHEME = [
-    mot(74, 3, 6),
-    [[0, 75, 6], [6, 74, 2], [8, 70, 2], [10, 67, 6]],
-    [[0, 77, 4], [4, 73, 2], [6, 77, 2], [8, 82, 8]],
-    [[0, 76, 6], [6, 73, 2], [8, 69, 8]],
-    mot(74, 3, 6),
-    [[0, 75, 6], [6, 74, 2], [8, 75, 2], [10, 79, 6]],
-    [[0, 80, 4], [4, 77, 2], [6, 74, 2], [8, 71, 8]],
-    [[0, 81, 10], [10, 76, 2], [12, 73, 4]],
+    vhook(74),
+    vhook(70),
+    vhook(73),
+    [[0, 76, 3], [3, 73, 3], [6, 70, 3], [9, 69, 3]],
+    vhook(74),
+    vhook(75),
+    vhook(80),
+    [[0, 81, 6], [6, 80, 2], [8, 77, 2], [10, 73, 2]],
   ];
-  const VTHEME2 = [
-    mot(77, 3, 6),
-    [[0, 79, 6], [6, 77, 2], [8, 75, 2], [10, 74, 6]],
-    [[0, 82, 4], [4, 77, 2], [6, 82, 2], [8, 85, 8]],
-    [[0, 85, 6], [6, 81, 2], [8, 76, 8]],
-    mot(77, 3, 6),
-    [[0, 75, 6], [6, 79, 2], [8, 82, 2], [10, 79, 6]],
-    [[0, 83, 4], [4, 80, 2], [6, 77, 2], [8, 74, 8]],
-    [[0, 85, 10], [10, 81, 2], [12, 76, 4]],
-  ];
+  // Answers in the low brass, on the off-beats of the limp.
   const VCOUNTER = [
-    [[2, 62, 2], [4, 63, 2], [12, 65, 2], [14, 68, 2]],
-    [[2, 67, 2], [4, 70, 2], [12, 63, 2], [14, 62, 2]],
-    [[2, 65, 2], [4, 61, 2], [12, 65, 2], [14, 68, 2]],
-    [[2, 64, 2], [4, 61, 2], [12, 64, 2], [14, 67, 2]],
-    [[2, 62, 2], [4, 63, 2], [12, 65, 2], [14, 68, 2]],
-    [[2, 67, 2], [4, 70, 2], [12, 63, 2], [14, 62, 2]],
-    [[2, 68, 2], [4, 71, 2], [12, 74, 2], [14, 77, 2]],
-    [[2, 69, 2], [4, 73, 2], [10, 76, 2], [12, 73, 2], [14, 69, 2]],
+    [[9, 57, 3]], [[9, 58, 3]], [[9, 61, 3]], [[0, 57, 3]],
+    [[9, 57, 3]], [[9, 58, 3]], [[9, 59, 3]], [[0, 61, 3], [6, 57, 3]],
   ];
+  // B section: chromatic sighs, a slinking cabaret line.
   const VBTHEME = [
-    [[0, 72, 2], [2, 77, 6], [8, 75, 2], [10, 77, 6]],
-    [[0, 75, 2], [2, 79, 6], [8, 77, 2], [10, 75, 6]],
-    [[0, 70, 2], [2, 75, 6], [8, 79, 2], [10, 82, 6]],
-    [[0, 85, 8], [8, 82, 4], [12, 77, 4]],
-    [[0, 77, 2], [2, 81, 6], [8, 80, 2], [10, 77, 6]],
-    [[0, 74, 2], [2, 80, 6], [8, 77, 2], [10, 74, 6]],
-    [[0, 79, 2], [2, 87, 6], [8, 86, 2], [10, 82, 6]],
-    [[0, 81, 12], [12, 85, 2], [14, 88, 2]],
+    [[0, 80, 3], [3, 79, 3], [6, 77, 6]],
+    [[0, 75, 3], [3, 74, 3], [6, 72, 6]],
+    [[0, 70, 3], [3, 75, 3], [6, 79, 6]],
+    [[0, 82, 3], [3, 81, 3], [6, 77, 6]],
+    [[0, 77, 3], [3, 76, 3], [6, 74, 6]],
+    [[0, 74, 3], [3, 77, 3], [6, 80, 6]],
+    [[0, 82, 2], [2, 80, 2], [4, 79, 2], [6, 75, 6]],
+    [[0, 73, 6], [6, 76, 3], [9, 81, 3]],
   ];
-  const MENU_V_P = ['Dm', 'Eb', 'Bbm', 'A', 'Dm', 'Eb', 'Gsd', 'A', 'Dm', 'Eb', 'Bbm', 'A', 'Dm', 'Eb', 'Gsd', 'A'];
-  const MENU_V_T = VTHEME.concat(VTHEME2);
+  const MENU_P = ['Dm', 'Bbma', 'Gm7', 'A', 'Dm', 'Eb', 'Bbm', 'A', 'F', 'C', 'Dm7', 'Bbma', 'Gm7', 'Eb', 'As', 'A'];
+  // The title theme plays both faces of the coin, in sixteen bars: hook, its reflection, then one long line that ends unresolved.
+  const MENU_T = [
+    hook(74),
+    [[0, 77, 6], [6, 76, 2], [8, 77, 2], [10, 81, 6]],
+    [[0, 82, 6], [6, 81, 2], [8, 82, 2], [10, 86, 6]],
+    HOOK_END,
+    [[0, 74, 6], [6, 75, 2], [8, 74, 2], [10, 68, 6]],
+    [[0, 70, 6], [6, 71, 2], [8, 70, 2], [10, 64, 6]],
+    [[0, 73, 6], [6, 74, 2], [8, 73, 2], [10, 67, 6]],
+    [[0, 76, 4], [4, 73, 2], [6, 70, 2], [8, 69, 8]],
+    ...BTHEME.slice(0, 5),
+    [[0, 79, 4], [4, 82, 4], [8, 86, 8]],
+    [[0, 86, 8], [8, 85, 8]],
+    [[0, 85, 12], [12, 81, 2], [14, 76, 2]],
+  ];
+  const MENU_H_P = ['Dm', 'Bbma', 'Gm', 'A', 'Dm', 'Bb', 'Gm7', 'A', 'F', 'C', 'Dm', 'Bbma', 'Gm', 'C', 'Bb', 'A'];
+  const MENU_H_T = THEME.concat(BTHEME);
+  const MENU_V_P = ['Dm', 'Eb', 'Bbm', 'A', 'Dm', 'Eb', 'Gsd', 'A', 'Fm', 'Cm', 'Eb', 'Bbm', 'Dm', 'Gsd', 'Eb', 'A'];
+  const MENU_V_T = VTHEME.concat(VBTHEME);
   const HERO = { Dm: 'D', Dm7: 'D7', Gm: 'G', Gm7: 'G7' };
   const mood = () => S.side === 'villain' ? 1 - S.hope : S.hope;
-  const E = '................';
-  // mix order: pad bass arp lead horn ctr perc taiko. m is the mix at intensity 0, M at intensity 1.
-  const SEC = {
-    intro: { n: 8, p: ['Dm', 'Dm', 'Bb', 'Bb', 'Gm', 'Gm', 'A', 'A'], m: [.85, .7, .18, .5, .7, 0, .25, .75], M: [.9, .8, .4, .6, .8, 0, .45, .9], bs: 'x.............5.', k: E, s: E, h: '..x...x...x...x.', t: 'x.........x.....', f: E, arp: 0 },
-    verse: { n: 16, p: ['Dm', 'Bb', 'F', 'C', 'Dm', 'Bb', 'Gm', 'A'], m: [.6, .7, .55, .85, .7, .45, .38, 0], M: [.8, .85, .8, 1, .85, .7, .7, .35], bs: 'x..x..x...x.x..o', k: 'x......x..x.....', s: '....x.......x...', h: '..x...x...x...x.', t: 'x.....x.........', f: '...x.....x.x....', arp: 1, ped: 1 },
-    b: { n: 16, p: ['F', 'Am', 'Bb', 'C', 'Dm', 'Gm', 'Bb', 'A'], m: [.75, .6, .7, .7, .75, .5, .25, 0], M: [.9, .8, .85, .9, .95, .7, .55, .3], bs: 'x.......x..o....', k: 'x.......x.......', s: '............x...', h: '....x.......x...', t: E, f: 'x..x.x..x..x.x..', arp: 1 },
-    brk: { n: 8, p: ['Dm', 'Dm', 'Bb', 'Bb', 'Gm', 'Gm', 'A', 'A'], m: [.8, .75, .35, .55, .35, .25, .35, .25], M: [.85, .85, .5, .7, .5, .45, .55, .5], bs: 'x.x.x.x.x.x.x.xo', k: E, s: E, h: '..x...x...x...x.', t: 'x...............', f: 'x..x..x.x..x..x.', arp: 0, ped: 1, minor: 1 },
-    chorus: { n: 16, p: ['Dm', 'Bb', 'F', 'C', 'Dm', 'Bb', 'Gm', 'A'], m: [1, .95, .8, 1, 1, .85, .85, .7], M: [1, 1, .95, 1, 1, 1, 1, 1], bs: 'x.x.o.x.x.x.o.xo', k: 'x.....x.x.x.....', s: '....x.......x..x', h: '..x.x.x...x.x.x.', t: 'x..x..x...x.x.x.', f: '...x.....x.....x', arp: 2 },
+  const E16 = '................', E12 = '............';
+  // mix order: pad bass ost(arp) bell(lead) brass(horn) ctr perc timp. m is the mix at intensity 0, M at intensity 1.
+  // Patterns: bs bass, os string ostinato, st brass stab, k kick, s snare, h coin tick, t timpani, f pickup ruff.
+  const HSEC = {
+    intro: { n: 8, p: ['Dm', 'Dm', 'Bb', 'Bb', 'Gm', 'Gm', 'A', 'A'], m: [.75, .75, .45, .5, .9, 0, .4, .8], M: [.85, .85, .7, .6, 1, 0, .6, 1], bs: 'x.......x.....5.', os: 'x.xx.xx.x.xx.xx.', st: E16, k: E16, s: '....x.......x...', h: E16, t: 'x.........x.....', f: E16 },
+    verse: { n: 16, p: ['Dm', 'Bbma', 'Gm', 'A', 'Dm', 'Bb', 'Gm', 'A'], m: [.5, .75, .8, .6, .85, .55, .5, .35], M: [.7, .9, 1, .8, 1, .8, .85, .7], bs: 'x.....x.x.....x.', os: 'x.xx.xx.x.xx.xx.', st: 'x.........x.....', k: 'x.......x.......', s: '....x.......x...', h: '..x...x...x...x.', t: 'x.....x.........', f: '...............x' },
+    b: { n: 16, p: ['F', 'C', 'Dm', 'Bbma', 'Gm', 'C', 'Bb', 'A'], m: [.85, .65, .55, .75, .9, .6, .4, .3], M: [.95, .8, .8, .9, 1, .8, .7, .55], bs: 'x.......x.....o.', os: 'x...x.x.x...x.x.', st: E16, k: 'x.......x.......', s: '............x...', h: '....x.......x...', t: 'x...............', f: E16 },
+    brk: { n: 8, p: ['Dm', 'Dm', 'Bb', 'Bb', 'Gm', 'Gm', 'A', 'A'], m: [.55, .8, .55, .7, .5, .5, .5, .3], M: [.7, .9, .75, .8, .7, .7, .75, .6], bs: 'x..x..x...x..x..', os: E16, st: E16, k: E16, s: E16, h: 'x...x...x...x...', t: E16, f: E16, minor: 1 },
+    chorus: { n: 16, p: ['Dm', 'Bbma', 'Gm', 'A', 'Dm', 'Bb', 'Gm', 'A'], m: [.9, .95, .9, 1, 1, .9, .95, .85], M: [1, 1, 1, 1, 1, 1, 1, 1], bs: 'x.x.o.x.x.x.o.xo', os: 'x.xx.xx.x.xx.xx.', st: 'x.....x...x.....', k: 'x.....x.x.x.....', s: '....x..x....x..x', h: '..x.x.x...x.x.x.', t: 'x..x..x...x.x.x.', f: '.......x.......x' },
   };
-  SEC.intro.vp = ['Dm', 'Dm', 'Eb', 'Eb', 'Gsd', 'Gsd', 'A', 'A'];
-  SEC.verse.vp = SEC.chorus.vp = ['Dm', 'Eb', 'Bbm', 'A', 'Dm', 'Eb', 'Gsd', 'A'];
-  SEC.b.vp = ['Fm', 'Cm', 'Eb', 'Bbm', 'Dm', 'Gsd', 'Eb', 'A'];
-  SEC.brk.vp = SEC.intro.vp;
-  for (const k in SEC) { const s = SEC[k]; s.ph = s.minor ? s.p : s.p.map(n => HERO[n] || n); s.pv = s.vp || s.p; }
-  const ARP = [0, 2, 1, 3, 2, 4, 3, 2, 1, 3, 2, 4, 3, 5, 4, 2];
-  const ACC = [1, .62, .78, .62, .92, .62, .78, .62, .95, .62, .78, .62, .9, .62, .78, .62];
+  const VSEC = {
+    intro: { n: 8, p: ['Dm', 'Dm', 'Eb', 'Eb', 'Gsd', 'Gsd', 'A', 'A'], m: [.75, .8, .3, .5, .85, 0, .55, .85], M: [.85, .9, .55, .6, 1, 0, .7, 1], bs: 'x.....x.....', os: 'x..x.x..x.x.', st: E12, k: E12, s: E12, h: 'x..x..x..x..', t: 'x.....x.....', f: E12 },
+    verse: { n: 16, p: ['Dm', 'Eb', 'Bbm', 'A', 'Dm', 'Eb', 'Gsd', 'A'], m: [.55, .8, .7, .55, .85, .55, .6, .4], M: [.75, .95, .95, .75, 1, .8, .85, .75], bs: 'x..x.x..x.x.', os: 'x..x.x..x.x.', st: 'x.....x.....', k: 'x.....x.....', s: '...x.....x..', h: 'x..x..x..x..', t: 'x.....x..x..', f: E12 },
+    b: { n: 16, p: ['Fm', 'Cm', 'Eb', 'Bbm', 'Dm', 'Gsd', 'Eb', 'A'], m: [.85, .7, .5, .7, .9, .6, .5, .3], M: [.95, .85, .8, .9, 1, .8, .75, .55], bs: 'x.....x..x..', os: 'x..x..x..x..', st: E12, k: 'x.....x.....', s: '.........x..', h: 'x.....x.....', t: 'x...........', f: E12 },
+    brk: { n: 8, p: ['Dm', 'Dm', 'Eb', 'Eb', 'Gsd', 'Gsd', 'A', 'A'], m: [.6, .8, .4, .7, .5, .5, .65, .35], M: [.75, .9, .6, .85, .7, .7, .85, .65], bs: 'x..x..x..x..', os: E12, st: E12, k: E12, s: E12, h: 'x..x..x..x..', t: E12, f: E12, minor: 1 },
+    chorus: { n: 16, p: ['Dm', 'Eb', 'Bbm', 'A', 'Dm', 'Eb', 'Gsd', 'A'], m: [.9, 1, .95, 1, 1, .9, .95, .9], M: [1, 1, 1, 1, 1, 1, 1, 1], bs: 'x.xx.xx.xx.o', os: 'x.xx.xx.xx.x', st: 'x..x.x..x.x.', k: 'x..x..x..x..', s: '...x.....x.x', h: 'x.xx.xx.xx.x', t: 'x..x.x..x.x.', f: '...........x' },
+  };
+  for (const k in HSEC) { const s = HSEC[k]; s.ph = s.minor || k === 'verse' ? s.p : s.p.map(n => HERO[n] || n); }
+  const ARP16 = [0, 2, 1, 3, 2, 4, 3, 2, 1, 3, 2, 4, 3, 5, 4, 2], ARP12 = [0, 2, 4, 3, 1, 3, 5, 3, 2, 4, 3, 1];
+  const ACC16 = [1, .62, .78, .62, .92, .62, .78, .62, .95, .62, .78, .62, .9, .62, .78, .62], ACC12 = [1, .6, .65, .9, .6, .68, .95, .6, .65, .88, .6, .68];
   const KEYS = [0, 2, -2, 3];
   const H = (t, a = .007) => t + Math.random() * a;
   const V = (v, a = .16) => v * (1 - a + Math.random() * a * 2);
-  const stepDur = () => 60 / (S.mode === 'menu' ? (S.side === 'villain' ? 66 : 72) : 116 + S.late * 10 - S.night * 4 + (S.side === 'hero' ? 2 : S.side === 'villain' ? -6 : 0)) / 4;
+  const vilMeter = () => S.side === 'villain';
+  const barLen = () => vilMeter() ? 12 : 16;
+  const stepDur = () => { if (S.mode === 'menu') return vilMeter() ? 60 / 72 / 3 : 60 / 76 / 4; return vilMeter() ? 60 / (98 + S.late * 8 - S.night * 3) / 3 : 60 / (120 + S.late * 10 - S.night * 4) / 4; };
 
   function chooseNext() {
     const h = S.I + S.late * .15;
@@ -378,136 +416,134 @@ const Sound = (() => {
     if (name === 'verse' && (from === 'brk' || from === 'chorus')) { S.cycle++; S.key = KEYS[S.cycle % KEYS.length] + (S.late > .5 ? 1 : 0); }
     S.sec = name; S.bar = 0; S.jump = false; S.nextSec = null; S.pass[name] = (S.pass[name] || 0) + 1; S.mixT = 0;
   }
+  const secOf = () => (S.side === 'villain' ? VSEC : HSEC)[S.sec];
   function barEnd() {
     S.bar++; S.sinceBig++;
     if (S.mode === 'menu') { if (S.bar >= 16) { S.bar = 0; S.pass.menu = (S.pass.menu || 0) + 1; } return; }
-    if (S.mode === 'match' && (S.jump || S.bar >= SEC[S.sec].n)) enter(S.nextSec || 'verse');
+    if (S.mode === 'match' && (S.jump || S.bar >= secOf().n)) enter(S.nextSec || 'verse');
   }
   function line(arr, b, fn) { if (arr) for (const [s, n, d] of arr) if (s === b) fn(n, d); }
   // Steps until the next bass note, so overlapping notes cannot beat against each other.
-  const bassGap = (p, b) => { for (let i = b + 1; i < 16; i++) if (p[i] !== '.') return i - b; return 16 - b; };
+  const bassGap = (p, b) => { for (let i = b + 1; i < p.length; i++) if (p[i] !== '.') return i - b; return p.length - b; };
 
   function menuStep(b, t, spb) {
-    const vil = S.side === 'villain', i = S.bar, ch = CH[(vil ? MENU_V_P : MENU_P)[i]], pass = S.pass.menu || 0, T = ch.slice(1), rich = pass % 2 === 1, a = ACC[b], drop = vil ? -12 : 0;
+    const vil = S.side === 'villain', hero = S.side === 'hero', i = S.bar, P = vil ? MENU_V_P : hero ? MENU_H_P : MENU_P, ch = CH[P[i]], pass = S.pass.menu || 0, T = ch.slice(1), rich = pass % 2 === 1, TUNE = (vil ? MENU_V_T : hero ? MENU_H_T : MENU_T)[i], len = barLen();
     if (b === 0) {
-      choir(t, T, spb * 16, .03, W.oo);
-      if (rich) choir(t, [T[1] + 12], spb * 16, .014, W.ah);
-      bass(t, ch[0] + 12, .13, spb * 13);
-      pluck(H(t), ch[0] + 24, .12, arpF, 1.1, 1);
+      choir(t, T, spb * len, vil ? .03 : .034, W.oo);
+      if (rich || hero) choir(t, [T[1] + 12], spb * len, .014, W.ah);
+      bass(t, ch[0] + 12, .13, spb * (len - 3));
+      pluck(H(t), ch[0] + 24, .13, arpF, 1.1, 1);
+      if (i % 4 === 0) smp(B.timp, H(t), rateTo(ch[0]), .12, L.taiko, 0, false, 1);
     }
-    if (b % 2 === 0 && (b || i % 2)) { const tones = [T[0], T[1], T[2], T[0] + 12, T[1] + 12, T[2] + 12]; pluck(H(t, .016), tones[ARP[b / 2 + (i % 2) * 8]], V(.085 * a), arpF, 1, 1); }
-    line((vil ? MENU_V_T : MENU_T)[i], b, (n, d) => {
-      bell(H(t), n + drop, V(.1, .1));
-      if ((rich && i >= 8) || vil) horn(H(t), n - 12 + (vil ? 0 : drop), spb * d * .95, .034, L.horn);
+    // Harp figure: rolling in the 4/4, limping in the villain's 12/8.
+    if (vil ? (b % 3 === 0 || b % 12 === 5) : (b % 2 === 0 && (b || i % 2))) { const tones = [T[0], T[1], T[2], T[0] + 12, T[1] + 12, T[2] + 12]; pluck(H(t, .016), tones[(vil ? ARP12 : ARP16)[vil ? b : b / 2 + (i % 2) * 8]], V(.095 * (vil ? ACC12 : ACC16)[b]), arpF, 1, 1); }
+    line(TUNE, b, (n, d) => {
+      const lyr = d * spb;
+      if (vil) { theremin(H(t), n, lyr * .96, .05); if (d >= 4) coinbell(H(t), n + 12, .04); }
+      else if (hero || i < 8 || rich) { trumpet(H(t), n, lyr * .94, .055, L.horn, !hero && i < 8); coinbell(H(t), n + 12, V(.06, .1)); }
+      else coinbell(H(t), n, V(.09, .1));
     });
-    if (rich && b % 4 === 3) mallet(H(t, .012), T[(b >> 2) % 3] + 12, V(.05), L.ctr, 0);
-    if (!vil && i === 15 && b >= 8 && b % 2 === 0) pluck(H(t), 76 + (b - 8), V(.07), arpF, .9, 1);
+    if (vil && i % 2 === 1 && b === 9) coinbell(H(t), 92, .03);
+    if ((rich || hero) && !vil && b % 4 === 3) pluck(H(t, .012), T[(b >> 2) % 3] + 24, V(.05), L.ctr, .7, 0);
+    if (vil && b % 3 === 0) smp(B.rim, H(t, .004), 1.1 + (b === 0 ? .2 : 0), V(.05), L.perc, 0, false, 0);
   }
+  const rateTo = root => { let d = (root - 38) % 12; if (d < 0) d += 12; if (d > 6) d -= 12; return Math.pow(2, d / 12); };
 
   function matchStep(b, t, spb) {
-    const sec = SEC[S.sec], bar0 = S.bar;
+    const sec = secOf(), bar0 = S.bar, vil = S.side === 'villain', len = sec.bs.length;
     // Mood is decided at phrase starts, so hope or nightfall cannot change a chord's quality halfway through a bar.
-    if (b === 0 && (bar0 % 4 === 0 || S.bright === null)) { S.bright = S.side === 'hero' && mood() >= .3; S.darkL = S.night > .55; }
-    const vil = S.side === 'villain', bright = S.bright && !sec.minor, pr = vil ? sec.pv : bright ? sec.ph : sec.p, bar = S.bar, i = bar % pr.length, name = pr[i], ch = CH[name], I = S.I, K = S.key, a = ACC[b], late = S.late, night = S.darkL, pass = (S.pass[S.sec] || 1) - 1, h = I + late * .15, atEnd = bar + 1 >= sec.n;
+    if (b === 0 && (bar0 % 4 === 0 || S.bright === null)) { S.bright = S.side === 'hero' && mood() >= .6 && S.sec === 'chorus'; S.darkL = S.night > .55; }
+    const bright = S.bright && !sec.minor, pr = bright ? sec.ph : sec.p, bar = S.bar, i = bar % pr.length, name = pr[i], ch = CH[name], I = S.I, K = S.key, a = (vil ? ACC12 : ACC16)[b], late = S.late, night = S.darkL, pass = (S.pass[S.sec] || 1) - 1, h = I + late * .15, atEnd = bar + 1 >= sec.n;
     if (b === 0) {
       if (atEnd && !S.jump) S.nextSec = chooseNext();
       else if (!atEnd && S.sec !== 'chorus' && S.sec !== 'intro' && (bar + 1) % 4 === 0 && h > .76 && S.sinceBig >= 16) { S.jump = true; S.nextSec = 'chorus'; }
     }
-    // The dark pedal holds D under the Phrygian chords, but lets the dominant and Bb minor have true roots so the cadence still lands.
-    const pedal = (night || vil) && sec.ped && name !== 'A' && name !== 'Bbm';
+    const pedal = (night || vil) && S.sec === 'verse' && name !== 'A' && name !== 'Bbm';
     const ending = atEnd || S.jump, T = ch.slice(1).map(n => n + K), root = (pedal ? 38 : ch[0]) + K, tones = [T[0], T[1], T[2], T[0] + 12, T[1] + 12, T[2] + 12];
-    const shift = night || vil ? -12 : 0, nv = night ? .72 : 1, dark = night || vil, tr = vil ? .84 : 1, low = vil ? -12 : 0, mine = mood();
+    const nv = night ? .78 : 1, mine = mood();
     // Under the hero's major chords the minor third of D and G is raised, so one melody serves both moods.
     const fix = n => { if (!bright) return n; const pc = ((n % 12) + 12) % 12; return ((name === 'D' || name === 'D7') && pc === 5) || ((name === 'G' || name === 'G7') && pc === 10) ? n + 1 : n; };
-    const brassT = T.map(n => n + low);
+    const up = n => fix(n) + K;
 
     if (b === 0) {
-      if (i === 0 || pr[i - 1] !== name) { let run = 1; while (i + run < pr.length && pr[i + run] === name) run++; choir(t, S.sec === 'chorus' ? T.concat(T[0] + 12) : T, spb * 16 * run, .024 + .012 * I, S.sec === 'b' ? W.oo : W.ah); }
-      if (ending && (S.nextSec === 'chorus' || S.sec === 'brk') && B.swell) smp(B.swell, t + Math.max(0, spb * 16 - B.swell.duration), 1, .1, mus, 0, false, 2);
-      if (bar === 0 && S.sec === 'chorus' && B.crash) smp(B.crash, t, 1, .12, mus, 0, false, 2);
+      if (i === 0 || pr[i - 1] !== name) { let run = 1; while (i + run < pr.length && pr[i + run] === name) run++; choir(t, S.sec === 'chorus' ? T.concat(T[0] + 12) : T, spb * len * run, .024 + .012 * I, S.sec === 'b' ? W.oo : W.ah); }
+      if (ending && (S.nextSec === 'chorus' || S.sec === 'brk') && B.swell) smp(B.swell, t + Math.max(0, spb * len - B.swell.duration), 1, .1, mus, 0, false, 2);
+      if (bar === 0 && S.sec === 'chorus' && B.crash) smp(B.crash, t, 1, .11, mus, 0, false, 2);
     }
-    // Rhythm section
+    // Rhythm section. The bass sits an octave higher than written so phones can play it.
     const bc = sec.bs[b];
-    if (bc !== '.') bass(H(t, .004), root + (bc === 'o' ? 12 : bc === '5' ? 7 : 0), V((.17 + I * .05) * a, .08), spb * Math.min(bc === 'x' ? 3.2 : 1.8, bassGap(sec.bs, b)) * .95);
-    if (sec.arp && !(dark && b % 4) && (b % 2 === 0 || (sec.arp > 1 && I > .5) || I > .78)) pluck(H(t, .012), tones[ARP[b]], V((.075 + I * .03) * a), arpF, .5);
-    if (sec.k[b] === 'x') smp(B.kick, H(t, .003), 1, V(.3 * a, .08), L.perc, 0, false, 2);
-    if (sec.s[b] === 'x') smp(B.clack, H(t), rp(.05), V(.15), L.perc, 0, false, 1);
-    if (sec.h[b] === 'x' || (I > .6 && b % 2 === 1 && Math.random() < .5)) smp(B.shk, H(t), rp(.08), V(.07 * a, .3), L.perc, 0, false, 0);
-    if (sec.f[b] === 'x') smp(B.frame, H(t), rp(.04), V(.22 * a), L.perc, 0, false, 1);
-    if (sec.t[b] === 'x') smp(B.taiko, H(t, .004), rp(.03) * tr, V(.27 * a, .1), L.taiko, 0, false, 2);
-    // Late-game drive and section-ending fills
-    if ((late > .35 || (vil && mine > .72)) && S.sec !== 'brk' && b % 8 === 4) smp(B.taiko, H(t), .86 * tr, V(.15 + late * .1, .1), L.taiko, 0, false, 1);
-    if (late > .7 && S.sec === 'chorus' && b >= 12) smp(B.frame, H(t), 1.1, V(.18), L.perc, 0, false, 0);
-    if (ending && b >= 8 && (b >= 12 || b % 2 === 0)) { const c = (b - 7) / 8; smp(B.taiko, H(t, .004), .95 + c * .2, V(.09 + c * .18, .08), L.taiko, 0, false, 2); }
-    if (dark && i % 2 === 1 && b === 12 && name !== 'A') mallet(H(t), 68 + K + 12, .05, L.ctr, 1); // a lone tritone keeps the dark bars uneasy
+    if (bc !== '.') bass(H(t, .004), root + 12 + (bc === 'o' ? 12 : bc === '5' ? 7 : 0), V((.15 + I * .045) * a, .08), spb * Math.min(bc === 'x' ? 3.2 : 1.8, bassGap(sec.bs, b)) * .95);
+    if (sec.os[b] === 'x' && (S.sec !== 'intro' || bar >= 4 || vil)) {
+      const step = vil ? [0, 0, 7, 0, 12, 0, 7, 0, 0, 3, 7, 12][b] : b % 8 === 0 ? 12 : b % 4 === 3 ? 7 : 0;
+      spic(H(t, .006), root + 24 + step, V((.19 + I * .06) * a, .1));
+      if (vil) smp(B.rim, H(t, .005), 1.45, V(.11 * a, .15), L.perc, 0, false, 0); // col legno, the wood of the bow
+    }
+    if (sec.st[b] === 'x') brass(H(t), T.map(n => n - 12), spb * (vil ? 1.2 : 1.4), .05 + I * .022 + late * .01);
+    if (sec.k[b] === 'x') smp(B.kick, H(t, .003), 1, V(.26 * a, .08), L.perc, 0, false, 2);
+    if (sec.s[b] === 'x') smp(vil ? B.clack : B.snr, H(t), vil ? .85 : rp(.03), V(vil ? .22 : .2), L.perc, 0, false, 1);
+    if (sec.f[b] === 'x' && !vil) for (let r = 0; r < 3; r++) smp(B.snr, H(t - spb * (2 - r) * .3), 1.2, .05 + r * .025, L.perc, 0, false, 0);
+    // Coin ticks are the signature in the kit, and most of the top end.
+    if (sec.h[b] === 'x' || (I > .6 && (vil ? b % 3 === 1 : b % 2 === 1) && Math.random() < .5)) smp(pick(B.clink), H(t), rp(.08) * (vil ? .74 : .95), V(.1 * a, .28), L.perc, 0, false, 0);
+    if (sec.t[b] === 'x') smp(B.timp, H(t, .004), rateTo(root), V(.36 * a, .1), L.taiko, 0, false, 2);
+    if ((late > .35 || (vil && mine > .72)) && S.sec !== 'brk' && b === (vil ? 3 : 4)) smp(B.timp, H(t), rateTo(root) * .75, V(.13 + late * .08, .1), L.taiko, 0, false, 1);
+    if (late > .7 && S.sec === 'chorus' && b >= len - 4) smp(B.snr, H(t), 1.15, V(.09), L.perc, 0, false, 0);
+    if (ending && b >= len / 2 && (b >= len * .75 || b % 2 === 0)) { const c = (b - len / 2 + 1) / (len / 2); smp(B.timp, H(t, .004), rateTo(root) * (.95 + c * .2), V(.08 + c * .15, .08), L.taiko, 0, false, 2); }
+    if (vil && b % 3 === 0 && (S.sec === 'brk' || S.sec === 'intro')) smp(B.rim, H(t, .004), b === 0 ? 1.25 : 1, V(.07), L.perc, 0, false, 1); // the clock
 
-    // Melody. Lines sound in one register on every side: the horn an octave below the written note, the bell at it.
-    const sp = n => fix(n) + K + shift, top = n => fix(n) + K, hl = n => fix(n) + K - 12, drop = vil ? 6 : 5, TH = vil ? VTHEME : THEME, TH2 = vil ? VTHEME2 : THEME2, CT = vil ? VCOUNTER : COUNTER;
+    const TH = vil ? VTHEME : THEME, CT = vil ? VCOUNTER : COUNTER, BT = vil ? VBTHEME : BTHEME;
+    const lead = (n, d, v, muted) => { if (vil) { theremin(H(t), up(n), spb * d * .96, v * .82 * nv); if (d >= 4 || S.sec === 'chorus') coinbell(H(t), up(n) + 12, V(.08 * nv, .1)); } else { trumpet(H(t), up(n), spb * d * .95, v * nv, L.horn, muted); } };
     switch (S.sec) {
       case 'intro': {
-        const k = i >> 1, third = [3, 4, 3, 4][k];
-        if (i % 2 === 0) line(mot((vil ? [62, 63, 56, 57] : [62, 58, 55, 57])[k], third, drop), b, (n, d) => horn(H(t), fix(n) + K, spb * d * .96, V(.068 + i * .004, .08)));
-        else line(mot((vil ? [74, 75, 68, 69] : [74, 70, 67, 69])[k], third, drop), b, (n, d) => { if (d > 2) bell(H(t), fix(n) + K + 12 + low, V(.05)); });
+        if (i % 2 === 0) line(vil ? vhook([62, 58, 56, 57][i >> 1]) : hook([62, 58, 55, 57][i >> 1]), b, (n, d) => horn(H(t), n + K, spb * d * .96, V(.075 + i * .004, .08)));
+        else if (!pass) line(TH[i & 3], b, (n, d) => { if (d > 3) coinbell(H(t), up(n) + 12, V(.05)); });
         break;
       }
       case 'verse': {
-        const second = bar >= 8, arr = (second && pass % 2 === 0 ? TH2 : TH)[i], side = S.side;
-        const useHorn = side ? true : second ? pass % 2 === 0 : pass % 3 === 1, belled = side === 'hero' && (pass % 2 === 0 || second);
-        line(arr, b, (n, d) => {
-          if (useHorn) horn(H(t), hl(n), spb * d * .95, V(.075 * nv, .08)); else bell(H(t), top(n), V(.13 * nv, .1));
-          if (belled) bell(H(t), top(n), V(.09 * nv, .1));
-          if (vil && d >= 6) bell(H(t), top(n), V(.045));
-          if (second) mallet(H(t), hl(n), V(.07 * nv), L.lead, 1);
-        });
-        if (side === 'hero' && b === 0) brass(t, T, spb * 14, .018 + I * .012);
-        if (vil && (b === 0 || b === 10)) brass(H(t), brassT, spb * 2.6, .03 + I * .012);
-        if (second || I > .5) line(CT[i], b, n => pluck(H(t, .012), sp(n), V(.1 * nv), L.ctr, .7, 1));
+        line(TH[i], b, (n, d) => { lead(n, d, V(.06, .08)); if (bar >= 8 && !vil) horn(H(t), up(n) - 12, spb * d * .94, V(.045 * nv, .08)); if (d >= 6 && !vil) coinbell(H(t), up(n) + 12, V(.07 * nv, .1)); if (vil && bar >= 8) horn(H(t), up(n) - 12, spb * d * .9, V(.05 * nv, .08)); });
+        if (I > .4 || bar >= 8) line(CT[i], b, (n, d) => horn(H(t), n + K, spb * d * .96, V(.048 * nv, .08)));
+        if (b === 0 && !vil) brass(H(t), T, spb * 14, .012 + I * .012);
         break;
       }
       case 'b': {
-        if (b === 0) brass(t, brassT.slice(0, 3), spb * 15, .016 + I * .012);
-        line((vil ? VBTHEME : BTHEME)[i], b, (n, d) => {
-          if (pass % 2) { bell(H(t), top(n), V(.09 * nv)); pluck(H(t), hl(n), V(.11 * nv), L.ctr, .9, 2); }
-          else horn(H(t), hl(n), spb * d * .96, V(.07 * nv, .08));
-        });
+        if (b === 0) brass(t, T.slice(0, 3), spb * (len - 1), .018 + I * .012);
+        line(BT[i], b, (n, d) => { if (vil) { lead(n, d, V(.06, .08)); } else { horn(H(t), up(n) - 12, spb * d * .96, V(.075 * nv, .08)); if (pass % 2 === 0) coinbell(H(t), up(n), V(.1 * nv, .1)); else trumpet(H(t), up(n), spb * d * .95, V(.045 * nv, .08), L.horn);
+          if (d >= 8) coinbell(H(t), up(n) + 12, V(.06 * nv, .1)); } });
         break;
       }
       case 'brk': {
-        const k = i >> 1, m = mot((vil ? [62, 63, 68, 69] : [62, 65, 67, 69])[k], [3, 4, 3, 4][k], drop);
-        if (i % 2 === 0) line(m, b, (n, d) => { mallet(H(t), fix(n) + K + 12, V(.11), L.lead, 2); if (i >= 4 && d > 2) bell(H(t), fix(n) + K + 12, V(.05)); });
-        else line(m, (b + 10) % 16, n => pluck(H(t, .012), fix(n) + K + 12, V(.06), L.ctr, .6, 1));
+        // Stripped down: a walking pizzicato bass and the hook on a muted horn or the theremin, alone.
+        const walk = T.map(n => n + 12); if (b % (vil ? 3 : 4) === 0) pluck(H(t, .01), walk[(b >> 2) % 3], V(.09), L.ctr, .5, 1);
+        const m = TH[i]; if (i < 6) line(m, b, (n, d) => { if (vil) theremin(H(t), up(n), spb * d * .96, V(.05)); else trumpet(H(t), up(n), spb * d * .92, V(.06), L.horn, true); });
         break;
       }
       case 'chorus': {
-        const arr = (bar >= 8 && pass % 2 === 0 ? TH2 : TH)[i];
-        line(arr, b, (n, d) => { horn(H(t), hl(n), spb * d * .96, V(.1 * nv, .06)); bell(H(t), top(n), V(.1 * nv, .1)); });
-        line(CT[i], b, n => mallet(H(t, .012), fix(n) + K + 12, V(.08 * nv), L.ctr, 1));
-        if (b === 0) brass(H(t), brassT, spb * 9, .03 + late * .01);
-        if (b === 10) brass(H(t), brassT, spb * 5.6, .026 + late * .01);
+        const pk = bar >= 8 ? 1 : 0;
+        line(TH[i], b, (n, d) => { lead(n, d, V(.078 + pk * .012, .06)); if (!vil) horn(H(t), up(n) - 12, spb * d * .96, V(.07, .06)); else horn(H(t), up(n), spb * d * .92, V(.055, .06)); coinbell(H(t), up(n) + 12, V(.08 * nv, .1)); });
+        line(CT[i], b, (n, d) => pluck(H(t, .012), n + K + 12, V(.08 * nv), L.ctr, .7, 1));
+        if (b === 0) brass(H(t), T, spb * (vil ? 7 : 9), .03 + late * .012);
         break;
       }
     }
   }
 
   // ---------- clock and mix ----------
-  const MENU_MIX = [1, .8, .85, .9, .55, .6, 0, 0], STING_MIX = [.95, .85, .9, 1, 1, .6, .4, .9], ZERO_MIX = [0, 0, 0, 0, 0, 0, 0, 0];
+  const MENU_MIX = [1, .8, .85, .9, .55, .6, 0, 0], STING_MIX = [.95, .85, .9, 1, 1, .6, .9, .9], ZERO_MIX = [0, 0, 0, 0, 0, 0, 0, 0];
   function mixUpdate(tau = .7) {
     const now = ac.currentTime, I = S.I; let cut = 900, art = 2400, tgt = ZERO_MIX;
-    if (S.sting) { tgt = STING_MIX; cut = 2600; art = 4200; }
-    else if (S.mode === 'menu') { tgt = MENU_MIX; cut = S.side === 'villain' ? 1050 : 1700; art = S.side === 'villain' ? 2100 : 3200; }
+    if (S.sting) { tgt = STING_MIX; cut = 3400; art = 5200; }
+    else if (S.mode === 'menu') { tgt = MENU_MIX; cut = S.side === 'villain' ? 1500 : 2400; art = S.side === 'villain' ? 2800 : 4200; }
     else if (S.mode === 'match') {
-      const s = SEC[S.sec]; tgt = s.m.map((v, k) => v + (s.M[k] - v) * I);
+      const s = secOf(); tgt = s.m.map((v, k) => v + (s.M[k] - v) * I);
       tgt[6] = Math.min(1, tgt[6] + S.late * .15); tgt[7] = Math.min(1, tgt[7] + S.late * .22);
       const open = S.sec === 'brk' ? .55 : S.sec === 'chorus' ? 1.2 : 1;
       const mo = mood(), vil = S.side === 'villain';
       tgt[4] = clamp(tgt[4] + (mo - .5) * .2 + (S.side === 'hero' ? .12 : 0));
-      if (vil) { tgt[2] *= .7; tgt[3] *= .7; }
-      cut = (640 + I * 2000 * open) * (1 - S.night * .4) * (.85 + mo * .3) * (vil ? .72 : 1.1); art = (1700 + I * 2800 - S.night * 700) * (vil ? .7 : 1);
+      cut = (1300 + I * 2200 * open) * (1 - S.night * .3) * (.85 + mo * .3) * (vil ? .8 : 1.1); art = (3000 + I * 3000 - S.night * 700) * (vil ? .8 : 1);
     }
     LAYERS.forEach((k, i) => { if (mixL[i] === undefined || Math.abs(mixL[i] - tgt[i]) > .004 || tau !== .7) { mixL[i] = tgt[i]; L[k].gain.setTargetAtTime(tgt[i], now, tau); } });
-    padF.frequency.setTargetAtTime(cut, now, .8); arpF.frequency.setTargetAtTime(Math.max(900, art * 1.55), now, .8); // brighter arp so it carries on phone speakers
+    padF.frequency.setTargetAtTime(cut, now, .8); arpF.frequency.setTargetAtTime(Math.max(1800, art * 1.35), now, .8); // brighter arp so it carries on phone speakers
     // As a fight heats up the arrangement gets denser, so the bus comes down to keep effects on top.
-    const bus = S.music ? MUS * (S.sting ? 1.35 : 1) * (S.dim ? .45 : 1) * (S.mode === 'match' && !S.sting ? 1 - .22 * I : 1) : 0;
+    const bus = S.music ? MUS * (S.sting ? 1.25 : 1) * (S.dim ? .45 : 1) * (S.mode === 'match' && !S.sting ? 1 - .22 * I : 1) : 0;
     mus.gain.setTargetAtTime(bus, now, .3);
     musWet.gain.setTargetAtTime(bus * 1.6, now, .3);
   }
@@ -521,10 +557,10 @@ const Sound = (() => {
     if (!S.mode || !S.music || !musReady) { S.next = now + .12; return; }
     if (S.next < now) S.next = now + .08;
     while (S.next < now + .26) {
-      const spb = stepDur(), b = S.step % 16;
+      const spb = stepDur(), b = S.step;
       if (S.mode === 'menu') menuStep(b, S.next, spb); else matchStep(b, S.next, spb);
       S.next += spb; S.step++;
-      if (S.step % 16 === 0) barEnd();
+      if (S.step >= barLen()) { S.step = 0; barEnd(); }
     }
   }
   function setMode(mode, force) {
@@ -539,39 +575,40 @@ const Sound = (() => {
     if (mode === 'match') { S.key = 0; S.cycle = 0; S.sinceBig = 99; S.chorusRun = 0; S.pass = {}; S.hope = .5; S.I = Math.min(S.I, .2); enter('intro'); }
     S.mixT = 0;
   }
-  // Both stingers finish the theme's unresolved half cadence, then return to the menu theme.
+  // Both sides' stingers finish the hook, then return to the menu theme.
   function stinger(win) {
     if (!ac) { S.mode = 'menu'; return; }
     const stamp = performance.now(); if (stamp - S.stingAt < 8000) return; S.stingAt = stamp;
-    setMode(null); S.sting = true; mixUpdate(.12);
+    setMode(null); S.sting = true; S.I = Math.max(S.I, .75); mixUpdate(.12);
     const t = ac.currentTime + .22;
-    const horns = (seq, sh = 0, v = .13, b = 0) => seq.forEach(([d, n, l]) => { horn(t + d, n + sh, l, v); if (b) bell(t + d, n + sh + b, .11); });
-    const hits = (ds, r, v) => { for (const d of ds) smp(B.taiko, t + d, r, v, L.taiko, 0, false, 2); };
+    const horns = (seq, sh = 0, v = .14, b = 0) => seq.forEach(([d, n, l]) => { trumpet(t + d, n + sh, l, v); horn(t + d, n + sh - 12, l, v * .7); if (b) coinbell(t + d, n + sh + b, .1); });
+    const hits = (ds, r, v) => { for (const d of ds) smp(B.timp, t + d, r, v, L.taiko, 0, false, 2); };
+    const land = (d, v) => { smp(B.snr, t + d, 1, v, L.perc, 0, false, 2); for (let i = 0; i < 9; i++) smp(pick(B.clink), t + d + i * .08, .9 + Math.random() * .35, v * (1 - i * .08), L.perc, 0, false, 2); };
     if (S.side === 'villain' && win) {
-      // City fallen: the tritone motif, then a cold D minor with the tritone left ringing above it.
-      horns([[0, 62, .7], [.72, 56, .28], [1.02, 62, .3], [1.36, 65, 2]], 0, .13);
-      hits([0, .72, 1.36], .8, .36); if (B.crash) smp(B.crash, t + 1.36, .7, .15, mus, 0, false, 2);
-      choir(t + 1.36, [50, 57, 62, 65], 3.4, .05); brass(t + 1.36, [38, 45, 50, 53], 2.4, .05); bass(t + 1.36, 38, .24, 3.2);
-      [[2.3, 62], [2.75, 68], [3.3, 74], [3.9, 80]].forEach(([d, n], i) => bell(t + d, n, .09 - i * .01));
+      // City fallen: the reflected hook, then a cold D minor with the tritone left ringing above it.
+      horns([[0, 74, .7], [.72, 75, .24], [.98, 74, .3], [1.32, 68, 2]], 0, .14, 12);
+      hits([0, .72, 1.32], .8, .36); land(1.32, .12); if (B.crash) smp(B.crash, t + 1.32, .7, .15, mus, 0, false, 2);
+      choir(t + 1.32, [50, 57, 62, 65], 3.4, .05); brass(t + 1.32, [50, 57, 62, 65], 2.4, .05); bass(t + 1.32, 50, .22, 3.2);
+      [[2.3, 74], [2.75, 80], [3.3, 86], [3.9, 92]].forEach(([d, n], i) => coinbell(t + d, n, .09 - i * .01));
     } else if (S.side === 'villain') {
-      // Thwarted: the motif sinks a semitone at a time and gutters out.
-      horns([[0, 62, .8], [.8, 56, .5], [1.3, 55, .5], [1.8, 50, 1.9]], 0, .11);
-      hits([0, 1.8], .7, .3); choir(t, [51, 58, 63], 1.8, .04); choir(t + 1.8, [50, 57, 65], 3.2, .04, W.oo);
-      bass(t, 39, .18, 1.7); bass(t + 1.8, 38, .2, 3); bell(t + 2, 56, .08); bell(t + 3.1, 50, .08);
+      // Thwarted: the hook sinks a semitone at a time and gutters out.
+      horns([[0, 74, .8], [.8, 68, .5], [1.3, 67, .5], [1.8, 62, 1.9]], 0, .12);
+      hits([0, 1.8], .7, .3); land(1.8, .1); choir(t, [51, 58, 63], 1.8, .04); choir(t + 1.8, [50, 57, 65], 3.2, .04, W.oo);
+      bass(t, 51, .18, 1.7); bass(t + 1.8, 50, .2, 3); coinbell(t + 2, 68, .08); coinbell(t + 3.1, 62, .08);
     } else if (win) {
-      // City saved: the theme's half cadence finally lands on a bright D major.
-      horns([[0, 62, .58], [.62, 69, .24], [.88, 74, .28], [1.2, 78, 1.9]], 0, .12, 12);
-      hits([0, .62, 1.2], 1, .34);
-      if (B.crash) smp(B.crash, t + 1.2, 1, .16, mus, 0, false, 2);
-      choir(t + 1.2, [62, 66, 69, 74], 3.2, .045); brass(t + 1.2, [62, 66, 69], 2.4, .045); bass(t + 1.2, 38, .22, 3);
-      [62, 66, 69, 74, 78, 81, 86, 90].forEach((n, i) => pluck(t + 1.25 + i * .09, n, .12, arpF, 1.4, 2));
-      [[2.3, 86], [2.75, 90], [3.2, 90]].forEach(([d, n]) => bell(t + d, n, .1));
+      // City saved: the hook lands in bright D major at last.
+      horns([[0, 74, .58], [.62, 73, .2], [.84, 74, .26], [1.14, 78, 1.9]], 0, .14, 12);
+      hits([0, .62, 1.14], 1, .34); land(1.14, .12);
+      if (B.crash) smp(B.crash, t + 1.14, 1, .16, mus, 0, false, 2);
+      choir(t + 1.14, [62, 66, 69, 74], 3.2, .045); brass(t + 1.14, [62, 66, 69, 74], 2.4, .05); bass(t + 1.14, 50, .22, 3);
+      [62, 66, 69, 74, 78, 81, 86, 90].forEach((n, i) => pluck(t + 1.2 + i * .09, n, .12, arpF, 1.4, 2));
+      [[2.3, 86], [2.75, 90], [3.2, 90]].forEach(([d, n]) => coinbell(t + d, n + 12, .1));
     } else {
-      // The hero's defeat: the motif turned downward, a plagal sigh to D minor.
-      horns([[0, 74, .85], [.85, 69, .5], [1.35, 65, .55], [1.9, 62, 1.8]], -12, .1);
-      hits([0, 1.9], .78, .3);
+      // The hero's defeat: the hook turned downward, a plagal sigh to D minor.
+      horns([[0, 74, .85], [.85, 69, .5], [1.35, 65, .55], [1.9, 62, 1.8]], -12, .12);
+      hits([0, 1.9], .78, .3); land(1.9, .1);
       choir(t, [58, 65, 70], 1.9, .04); choir(t + 1.9, [57, 62, 65, 69], 3.2, .042, W.oo);
-      bass(t, 34, .18, 1.8); bass(t + 1.9, 38, .2, 3); bell(t + 1.9, 74, .09); bell(t + 2.9, 69, .07); bell(t + 3.8, 62, .08);
+      bass(t, 46, .18, 1.8); bass(t + 1.9, 50, .2, 3); coinbell(t + 1.9, 74, .09); coinbell(t + 2.9, 69, .07); coinbell(t + 3.8, 62, .08);
     }
     S.hand = setTimeout(() => setMode('menu'), win ? 5600 : 6000);
   }
@@ -614,12 +651,41 @@ const Sound = (() => {
     g.gain.setValueAtTime(.0001, t); g.gain.linearRampToValueAtTime(v, t + d * .7); g.gain.linearRampToValueAtTime(.0001, t + d + .08);
     n.start(t, Math.random()); n.stop(t + d + .1); track(t + d + .1, true);
   }
-  // The comic hit: a pitched "bwop" over a punch with a dry crack on top. Paired with POW-style words on screen.
-  function comic(size) {
-    sam(B.punch, (1.2 - size * .35) * rp(.06), .3 + size * .2);
-    sam(B.snap, (1.05 - size * .2) * rp(.08), .14 + size * .1);
-    tone((460 - size * 120) * rp(.08), .07 + size * .05, 'triangle', .1 + size * .05, .3);
+  // Sharp attack over a body, for the player's own hits and everyone else's big ones. Heroes ring; villains grind.
+  function impact(size) {
+    const vil = S.side === 'villain';
+    sam(B.punch, (1.25 - size * .35) * rp(.06), .32 + size * .2);
+    sam(B.snap, (1.1 - size * .2) * rp(.08), .16 + size * .1);
+    if (vil) sam(B.rasp, (1.1 - size * .3) * rp(.06), .12 + size * .1); else glint(.05 + size * .06, 0, 1.2);
+    tone((520 - size * 140) * rp(.08), .06 + size * .05, 'triangle', .1 + size * .05, .35);
   }
+  // Heroes ring in the bright D major pentatonic; villains grind on the tritone.
+  function rough(drive, fn) {
+    const out = fxOut, sh = ac.createWaveShaper(); sh.curve = GRIT; sh.connect(gain(1 / (1 + drive * .55), out));
+    fxOut = gain(drive, sh); try { fn(); } finally { fxOut = out; }
+  }
+  const glint = (v, dly = 0, r = 1) => sam(B.shine, r * rp(.03), v, 1, dly);
+  const flick = (r, v, w = 0, dly = 0) => sam(B.flick, r * rp(.03), v, w, dly);
+  const blade = (r, v, w = 0, dly = 0) => sam(B.blade, r * rp(.04), v, w, dly);
+  const crack = (r, v, dly = 0) => sam(B.crack, r * rp(.04), v, 0, dly);
+  const anvil = (r, v, w = 0, dly = 0) => sam(B.anvil, r * rp(.03), v, w, dly);
+  const rasp = (r, v, w = 0, dly = 0) => sam(B.rasp, r * rp(.05), v, w, dly);
+  const trail = (notes, v, gap, w = 1, dly = 0) => notes.forEach((n, i) => chime(n, v, w, dly + i * gap));
+  // Basic attacks, one per character. Very short: they repeat for the whole match.
+  const ATK = {
+    vesper() { crack(1.5, .13); flick(1.5, .06); },
+    kade() { hiss('bandpass', 1500, 1, .1, .05, 0, 0, 3400); flick(1.05, .08); },
+    ione() { tone(880, .05, 'triangle', .07, 1.5); flick(1.7, .05); },
+    solenne() { tone(1175, .06, 'sine', .08, 1.2, 1); glint(.03, 0, 1.3); },
+    sable() { hiss('bandpass', 2800, 1.6, .1, .035, 0, 0, 5200); flick(1.9, .04); },
+    gravel() { sam(B.punch, 1, .16); metal(.5, .06); },
+    deadbolt() { crack(1.05, .15); rasp(1.7, .05); },
+    duelist() { blade(1.5, .1); hiss('bandpass', 2100, 1.2, .07, .04, 0, 0, 1100); },
+    hex() { rough(1, () => tone(349, .07, 'sawtooth', .06, .55)); flick(.7, .05); },
+    plague() { hiss('bandpass', 1050, 1.1, .09, .07, 0, 0, 1800); metal(1.35, .05); },
+    shiv() { blade(1.9, .09); rasp(2.2, .05); },
+    ironjaw() { sam(B.punch, .85, .18); anvil(.8, .07); },
+  };
   const FX = {
     // interface: short, soft, mid-band
     clink(p = 1) { metal(p * rp(.05), .13); },
@@ -632,76 +698,153 @@ const Sound = (() => {
     ready() { chime(84, .07, 1); tone(1047, .08, 'sine', .02, 1, 1); },
     friendJoin() { [72, 76, 79, 84].forEach((n, i) => chime(n, .055 + i * .005, 1, i * .085)); tone(261.6, .4, 'sine', .05, 1, 1); },
     friendLeave() { chime(76, .07, 1); chime(71, .07, 1, .16); tone(196, .34, 'triangle', .06, .84, 1, .16); },
+    shopOpen() { flick(.8, .08); tone(392, .08, 'triangle', .06, 1.5); tone(587.3, .1, 'triangle', .05, 1.1, 1, .05); },
+    shopClose() { flick(.65, .06); tone(587.3, .08, 'triangle', .05, .7); },
+    buildPick() { sam(B.snap, 1.4, .08); metal(1.1, .1); tone(m2f(81), .1, 'triangle', .06, 1, 1, .03); },
+    atkChamp() { flick(1.15, .1); tone(1320, .03, 'triangle', .06, 1.3); },
+    atkMinion() { metal(1.3, .08); tone(930, .03, 'triangle', .05, .8); },
+    atkTower() { sam(B.punch, 1.8, .12); anvil(1.1, .05); },
+    denied() { tone(233, .06, 'square', .05, .85); tone(196, .08, 'square', .05, .85, 0, .08); },
+    buy() { flick(1, .13); metal(.9, .11, 0, .05); metal(1.1, .1, 0, .1); sam(B.punch, 2.2, .09, 0, .1); chime(83, .07, 1, .12); chime(88, .06, 1, .18); },
+    buyUp() { flick(1.1, .13); metal(.9, .11, 0, .04); metal(1.1, .1, 0, .08); sam(B.punch, 2.2, .09, 0, .08); trail([81, 85, 88, 93], .065, .055, 1, .1); glint(.07, .14); },
+    sell() { for (let i = 0; i < 4; i++) metal(1.25 - i * .12, .11 - i * .012, 0, i * .05); tone(698.5, .2, 'triangle', .06, .55, 1, .04); },
+    evolveReady() { tone(m2f(69), .12, 'triangle', .07, 1, 1); tone(m2f(76), .16, 'triangle', .07, 1, 1, .09); glint(.03, .1); },
+    evolve() { sam(B.sub, 1.6, .2); bloom('triangle', 146.8, .5, .07, 0, 2); trail([62, 69, 74, 81, 86], .08, .05); glint(.12, .22); flick(1, .12, 1, .22); },
+    beaconPlace() { sam(B.snap, 1.3, .11); tone(1320, .22, 'sine', .08, 1, 1, .02); tone(1760, .14, 'triangle', .035, 1, 1, .11); flick(1.5, .05, 1, .11); },
+    beaconKill() { sam(B.crack, 1.3, .17); for (let i = 0; i < 3; i++) flick(1.5 - i * .25, .09 - i * .018, 0, .02 + i * .045); tone(1320, .2, 'sine', .06, .4, 1, .02); },
+    pingAttack() { for (const d of [0, .09]) { crack(1.6, .1, d); tone(880, .07, 'sawtooth', .05, .9, 0, d); tone(1175, .07, 'triangle', .1, .9, 1, d); } },
+    pingRetreat() { tone(784, .12, 'triangle', .13, .94, 1); tone(523.3, .17, 'triangle', .13, .94, 1, .11); metal(.7, .06, 0, .11); },
+    pingOmw() { [69, 74, 78].forEach((n, i) => { tone(m2f(n), .07, 'triangle', .11, 1, 1, i * .06); }); flick(1.2, .07, 1, .13); },
+    pingHelp() { for (const d of [0, .1, .2, .3]) tone(d * 10 % 2 < 1 ? 1109 : 830.6, .08, 'triangle', .12, 1, 1, d); },
+    pingDanger() { rough(1.2, () => { for (const [d, f] of [[0, 415.3], [.14, 293.7]]) tone(f, .11, 'sawtooth', .08, 1, 0, d); }); anvil(.9, .12, 1); },
+    storeBuy() { sam(B.punch, .95, .3); anvil(1.5, .1); flick(.95, .18, 1, .03); shower(4, 1); glint(.14, .1); trail([74, 78, 81, 86, 90], .08, .06, 1, .08); },
+    equip() { sam(B.snap, .85, .15); metal(.72, .12); tone(392, .05, 'triangle', .07, 1.5, 0, .05); metal(1.15, .1, 1, .07); },
+    masteryUnlock() { sam(B.boom, 1.7, .22); flick(.9, .16, 1); [[62, 0], [60, .17], [62, .24], [65, .3], [74, .55]].forEach(([n, d]) => chime(n + 12, .1, 1, d)); glint(.16, .55); shower(4, .95); },
+    rankUp() {
+      sam(B.boom, 1.4, .3); [[62, 0, .18], [60, .18, .08], [62, .26, .08], [66, .34, .55]].forEach(([n, d, l]) => { tone(m2f(n), l, 'sawtooth', .07, 1, 1, d); tone(m2f(n + 12), l, 'triangle', .08, 1, 1, d); });
+      trail([78, 81, 86, 90, 93], .09, .06, 1, .36); glint(.2, .36); shower(3, 1); sam(B.punch, 1.3, .22, 0, .34);
+    },
+    rankDown() { [[62, 0, .2], [58, .16, .2], [55, .32, .36]].forEach(([n, d, l]) => tone(m2f(n), l, 'triangle', .1, 1, 1, d)); anvil(.6, .1, 1, .32); },
+    stingOk() { sam(B.punch, 1.8, .12); [[69, 0], [74, .08], [81, .16]].forEach(([n, d]) => tone(m2f(n), .13, 'triangle', .1, 1, 1, d)); chime(86, .07, 1, .18); glint(.06, .16); },
+    stingBad() { rough(.9, () => { tone(233, .22, 'sawtooth', .06, .92, 1); tone(207.7, .24, 'sawtooth', .06, .92, 1, .1); }); anvil(.7, .1, 1, .1); },
+    stingHero() { sam(B.boom, 1.35, .3); [[62, 0, .2], [60, .2, .08], [62, .28, .08], [65, .36, .5]].forEach(([n, d, l]) => { tone(m2f(n + 12), l, 'sawtooth', .06, 1, 1, d); tone(m2f(n + 24), l, 'triangle', .07, 1, 1, d); }); chime(89, .07, 1, .36); glint(.1, .36); },
+    stingVillain() { sam(B.boom, 1.05, .34); rough(1.1, () => [[62, 0, .24], [63, .24, .08], [62, .32, .08], [56, .4, .55]].forEach(([n, d, l]) => { tone(m2f(n), l, 'sawtooth', .075, 1, 1, d); tone(m2f(n + 12), l, 'square', .03, 1, 1, d); })); chime(68, .1, 1, .4); },
     // contact
     tick() { metal(.55 * rp(.18), .05); },
     hit() { metal(.75 * rp(.12), .09); sam(B.punch, 1.5 * rp(.1), .1); tone(190 * rp(.1), .06, 'triangle', .05, .55); },
     hitHard(p = 1) { sam(B.punch, 1.15 * rp(.1) * p, .26); metal(.62 * rp(.1), .12); hiss('bandpass', 1500, .9, .06, .05); },
-    crit() { comic(.6); metal(.55 * rp(.06), .13, 1); chime(86, .05, 1); },
+    crit() { impact(.6); metal(.55 * rp(.06), .13, 1); chime(86, .05, 1); },
     thud() { sam(B.punch, .72 * rp(.08), .42); hiss('lowpass', 480, .5, .1, .1); },
-    // The player's ability connected: an unmistakable rising pair, on top of whatever impact plays.
-    hitConfirm(p = 1) { tone(987.8 * p, .055, 'triangle', .19); tone(1480 * p, .1, 'triangle', .18, 1, 1, .05); sam(B.punch, 1.5, .1); },
-    pow() { comic(0); },
-    bam() { comic(1); sam(B.boom, 1.8, .2); },
-    // The player's ability hit nothing: dull air falling away, deliberately easy to ignore.
+    // The player's ability connected: an unmistakable pair of notes on top of whatever impact plays. Clean for heroes, snarled for villains.
+    hitConfirm(p = 1) {
+      if (S.side === 'villain') { rough(1.2, () => { tone(622.3 * p, .05, 'sawtooth', .22); tone(880 * p, .09, 'sawtooth', .2, 1, 1, .045); }); sam(B.punch, 1.5, .13); return; }
+      tone(987.8 * p, .05, 'triangle', .19); tone(1480 * p, .1, 'triangle', .18, 1, 1, .045); flick(1.1, .08, 1, .045); sam(B.punch, 1.5, .1);
+    },
+    pow() { impact(0); },
+    bam() { impact(1); sam(B.boom, 1.8, .2); },
     whiff() { hiss('lowpass', 760, .6, .09, .13, 0, 0, 280); tone(210, .1, 'triangle', .03, .7); },
-    // Something heavy is coming at the player: a rising two-pulse alarm, unlike any impact.
     danger() { for (const [d, f] of [[0, 440], [.13, 587.3]]) { tone(f, .1, 'sawtooth', .08, 1, 0, d); tone(f, .11, 'triangle', .18, 1, 0, d); } sam(B.punch, .7, .16); },
-    // A tower has picked the player: low iron clangs, a tolling rather than an alarm.
     dangerTower() { for (const d of [0, .17]) { sam(B.clink[1], .4, .18, 1, d); tone(293.7, .14, 'triangle', .13, .94, 0, d); } },
     blast() { sam(B.boom, 1.1, .46); hiss('lowpass', 1200, .4, .14, .32, 1); shower(2); },
-    // abilities
-    snipe() { metal(1 * rp(.05), .09); tone(1500 * rp(.05), .1, 'triangle', .06, .3); hiss('bandpass', 2400, .8, .06, .07); sam(B.punch, 1.7, .12); },
-    snipeFull() { chime(84, .09, 1); tone(1800, .2, 'triangle', .08, .2, 1); hiss('bandpass', 1800, .7, .1, .14, 1); sam(B.sub, 1.9, .24); },
-    deadeye() { tone(190, .5, 'sawtooth', .045, 6, 1); hiss('bandpass', 1200, .7, .12, .38, 1, .02, 4200); chime(86, .1, 1, .42); sam(B.sub, 1.3, .38, 0, .42); tone(1400, .3, 'triangle', .07, .2, 1, .42); },
-    orb() { tone(440, .28, 'sine', .08, 2.2, 1); tone(880, .2, 'triangle', .03, 2, 1, .02); chime(84, .06, 1); },
-    ray() { tone(660, .22, 'triangle', .06, 1.4, 1); tone(990, .18, 'sine', .04, 1.4, 1); chime(81, .06, 1); },
-    chain() { for (let i = 0; i < 5; i++) metal((.7 + i * .08) * rp(.05), .09 - i * .012, 0, i * .04); },
+    atk(k) { const f = ATK[k]; if (f) f(); else metal(.95 * rp(.12), .05); },
+    // Heroes. Clean transients, polished metal, bright overtones.
+    snipe() { crack(1.15, .32); flick(1.05, .12); glint(.05); tone(1500 * rp(.05), .08, 'triangle', .06, .3); },
+    snipeFull() { crack(.95, .42); sam(B.sub, 1.9, .22); flick(.9, .17, 1); glint(.1); chime(84, .08, 1); tone(1800, .2, 'triangle', .07, .2, 1); },
+    snipeCharge() { tone(440, .2, 'triangle', .05, 1.8, 1); flick(.9, .05); },
+    dayCharge() { tone(293.7, .36, 'sine', .07, 2, 1); hiss('bandpass', 1500, 1, .05, .36, 1, 0, 4200); chime(78, .05, 1); },
+    cascadeCast() { tone(247, .4, 'triangle', .07, 3, 1); [76, 81, 86].forEach((n, i) => chime(n, .04, 1, i * .1)); },
+    deadeyeCharge() { tone(240, .8, 'triangle', .07, 7, 1); hiss('bandpass', 900, .9, .08, .8, 1, 0, 4400); for (const d of [0, .34, .58, .72, .8]) flick(1 + d * .7, .1, 0, d); },
+    deadeye() { crack(.72, .5); sam(B.boom, 1.5, .4); glint(.16); chime(86, .12, 1); tone(2200, .38, 'triangle', .08, .18, 1); hiss('bandpass', 3200, .8, .1, .3, 1, 0, 700); },
+    smokeStep() { hiss('bandpass', 1500, .7, .17, .16, 1, 0, 420); flick(.72, .06); tone(760, .07, 'triangle', .05, .6); },
+    lunge(a) { const r = a ? 1.28 : 1.05; blade(r, .24); hiss('bandpass', 1100, .9, .17, .11, 0, 0, 3600); chime(a ? 90 : 85, .055, 1, .03); },
+    parry() { chime(86, .13, 1); sam(B.clink[0], 1.1, .18); sam(B.punch, 2, .14); glint(.11); anvil(1.7, .1, 1); },
+    leap() { hiss('bandpass', 700, .8, .15, .34, 1, 0, 3000); tone(300, .3, 'sine', .06, 2.6, 1); flick(.8, .06, 0, .02); },
+    crash() { sam(B.boom, 1, .46); anvil(.92, .22, 1); glint(.1, .02); hiss('lowpass', 1200, .4, .16, .34, 1, 0, 300); shower(3); },
+    orb() { tone(523.3, .17, 'sine', .08, 3, 1); tone(1046, .13, 'triangle', .03, 2, 1, .02); flick(1.2, .1, 1); chime(88, .05, 1, .05); },
+    ruptureCast() { tone(220, .46, 'triangle', .06, 4, 1); hiss('bandpass', 1400, 1.2, .06, .46, 1, 0, 3400); chime(76, .05, 1); },
+    rupture() { sam(B.sub, 1.1, .36); crack(.7, .18); chime(76, .08, 1); tone(260, .26, 'sawtooth', .04, .4, 1); hiss('lowpass', 1500, .5, .13, .24, 1); },
+    cascade(i = 0) { sam(B.sub, 1.4 + i * .2, .24); flick(.9 + i * .18, .17, 1); chime([81, 88, 93][i % 3], .1, 1); glint(.1, 0, .8 + i * .14); hiss('bandpass', 2400, .9, .1, .16, 1, 0, 4800); },
+    break() { [1.35, 1, 1.65].forEach((r, i) => flick(r, .12, 1, i * .03)); glint(.1, .03); sam(B.sub, 1.5, .24); },
+    ray() { tone(880, .18, 'sine', .08, 1.5, 1); tone(1760, .13, 'triangle', .035, 1.5, 1); glint(.07); chime(85, .05, 1, .04); },
+    dome() { tone(293.7, .4, 'sine', .08, 1.5, 1); tone(587.3, .34, 'sine', .035, 1.5, 1); anvil(2.4, .07, 1); chime(76, .07, 1); chime(83, .05, 1, .09); glint(.06, .08); },
+    domeBlock() { flick(1.2, .13, 1); chime(88, .06, 1); },
+    heal() { sam(B.sub, 1.7, .16); [74, 78, 81, 86, 90].forEach((n, i) => chime(n, .08, 1, i * .05)); glint(.16, .14); bloom('triangle', 293.7, .5, .06, 0, 1.5); },
+    slash() { hiss('bandpass', 1800, .9, .18, .09, 0, 0, 4200); blade(1.3, .2); flick(1.4, .07, 1, .02); },
+    blink() { tone(1600, .09, 'sine', .07, .35); hiss('bandpass', 2600, .8, .05, .07, 1); glint(.05, 0, 1.3); },
+    reap() { blade(.72, .32); sam(B.punch, .9, .34); tone(523.3, .26, 'sawtooth', .05, .25, 1); chime(74, .1, 1, .03); glint(.1, .04, .8); },
+    chain() { sam(B.chainL, 1.1, .26); crack(1.5, .12); tone(330, .16, 'triangle', .05, 2, 1); },
+    chainHit() { anvil(1, .28); sam(B.punch, 1.1, .24); sam(B.chainL, .85, .13, 0, .03); },
+    stomp() { sam(B.boom, 1.35, .42); anvil(.7, .18); tone(150, .16, 'triangle', .08, .5); shower(1, .6); },
+    avalanche() { hiss('lowpass', 500, .7, .28, .5, 1, 0, 1300); sam(B.boom, 1.9, .24); anvil(.6, .12); for (let i = 0; i < 3; i++) sam(B.punch, .6 + i * .1, .12, 0, .06 + i * .1); },
+    avalancheHit() { sam(B.boom, .92, .5); anvil(.58, .28, 1); crack(.6, .22); hiss('lowpass', 900, .4, .17, .34, 1, 0, 240); shower(3, .7); },
+    // Villains. Rough edges, low iron, filth in the top end, the tritone.
+    tripwire() { rough(1.2, () => { tone(311.1, .18, 'sawtooth', .1, .92); tone(466.2, .16, 'square', .04, .9); }); sam(B.snap, 1.4, .16); metal(.7, .1, 1, .04); },
+    tripwireHit() { crack(1.1, .3); anvil(1.9, .24); rough(1.4, () => tone(659.3, .1, 'sawtooth', .09, .33)); },
+    ricochet() { crack(.85, .38); rough(1.1, () => tone(3300, .16, 'sawtooth', .05, .33)); rasp(1.3, .1); },
+    ricochetHit() { flick(.9, .16); tone(800, .09, 'triangle', .1, 3, 1); crack(1.4, .14); },
+    lockdown() { anvil(.5, .32, 1); sam(B.sub, 1.3, .3); rough(1.6, () => [[0, 415.3], [.13, 293.7], [.26, 415.3], [.39, 293.7]].forEach(([d, f]) => { tone(f, .1, 'sawtooth', .075, 1, 0, d); tone(f * 2, .09, 'square', .025, 1, 0, d); })); rasp(.7, .14, 1); },
+    lockdownHit() { crack(1.25, .17); rasp(1.6, .07); },
+    flourish(i = 0) { const k = Math.max(0, Math.min(2, i)); blade(1 + k * .14, .2 + k * .03); hiss('bandpass', 1300 + k * 500, 1, .13, .08, 0, 0, 3000); if (k === 2) { sam(B.punch, 1.05, .34); anvil(1.3, .16, 1); rough(1.2, () => tone(233, .16, 'sawtooth', .09, 2)); } },
+    feint() { hiss('bandpass', 2400, 1, .13, .12, 1, 0, 700); sam(B.snap, .8, .11); tone(740, .1, 'triangle', .05, .5, 1); tone(622.3, .1, 'triangle', .03, .5, 1, .09); rasp(1.8, .05, 1, .08); },
+    salute() { sam(B.boom, 1.4, .32); anvil(.74, .3, 1); anvil(.52, .24, 1, .22); rough(1.3, () => { for (const f of [146.8, 207.7]) tone(f, .6, 'sawtooth', .05, .98, 1); }); chime(68, .1, 1, .22); blade(1.1, .14, 1, .03); },
+    hexbolt() { rough(1, () => { tone(523.3, .15, 'sawtooth', .08, .4); tone(739.9, .11, 'square', .03, .45); }); rasp(1.15, .11, 1); },
+    hexboltHit() { chime(68, .06, 1); rasp(1.5, .13); tone(415.3, .08, 'triangle', .05, .6); },
+    polymorph() { rough(.9, () => tone(660, .09, 'sawtooth', .07, 1.6)); tone(880, .1, 'sine', .07, .5, 1); flick(1.25, .07); },
+    polymorphHit() { for (let i = 0; i < 7; i++) metal(.8 + i * .13, .09, 0, i * Math.max(.016, .05 - i * .006)); tone(330, .14, 'sine', .08, 3, 1, .1); flick(.75, .19, 1, .22); sam(B.punch, 1.9, .16, 0, .22); },
+    coven() { air(1900, 240, 1.2, .16, .55); sam(B.swell, 1.9, .16, 1); for (const [f, d] of [[146.8, 0], [207.7, .07]]) bloom('sawtooth', f, .7, .06, d, .78); rasp(.6, .14, 1); chime(56, .1, 1, .05); },
+    covenHit() { sam(B.boom, 1.05, .46); crack(.62, .24); rough(1.5, () => { for (const f of [116.5, 164.8, 233]) tone(f, .36, 'sawtooth', .06, .84, 1); }); anvil(.62, .18, 1); },
+    miasma() { hiss('lowpass', 900, .7, .15, .55, 1, 0, 2500); rasp(.5, .09, 1); for (let i = 0; i < 4; i++) tone(300 + Math.random() * 240, .05, 'sine', .08, 1.9, 1, .04 + i * .09); },
+    feintPop() { sam(B.snap, .9, .14); hiss('bandpass', 1700, 1, .1, .1, 1, 0, 600); rasp(1.6, .07, 1); },
+    curse(n = 0) { chime(68 + Math.min(4, n) * 3, .05, 1); rasp(1.7 + n * .05, .06); },
+    rooted() { anvil(1.9, .14); crack(1.6, .1); },
+    shieldUp() { tone(698.5, .13, 'sine', .07, 1.5, 1); glint(.06, .02); flick(1.1, .05, 1); },
+    stealthBreak() { hiss('bandpass', 1900, 1.2, .08, .09, 0, 0, 3400); rasp(1.3, .07); },
+    beaconHit() { flick(1.3, .09); tone(1320, .05, 'triangle', .05, .7); },
+    leech() { rough(1.1, () => { tone(110, .4, 'sawtooth', .1, 1.33, 1); tone(164.8, .34, 'sawtooth', .05, .8, 1); }); tone(1174.7, .16, 'sine', .06, .75, 1, .05); hiss('bandpass', 1300, 3, .09, .26, 1, .02, 460); },
+    quarantine() { sam(B.punch, .8, .36); anvil(.45, .3, 1); crack(.55, .2); rough(1.3, () => { for (const f of [185, 261.6, 370]) tone(f, .55, 'sawtooth', .04, .96, 1); }); rasp(.75, .13, 1); chime(62, .08, 1, .1); },
+    shank() { blade(.88, .3); rasp(1.45, .13); sam(B.punch, 1.4, .22); hiss('bandpass', 2600, 1.1, .1, .07, 0, 0, 900); },
+    vanish() { air(2600, 700, 1, .12, .2); tone(700, .18, 'sine', .07, .25, 1); rasp(.8, .08, 1); sam(B.swell, 3, .08); },
+    cuts() { for (let i = 0; i < 6; i++) blade(1 + (i % 2) * .22 + i * .05, .17 + i * .012, 0, i * .085); rasp(1.1, .1, 1, .1); sam(B.punch, 1, .38, 0, .5); chime(56, .08, 1, .5); },
+    wrecking() { sam(B.chainL, .66, .3); hiss('bandpass', 420, .8, .26, .42, 1, 0, 1100); anvil(.45, .2, 1, .06); tone(98, .36, 'sawtooth', .07, 1.5, 1); },
+    wreckingHit() { anvil(.68, .3); sam(B.punch, .92, .36); crack(.7, .16); },
+    grab() { sam(B.punch, .95, .4); anvil(1.2, .16); rasp(1, .1); hiss('bandpass', 500, .8, .18, .22, 1, .12, 1900); },
+    demolish() { rasp(.55, .2, 1); sam(B.boom, 1.9, .22); crack(.5, .24); for (let i = 0; i < 4; i++) crack(.7 + i * .13, .14 - i * .018, .07 + i * .07); },
+    demolishHit() { sam(B.boom, 1.05, .5); anvil(.5, .24, 1); crack(.42, .2, .01); hiss('lowpass', 1000, .4, .16, .4, 1, 0, 260); shower(3, .6); },
+    // Older names kept for other callers.
     bolt() { metal(.95 * rp(.12), .05); tone(1200 * rp(.08), .04, 'triangle', .03, .6); },
     mbolt() { metal(.6 * rp(.15), .03); },
     tshot() { tone(900, .12, 'triangle', .06, .25); sam(B.sub, 1.7 * rp(.08), .18); hiss('bandpass', 1000, 1, .06, .1); },
     swing() { hiss('bandpass', 1300, 1, .11, .06, 0, 0, 2800); },
     dash() { hiss('bandpass', 600, .8, .2, .2, 1, 0, 1900); tone(240, .15, 'sine', .05, 2); },
-    slash() { hiss('bandpass', 1800, .9, .2, .1, 0, 0, 4200); metal(1.15 * rp(.08), .07, 1); },
-    dome() { tone(330, .5, 'sine', .07, 1.5, 1); tone(660, .4, 'sine', .035, 1.5, 1); chime(76, .07, 1); chime(83, .05, 1, .1); },
-    parry() { chime(86, .13, 1); sam(B.clink[0], 1.1, .18); sam(B.punch, 2, .14); },
-    heal() { [76, 81, 85, 88].forEach((n, i) => chime(n, .07, 1, i * .055)); },
-    rupture() { sam(B.sub, 1.1, .38); tone(260, .3, 'sawtooth', .04, .4, 1); hiss('lowpass', 1500, .5, .14, .26, 1); chime(76, .07, 1); },
-    crash() { sam(B.boom, 1, .48); hiss('lowpass', 1200, .4, .18, .38, 1, 0, 300); shower(3); },
-    stomp() { sam(B.boom, 1.35, .42); tone(150, .16, 'triangle', .08, .5); metal(.5, .12); },
-    break() { [1, .8, 1.2].forEach((r, i) => metal(r * rp(.05), .14, 1, i * .03)); sam(B.sub, 1.5, .26); },
-    blink() { tone(1000, .1, 'sine', .07, .45); hiss('bandpass', 2400, .8, .04, .07, 1); },
-    stun() { [86, 89, 86].forEach((n, i) => chime(n, .05, 0, i * .05)); },
     mark() { chime(86, .04, 1); },
+    stun() { [86, 89, 86].forEach((n, i) => chime(n, .05, 0, i * .05)); },
     // the people
-    rescued() { [74, 78, 81, 86, 90].forEach((n, i) => chime(n, .075, 1, i * .06)); hiss('bandpass', 1400, 1.4, .05, .3, 1, .05, 2600); shower(2, 1); },
-    seized() { for (const f of [73.4, 103.8]) tone(f * 2, .5, 'sawtooth', .05, .94, 1); sam(B.boom, 1.2, .4); chime(56, .14, 1); for (let i = 0; i < 3; i++) tone(700 + Math.random() * 500, .09, 'triangle', .03, i % 2 ? 1.4 : .7, 1, .14 + i * .09); },
-    hopeSwell() { for (const [f, d] of [[146.8, 0], [220, .12], [293.7, .24], [370, .36]]) bloom(W.ah, f, 2.1, .04, d); [81, 86, 90].forEach((n, i) => chime(n, .08, 1, .55 + i * .14)); },
-    dread() { for (const [f, d] of [[146.8, 0], [207.7, .1]]) bloom('sawtooth', f, 1.9, .045, d); sam(B.boom, .8, .38, 1); chime(56, .13, 1, .2); chime(62, .1, 1, .55); },
+    rescued() { [74, 78, 81, 86, 90].forEach((n, i) => chime(n, .075, 1, i * .06)); hiss('bandpass', 1400, 1.4, .05, .3, 1, .05, 2600); shower(2, 1); glint(.08, .12); },
+    seized() { rough(1.2, () => { for (const f of [146.8, 207.6]) tone(f, .5, 'sawtooth', .05, .94, 1); }); sam(B.boom, 1.2, .4); chime(56, .14, 1); for (let i = 0; i < 3; i++) tone(700 + Math.random() * 500, .09, 'triangle', .03, i % 2 ? 1.4 : .7, 1, .14 + i * .09); },
+    hopeSwell() { for (const [f, d] of [[146.8, 0], [220, .12], [293.7, .24], [370, .36]]) bloom(W.ah, f, 2.1, .04, d); [81, 86, 90].forEach((n, i) => chime(n, .08, 1, .55 + i * .14)); glint(.08, .55); },
+    dread() { for (const [f, d] of [[146.8, 0], [207.7, .1]]) bloom('sawtooth', f, 1.9, .045, d); sam(B.boom, .8, .38, 1); chime(56, .13, 1, .2); chime(62, .1, 1, .55); rasp(.5, .08, 1, .1); },
     // match events
-    kill() { sam(B.boom, 1.6, .28); sam(B.punch, 1, .28); [81, 86, 89, 93].forEach((n, i) => chime(n - 5, .09, 1, i * .075)); shower(2); },
+    kill() { sam(B.boom, 1.6, .28); sam(B.punch, 1, .28); if (S.side === 'villain') { rough(1.2, () => [[293.7, 0], [207.7, .09]].forEach(([f, d]) => tone(f, .24, 'sawtooth', .07, 1, 1, d))); chime(68, .1, 1, .09); } else { [81, 86, 89, 93].forEach((n, i) => chime(n - 5, .09, 1, i * .075)); glint(.1, .1); } shower(2); },
     death() { tone(330, .7, 'triangle', .1, .25, 1); sam(B.boom, 1.25, .36); chime(62, .1, 1, .05); },
     feed(m = 1) { chime(80 + Math.min(4, m) * 2, .06, 1); },
-    level() { [74, 81, 86, 89].forEach((n, i) => chime(n, .09, 1, i * .07)); tone(440, .3, 'triangle', .04, 1, 1); },
+    level() { [74, 81, 86, 89].forEach((n, i) => chime(n, .09, 1, i * .07)); tone(440, .3, 'triangle', .04, 1, 1); glint(.07, .16); },
     forge() { metal(.5, .22, 1); chime(81, .09, 1, .02); hiss('bandpass', 2600, 3, .1, .08, 1); sam(B.sub, 2.1, .14); },
     bossup() { tone(140, 1.3, 'sawtooth', .06, 1.4, 1); tone(210, 1.3, 'triangle', .14, 1.2, 1); sam(B.boom, .85, .36); },
     boss() { sam(B.boom, .95, .55); chime(62, .16, 1); chime(69, .12, 1, .05); shower(4, .8); },
     tower() { sam(B.boom, .9, .55); hiss('lowpass', 800, .4, .2, .75, 1, 0, 240); chime(55, .12, 1); shower(4, .75); },
     towerNews(good) { if (good) { chime(84, .1, 1); chime(91, .1, 1, .12); } else { tone(196, .4, 'triangle', .1, .75, 1); tone(147, .5, 'triangle', .09, .75, 1, .16); } },
-    // A tower falling reads as news: a short brass-like call, up for the player's side and down against it.
     towerFall(good) {
       const seq = good ? [[62, 0, .12], [69, .11, .12], [74, .22, .34]] : [[62, 0, .14], [58, .14, .14], [53, .28, .42]];
       for (const [n, d, l] of seq) { tone(m2f(n), l, 'sawtooth', .05, 1, 1, d); tone(m2f(n), l, 'triangle', .1, 1, 1, d); }
       if (good) { chime(86, .09, 1, .22); chime(90, .08, 1, .3); }
     },
-    // Coin burst over the stinger's landing. The stinger carries the music, so this is only sparkle.
     victory(dly = 0) { [86, 90, 93].forEach((n, i) => chime(n - 5, .08, 1, dly + i * .09)); for (let i = 0; i < 5; i++) metal(.9 + i * .07, .08 - i * .008, 0, dly + .04 + i * .075); },
     thunder() { hiss('lowpass', 560, .5, .26, 1.8, 1, .02, 90); sam(B.boom, .65, .24, 0, .04); },
     heart() { sam(B.sub, 1.25, .3); sam(B.sub, 1.45, .22, 0, .16); },
     recall() { tone(500, .5, 'sine', .07, 2, 1); chime(81, .06, 1, .1); },
     respawn() { tone(440, .3, 'triangle', .07, 2, 1); chime(86, .08, 1, .12); },
     whoosh() { hiss('bandpass', 500, .8, .24, .38, 1, 0, 1500); },
-    title() { [62, 69, 74, 77, 81, 86].forEach((n, i) => { if (B.bell.length) smp(pickBell(n).b, fxT + i * .095, m2f(n) / pickBell(n).f, .12, fxOut, 0, true, 2, wet()); }); },
-    // The coin flip. flipSpin carries its own slowing ticks, computed from the same easing as the coin on screen.
+    title() { [[74, 0], [72, .19], [74, .25], [77, .33]].forEach(([n, d], i) => { if (B.cbell.length) smp(nearest(B.cbell, n).b, fxT + d, m2f(n) / nearest(B.cbell, n).f, .13 + i * .015, fxOut, 0, true, 2, wet()); }); glint(.08, .33); },
     flipSpin(dur = 1.16) {
       const bus = S.flip = gain(1, fxOut); fxOut = bus;
       air(420, 1700, .9, .1, dur); bloom('triangle', 150, dur, .06, 0, 2.6);
@@ -716,16 +859,17 @@ const Sound = (() => {
     },
     flipReveal(side) {
       const vil = side === undefined ? S.side === 'villain' : side === 1 || side === 'villain', d = .14;
-      if (vil) { for (const [f, o] of [[146.8, 0], [207.7, .07]]) { bloom('sawtooth', f, 1.1, .05, d + o); bloom('triangle', f * 2, 1.1, .05, d + o); } chime(68, .11, 1, d + .18); chime(62, .11, 1, d + .42); }
-      else { [[62, 0], [69, .08], [74, .16], [78, .24]].forEach(([n, o]) => { tone(m2f(n), .5 - o, 'triangle', .1, 1, 1, d + o); tone(m2f(n), .4 - o, 'sawtooth', .03, 1, 1, d + o); }); chime(86, .1, 1, d + .24); chime(90, .09, 1, d + .34); }
+      if (vil) { rough(1.1, () => { for (const [f, o] of [[146.8, 0], [207.7, .07]]) { bloom('sawtooth', f, 1.1, .05, d + o); bloom('triangle', f * 2, 1.1, .05, d + o); } }); chime(68, .11, 1, d + .18); chime(62, .11, 1, d + .42); }
+      else { [[62, 0], [69, .08], [74, .16], [78, .24]].forEach(([n, o]) => { tone(m2f(n), .5 - o, 'triangle', .1, 1, 1, d + o); tone(m2f(n), .4 - o, 'sawtooth', .03, 1, 1, d + o); }); chime(86, .1, 1, d + .24); chime(90, .09, 1, d + .34); glint(.09, d + .28); }
     },
     versus() { sam(B.boom, 1.25, .42); sam(B.punch, .85, .38); sam(B.snap, .85, .18); metal(.5, .12, 1); for (const f of [146.8, 220, 293.7]) tone(f, .36, 'sawtooth', .04, .98, 1); },
   };
-  function pickBell(n) { let e = B.bell[0]; for (const c of B.bell) if (Math.abs(c.n - n) < Math.abs(e.n - n)) e = c; return e; }
+  function nearest(bank, n) { let e = bank[0]; for (const c of bank) if (Math.abs(c.n - n) < Math.abs(e.n - n)) e = c; return e; }
   const DUCK = {
-    blast: .35, tower: .5, kill: .4, crash: .4, stomp: .3, rupture: .3, break: .25, boss: .5, bossup: .4, thunder: .2, deadeye: .25, death: .5, seized: .35, hopeSwell: .3, dread: .4,
-    hitConfirm: .22, pow: .25, bam: .4, crit: .28, thud: .3, danger: .45, dangerTower: .4, towerFall: .4, victory: .1,
-    flipSlam: .75, flipReveal: .55, versus: .65, friendJoin: .2, friendLeave: .15,
+    blast: .35, tower: .5, kill: .4, crash: .4, stomp: .3, rupture: .3, cascade: .28, break: .25, boss: .5, bossup: .4, thunder: .2, deadeye: .3, death: .5, seized: .35, hopeSwell: .3, dread: .4,
+    hitConfirm: .22, pow: .25, bam: .4, crit: .28, thud: .3, danger: .45, dangerTower: .4, towerFall: .4, victory: .1, heal: .3, reap: .35, avalanche: .25, avalancheHit: .45, parry: .22, snipeFull: .22,
+    lockdown: .35, salute: .4, coven: .3, covenHit: .42, quarantine: .35, cuts: .3, demolish: .45, demolishHit: .35, wrecking: .22, wreckingHit: .3, grab: .28, polymorphHit: .3,
+    flipSlam: .75, flipReveal: .55, versus: .65, friendJoin: .2, friendLeave: .15, evolve: .3, storeBuy: .35, masteryUnlock: .45, rankUp: .6, rankDown: .35, stingHero: .55, stingVillain: .55, stingOk: .2, stingBad: .2, pingDanger: .3, pingHelp: .2,
   };
   function duck(amount = .4, recover = .5) {
     if (!ac) return; if (S.sting) amount *= .4;
@@ -761,6 +905,8 @@ const Sound = (() => {
   }
   return {
     init, play, setMode, stinger, ambience, setOn, duck,
+    has: name => typeof FX[name] === 'function',
+    recent: (name, ms = 500) => last[name] !== undefined && performance.now() - last[name] < ms,
     setSide(v) {
       const next = v === 'hero' || v === 'villain' ? v : null, changed = next !== S.side;
       S.side = next; S.sideAt = performance.now();
