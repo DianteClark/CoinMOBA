@@ -5,14 +5,16 @@
       vesper: { name: 'Longshot', title: 'The watchful marksman' }, kade: { name: 'Captain Riposte', title: 'Master of the counter' },
       ione: { name: 'Starling', title: 'Caller of falling stars' }, solenne: { name: 'Dawnbringer', title: 'Healer of the first light' },
       sable: { name: 'Nightfall', title: 'Quiet hand of justice' }, gravel: { name: 'Bulwark', title: 'The wall that walks' },
+      voltaic: { name: 'Voltaic', title: 'First at every scene' }, tidecaller: { name: 'Tidecaller', title: 'The harbour keeps her promises' }, paragon: { name: 'Paragon', title: 'The sky is not the limit' }, mirage: { name: 'Mirage', title: 'Three of her, none of her' },
     },
     villain: {
       deadbolt: { name: 'Deadbolt', title: 'Locks on and waits' }, duelist: { name: 'The Duelist', title: 'Never dropped a grudge' },
       hex: { name: 'Madame Hex', title: 'Curses by appointment' }, plague: { name: 'The Plague Doctor', title: 'Prescribes only trouble' },
       shiv: { name: 'Shiv', title: 'Gone before you look' }, ironjaw: { name: 'Ironjaw', title: 'Bites through bank vaults' },
+      cinder: { name: 'Cinder', title: 'Burns her bridges, and yours' }, ravager: { name: 'Ravager', title: 'Something got out of the zoo' }, cataclysm: { name: 'Cataclysm', title: 'The end of the block' }, puppeteer: { name: 'The Puppeteer', title: 'Pulls every string in town' },
     },
   };
-  const ROSTER = [['vesper', 'kade', 'ione', 'solenne', 'sable', 'gravel'], ['deadbolt', 'duelist', 'hex', 'plague', 'shiv', 'ironjaw']];
+  const ROSTER = [['vesper', 'kade', 'ione', 'solenne', 'sable', 'gravel', 'voltaic', 'tidecaller', 'paragon', 'mirage'], ['deadbolt', 'duelist', 'hex', 'plague', 'shiv', 'ironjaw', 'cinder', 'ravager', 'cataclysm', 'puppeteer']];
   const charOf = (team, kit) => CHARS.hero[kit] || CHARS.villain[kit] || CHARS[team ? 'villain' : 'hero'][ROSTER[team ? 1 : 0][0]];
   // Every tower must out-range every basic attack by 70, so nothing can plink a tower from outside its reach.
   const TOWER_RANGE = 430, CORE_RANGE = 470, MAX_ATTACK_RANGE = TOWER_RANGE - 70;
@@ -25,7 +27,7 @@
   const poly = (s, t, d) => { if (t.kind === 'tower' || t.boss) return; stun(s, t, d); t.polyT = Math.max(t.polyT || 0, d); s.ev.push({ e: 'poly', u: t.id }); };
   const poison = (s, c, t, dps, d) => { if (t.kind === 'tower') return; t.poisonT = Math.max(t.poisonT || 0, d); t.poisonDps = Math.max(t.poisonT > 0 ? t.poisonDps || 0 : 0, dps); t.poisonBy = c; t.poisonAbil = curAbil; };
   const bleed = (s, c, t, dps, d) => { if (t.kind === 'tower') return; t.bleedDps = t.bleedT > 0 ? Math.max(t.bleedDps, dps) : dps; t.bleedT = Math.max(t.bleedT || 0, d); t.bleedBy = c; t.bleedAbil = curAbil; };
-  const hpow = c => pow(c) * (1 + c.st.healPow);
+  const hpow = c => pow(c) * (1 + c.st.healPow) * (c.prof === 'guardian' ? 1.2 : 1);
   const curseCap = c => c.f && c.f.cursebinder ? 5 : 3;
   const curse = (s, c, t, n) => { t.curseN = Math.min(curseCap(c), (t.curseT > 0 ? t.curseN || 0 : 0) + n); t.curseT = c.f.cursebinder ? 9 : 6; t.curseBy = c; s.ev.push({ e: 'curse', u: t.id, n: t.curseN }); };
   const stealth = (s, c, d) => { c.stealthT = Math.max(c.stealthT || 0, d); c.revealT = 0; s.ev.push({ e: 'stealth', u: c.id, on: true }); };
@@ -40,6 +42,13 @@
   const cone = (s, c, a, reach, dot, fn) => { let n = 0; eachEnemy(s, c, c.x, c.y, reach, t => { const v = norm(t.x - c.x, t.y - c.y); if (v.x * a.dx + v.y * a.dy >= dot && hasLOS(c.x, c.y, t.x, t.y)) { fn(t); n += t.kind === 'champ' ? 1 : 0; } }); return n; };
   // Faces the nearest visible enemy champion in reach, for tap-to-fire abilities on a phone.
   const autoFace = (s, c, reach) => { const t = nearChamp(s, c, c.x, c.y, reach); if (t && hasLOS(c.x, c.y, t.x, t.y)) { const n = norm(t.x - c.x, t.y - c.y); c.fx = n.x; c.fy = n.y; return { dx: n.x, dy: n.y, t }; } return { dx: c.fx || 1, dy: c.fy || 0, t: null }; };
+
+  // ---------- 10.0 kit helpers ----------
+  function arcBolt(s, c, from, dmg, n, name) { const list = enemiesIn(s, c, from.x, from.y, 260, true).filter(e => e !== from).sort((a, b) => (b.kind === 'champ') - (a.kind === 'champ')).slice(0, n); const was = curAbil; curAbil = name; for (const e of list) { hurt(s, c, e, dmg, { skill: 1 }); s.ev.push({ e: 'phit', x: e.x, y: e.y, fx: 'thunder' }); } curAbil = was; }
+  function tideTick(s, c) { c.tideN = (c.tideN || 0) + 1; c.pstack = c.tideN % 3; if (c.tideN % 3) return; s.ev.push({ e: 'boom', x: c.x, y: c.y, r: 180, fx: 'riptide' }); for (const a of alliesIn(s, c.team, c.x, c.y, c.f.wellspring ? 420 : 300)) heal(s, c, a, a.maxHp * .05); }
+  function skyLand(s, c, r, dmg, slowA, stunT, fx) { s.ev.push({ e: 'boom', x: c.x, y: c.y, r, fx }); let hit = false; eachEnemy(s, c, c.x, c.y, r, t => { hurt(s, c, t, dmg, { skill: 1 }); if (t.kind === 'champ') { hit = true; if (stunT) stun(s, t, stunT); else if (slowA) slow(t, slowA, 1.2); } }); if (hit) c.stats.skillHits++; c.altN = 3; if (c.f.freeflight) heal(s, c, c, c.maxHp * .1); }
+  function kindle(s, c, t, n) { if (t.kind === 'tower') return; const had = t.kindleT > 0 ? t.kindleN || 0 : 0, v = had + n; t.kindleT = 5; if (v < 3) { t.kindleN = v; return; } t.kindleN = 0; hurt(s, c, t, 62 * pow(c) * (c.f.pyre ? 1.25 : 1), { skill: 1, crit: 1 }); s.ev.push({ e: 'boom', x: t.x, y: t.y, r: 80, fx: 'ignite' }); if (t.alive) bleed(s, c, t, 26 * pow(c) * (c.f.pyre ? 1.4 : 1), 2.5); if (c.f.wildfire) for (const o of enemiesIn(s, c, t.x, t.y, 220, true)) if (o !== t) kindle(s, c, o, 1); }
+  function string(s, c, t) { t.stringT = 3; t.stringK = c.f.cutstrings ? 1.12 : 1.08; t.stringBy = c.team; }
 
   const KITS = {
     // ---------- Heroes ----------
@@ -378,7 +387,7 @@
       sight: 850, hp: 520, hpG: 76, dmg: 46, dmgG: 5, armor: 20, armG: 3.5, range: 300, as: .85, ms: 310, pref: 270, support: true, fit: { top: 2, jungle: 0, bottom: 1, support: 3 },
       passive: { name: 'Vile Recovery', d: 'Poisoned enemies nearby slowly heal you.' },
       builds: [
-        { id: 'apothecary', name: 'Apothecary', tag: 'Support', d: 'Leech feeds allies for much more and comes back faster. Weak poison.', mods: { 1: { cd: 7, heal: .9, d: 'Tether an enemy, draining them and feeding your lowest ally for much more.' }, 0: { dps_add: -8 } } },
+        { id: 'apothecary', name: 'Apothecary', tag: 'Support', d: 'Leech feeds allies for much more and comes back faster. Weak poison.', mods: { 1: { cd: 7, heal: 1.15, d: 'Tether an enemy, draining them and feeding your lowest ally for much more.' }, 0: { dps_add: -8 } } },
         { id: 'pestilence', name: 'Pestilence', tag: 'Damage over time', d: 'Miasma is wider, longer and far deadlier.', mods: { 0: { r_add: 35, dur: 7.5, dps_add: 9 }, 1: { heal: .3 } } },
         { id: 'bloodletter', name: 'Bloodletter', tag: 'Bruiser', d: 'Leech feeds only you, drains hard, and your attacks land sturdily. A top laner who will not die.', stats: { hp: 1.15, dmg: 1.1 }, mods: { 1: { dps_add: 24, heal: .8, d: 'Tether an enemy and drain them. Feeds only you.' } } },
         { id: 'ward', name: 'The Ward', tag: 'Zone', d: 'Quarantine comes up far sooner and slows harder.', mods: { 2: { cd: 32, slowA: .42, r_add: 30 } } },
@@ -483,16 +492,261 @@
       onDamaged(s, c, a) { c.rage = Math.min(100, (c.rage || 0) + a / c.maxHp * 220); c.rageAt = s.t; },
       tick(s, c) { if (c.rage > 0 && s.t - (c.rageAt || 0) > 5) c.rage = Math.max(0, c.rage - 8 * DT); c.pstack = Math.round((c.rage || 0) / 20); if (c.f.fortress && c.rage >= 20 && s.tick % 30 === 0) { shield(s, c, c.maxHp * .03 * c.rage / 20, 2.5); c.rage -= 8; } if (c.f.bloodlust) c.asBonus = .12 * (c.rage || 0) / 100; },
     },
+
+    // ---------- 10.0 Heroes ----------
+    voltaic: {
+      name: 'Voltaic', role: 'Lightning speedster', blurb: 'Run fast, hit first, arrive as weather.', dtype: 'phys', arch: 'assassin',
+      sight: 760, hp: 520, hpG: 76, dmg: 62, dmgG: 8, armor: 18, armG: 3, range: 130, as: 1.08, ms: 345, pref: 98, melee: true, fit: { top: 1, jungle: 3, bottom: 0, support: 0 },
+      passive: { name: 'Static Charge', d: 'Moving builds charge. At full charge your next basic attack arcs lightning into two nearby enemies.' },
+      builds: [
+        { id: 'stormchaser', name: 'Stormchaser', tag: 'Jungle', d: 'Arc Dash tears through monsters and charges you faster off them.', mods: { 0: { d: 'Dash through a line. Far stronger against monsters.' } } },
+        { id: 'surge', name: 'Surge', tag: 'Duration', d: 'Overload lasts much longer and comes back sooner.', mods: { 1: { cd: 10, dur: 4.6 } } },
+        { id: 'conductor', name: 'Conductor', tag: 'Chains', d: 'Charge fills twice as fast and arcs jump to four enemies. Lighter dash.', mods: { 0: { dmg_add: -16 } } },
+        { id: 'thunderhead', name: 'Thunderhead', tag: 'Engage', d: 'Ride the Lightning comes up far more often, with a lighter stun.', mods: { 2: { cd: 30, stun: .55 } } },
+      ],
+      evolves: [
+        [{ id: 'quicksilver', name: 'Quicksilver', d: 'Arc Dash cooldown 1.2 shorter.', mods: { 0: { cd_add: -1.2 } } }, { id: 'groundfault', name: 'Ground Fault', d: 'Arc Dash slows champions it hits by 30%.' }],
+        [{ id: 'skybreak', name: 'Skybreak', d: 'The Ride the Lightning trail is 40 wider.', mods: { 2: { w_add: 40 } } }, { id: 'afterimage', name: 'Afterimage', d: 'Ride the Lightning fully charges Static Charge.' }],
+      ],
+      kit: [
+        { name: 'Arc Dash', d: 'Dash through a line of enemies. Hitting a champion adds charge.', fx: 'arcdash', cd: 6.5, range: 270, shape: 'dash', w: 80, pd: [270, 1500], dmg: 66,
+          cast(s, c, a, A) { const car = {}; dashDir(c, a.dx, a.dy, A.range, 1500, { onHit(s, c, t) { hurt(s, c, t, A.dmg * pow(c) * (c.f.stormchaser && t.kind === 'monster' ? 1.7 : 1), { skill: 1 }); if (t.kind === 'champ') { skillHit(c, car); c.volt = Math.min(100, (c.volt || 0) + 35); if (c.f.groundfault) slow(t, .3, 1.2); } else if (c.f.stormchaser) c.volt = Math.min(100, (c.volt || 0) + 20); } }); },
+        },
+        { name: 'Overload', d: 'Burn hot: faster attacks and speed, and every basic attack arcs.', fx: 'overload', cd: 13, range: 0, shape: 'self', instant: true, dur: 3,
+          cast(s, c, a, A) { c.overT = A.dur; haste(c, .22, A.dur); },
+        },
+        { name: 'Ride the Lightning', d: 'Become a bolt along a line. The trail detonates a moment later and stuns.', fx: 'thunder', cd: 46, range: 520, shape: 'line', w: 120, delay: .55, dmg: 170, stun: .95,
+          cast(s, c, a, A) {
+            const len = Math.max(0, rayWall(c.x, c.y, a.dx, a.dy, A.range + c.r) - c.r), x0 = c.x, y0 = c.y; dashDir(c, a.dx, a.dy, A.range, 1900, { unstop: true }); if (c.f.afterimage) c.volt = 100;
+            const z = field(s, c, 'fissure', lineZone({ r: A.w / 2, dur: A.delay, fx: 'thunder' }, x0, y0, x0 + a.dx * len, y0 + a.dy * len));
+            z.fn = (s, z) => { s.ev.push({ e: 'boom', x: z.x, y: z.y, r: z.r, fx: 'thunder', x2: z.x2, y2: z.y2 }); let hit = false; const test = t => { if (t.alive && !t.air && t.team !== c.team && segDist(t.x, t.y, z.x1, z.y1, z.x2, z.y2) < A.w / 2 + t.r) { hurt(s, c, t, A.dmg * pow(c), { skill: 1 }); if (t.alive) stun(s, t, A.stun); if (t.kind === 'champ') hit = true; } }; s.champs.forEach(test); s.minions.forEach(test); s.monsters.forEach(test); if (hit) c.stats.skillHits++; };
+          },
+        },
+      ],
+      tick(s, c) { const v = Math.hypot(c.vx || 0, c.vy || 0); if (v > 40) c.volt = Math.min(100, (c.volt || 0) + (c.f.conductor ? .36 : .18) * v * DT * .1 * 3); c.pready = (c.volt || 0) >= 100 ? 1 : 0; if (c.overT > 0) c.overT -= DT; c.asBonus = c.overT > 0 ? .45 : 0; },
+      onBasic(s, c, t, o) { if (c.pready || c.overT > 0) { if (c.pready) c.volt = 0; arcBolt(s, c, t, 44 * pow(c), c.f.conductor ? 4 : 2, 'Static Charge'); o.crit = true; } },
+    },
+    tidecaller: {
+      name: 'Tidecaller', role: 'Water controller', blurb: 'The tide does not ask.', dtype: 'magic', arch: 'support',
+      sight: 850, hp: 530, hpG: 76, dmg: 46, dmgG: 5, armor: 20, armG: 3.5, range: 300, as: .85, ms: 310, pref: 270, support: true, fit: { top: 0, jungle: 0, bottom: 1, support: 3 },
+      passive: { name: 'High Tide', d: 'Every third ability you cast restores 5% health to allies around you.' },
+      builds: [
+        { id: 'wellspring', name: 'Wellspring', tag: 'Healer', d: 'Riptide heals far more, High Tide reaches farther. Softer pushes.', mods: { 0: { heal_add: 45, push: 50 } } },
+        { id: 'undertow', name: 'Undertow', tag: 'Displace', d: 'Riptide drags enemies toward you instead of away and hits harder.', mods: { 0: { dmg_add: 22, heal_add: -30, d: 'A wave that drags enemies toward you and heals allies.' } } },
+        { id: 'deluge', name: 'Deluge', tag: 'Team fight', d: 'Tsunami comes up sooner and is wider.', mods: { 2: { cd: 34, w_add: 60 } } },
+        { id: 'abyss', name: 'Abyss', tag: 'Control', d: 'Bubble holds enemies longer but shields allies less.', mods: { 1: { stunT: 1.45, shield_add: -50, cd_add: 1.5 } } },
+      ],
+      evolves: [
+        [{ id: 'swiftcurrent', name: 'Swift Current', d: 'Riptide cooldown 1 shorter.', mods: { 0: { cd_add: -1 } } }, { id: 'deepbubble', name: 'Deep Bubble', d: 'Bubble reaches 75 farther.', mods: { 1: { range_add: 75 } } }],
+        [{ id: 'rogue', name: 'Rogue Wave', d: 'Tsunami stuns enemies for 0.6 as it strikes them.' }, { id: 'stillwater', name: 'Still Water', d: 'Tsunami heals allies twice as much and hastens them.' }],
+      ],
+      kit: [
+        { name: 'Riptide', d: 'A wave that pushes enemies away and heals every ally it passes.', fx: 'riptide', cd: 6, range: 480, shape: 'line', w: 66, heal: 92, dmg: 70, push: 110,
+          cast(s, c, a, A) { tideTick(s, c); const car = {}; fire(s, c, a, { speed: 1050, range: A.range, w: A.w, fx: 'riptide', pierce: true, filter: 'allchamp', hit(s, c, t, p) {
+            if (t.team === c.team) { heal(s, c, t, A.heal * pow(c)); skillHit(c, car); return; }
+            hurt(s, c, t, A.dmg * pow(c), { skill: 1 }); skillHit(c, car); if (t.alive) { slow(t, .3, 1.2); const dir = c.f.undertow ? -1 : 1, l = Math.min(A.push, c.f.undertow ? Math.max(0, dist(c, t) - 90) : A.push); dashDir(t, a.dx * dir, a.dy * dir, l, 900, { forced: true }); }
+          } }); },
+        },
+        { name: 'Bubble', d: 'Encase a champion: an ally is shielded and cleansed, an enemy is held.', fx: 'bubble', cd: 12, range: 405, shape: 'circle', r: 100, target: true, shield: 150, stunT: 1,
+          cast(s, c, a, A) {
+            let t = null, bd = 180; for (const e of s.champs) { if (!e.alive || e.air || (e !== c && e.team !== c.team && !canSee(s, c.team, e))) continue; const d = Math.hypot(e.x - a.tx, e.y - a.ty); if (d < bd) { bd = d; t = e; } }
+            if (!t || dist(c, t) > A.range + 45 || !hasLOS(c.x, c.y, t.x, t.y)) return false; tideTick(s, c); c.stats.skillHits++;
+            s.ev.push({ e: 'boom', x: t.x, y: t.y, r: 70, fx: 'bubble' });
+            if (t.team === c.team) { shield(s, t, A.shield * hpow(c), 3); t.stunT = t.rootT = t.slowT = 0; } else { stun(s, t, A.stunT); t.revealT = Math.max(t.revealT || 0, A.stunT); }
+          },
+        },
+        { name: 'Tsunami', d: 'A great wave rolls forward, sweeping enemies back and lifting allies.', fx: 'tsunami', cd: 52, range: 700, shape: 'line', w: 280, dmg: 150, heal: 150,
+          cast(s, c, a, A) { tideTick(s, c);
+            const z = field(s, c, 'tidewave', { x: c.x, y: c.y, r: A.w / 2, dur: 1.35, fx: 'tsunami', dx: a.dx, dy: a.dy, hits: {}, stop: rayWall(c.x, c.y, a.dx, a.dy, A.range) / 1.35 });
+            z.step = (s, z) => { z.x += z.dx * z.stop * DT; z.y += z.dy * z.stop * DT; for (const t of s.champs) { if (!t.alive || t.air || z.hits[t.id] || Math.hypot(t.x - z.x, t.y - z.y) > z.r + t.r) continue; z.hits[t.id] = 1;
+              if (t.team === c.team) { heal(s, c, t, A.heal * pow(c) * (c.f.stillwater ? 2 : 1)); if (c.f.stillwater) haste(t, .25, 2.5); }
+              else { hurt(s, c, t, A.dmg * pow(c), { skill: 1 }); if (t.alive) { slow(t, .35, 1.5); dashDir(t, z.dx, z.dy, 170, 900, { forced: true }); if (c.f.rogue) stun(s, t, .6); } if (!z.counted) { z.counted = true; c.stats.skillHits++; } } } };
+          },
+        },
+      ],
+    },
+    paragon: {
+      name: 'Paragon', role: 'Sky bruiser', blurb: 'Comes down harder than he goes up.', dtype: 'phys', arch: 'bruiser',
+      sight: 740, hp: 630, hpG: 96, dmg: 63, dmgG: 8, armor: 27, armG: 4, range: 145, as: .92, ms: 320, pref: 108, melee: true, fit: { top: 3, jungle: 2, bottom: 0, support: 1 },
+      passive: { name: 'Altitude', d: 'Landing from any leap makes your next three basic attacks hit 25% harder.' },
+      builds: [
+        { id: 'skyknight', name: 'Skyknight', tag: 'Mobile', d: 'Skyward comes back fast and lands lighter.', mods: { 0: { cd: 6.2, dmg_add: -18 } } },
+        { id: 'sunstriker', name: 'Sunstriker', tag: 'Damage', d: 'Solar Fist hits much harder and reaches farther, but shields less.', mods: { 1: { dmg_add: 34, range_add: 35, shield: .05 } } },
+        { id: 'titanwing', name: 'Titanwing', tag: 'Global', d: 'Meteor Drop comes up far more often, with a smaller impact.', mods: { 2: { cd: 34, r_add: -40, dmg_add: -30 } } },
+        { id: 'aegisborn', name: 'Aegisborn', tag: 'Tank', d: 'Solar Fist shields far more. Sturdy, lighter hits.', stats: { hp: 1.12, dmg: .9 }, mods: { 1: { shield: .18 } } },
+      ],
+      evolves: [
+        [{ id: 'updraft', name: 'Updraft', d: 'Skyward reaches 70 farther.', mods: { 0: { range_add: 70 } } }, { id: 'radiantfist', name: 'Radiant Fist', d: 'Solar Fist cooldown 1.5 shorter.', mods: { 1: { cd_add: -1.5 } } }],
+        [{ id: 'shockfall', name: 'Shockfall', d: 'Meteor Drop leaves shaking ground that slows.' }, { id: 'freeflight', name: 'Free Flight', d: 'Landing restores 10% of your health.' }],
+      ],
+      kit: [
+        { name: 'Skyward', d: 'Leap to a point and land with a slowing shock.', fx: 'skyward', cd: 9, range: 330, shape: 'circle', r: 120, over: true, dmg: 76,
+          cast(s, c, a, A) { c.air = .4; c.leap = { sx: c.x, sy: c.y, tx: a.tx, ty: a.ty, t: 0, total: .4, fn(s, c) { skyLand(s, c, A.r, A.dmg * pow(c), .8, 0, 'skyward'); } }; },
+        },
+        { name: 'Solar Fist', d: 'A punch that drives champions back and shields you for each one struck.', fx: 'solarfist', cd: 7, range: 190, shape: 'cone', w: 140, dmg: 78, shield: .08,
+          cast(s, c, a, A) { const n = cone(s, c, a, A.range, .45, t => { hurt(s, c, t, A.dmg * pow(c), { skill: 1 }); if (t.alive && t.kind === 'champ') dashDir(t, a.dx, a.dy, 120, 1000, { forced: true }); }); if (n) { c.stats.skillHits++; shield(s, c, c.maxHp * A.shield * n, 3); } },
+        },
+        { name: 'Meteor Drop', d: 'Rise out of reach, then fall anywhere nearby with a stunning impact.', fx: 'meteordrop', cd: 58, range: 760, shape: 'circle', r: 210, over: true, dmg: 190,
+          cast(s, c, a, A) { c.air = 1.05; c.leap = { sx: c.x, sy: c.y, tx: a.tx, ty: a.ty, t: 0, total: 1.05, fn(s, c) { skyLand(s, c, A.r, A.dmg * pow(c), 0, .85, 'meteordrop'); if (c.f.shockfall) field(s, c, 'miasma', { x: c.x, y: c.y, r: A.r, dur: 2.5, fx: 'meteordrop', step(s, z) { if (s.tick % 6 === 0) for (const t of enemiesIn(s, c, z.x, z.y, z.r)) slow(t, .35, .4); } }); } }; },
+        },
+      ],
+      onBasic(s, c, t, o) { if (c.altN > 0) { c.altN--; o.dmg *= 1.25; o.crit = true; } },
+      tick(s, c) { c.pstack = c.altN || 0; c.pready = c.altN > 0 ? 1 : 0; },
+    },
+    mirage: {
+      name: 'Mirage', role: 'Illusion marksman', blurb: 'Aim at the one that is not there.', dtype: 'phys', arch: 'marksman',
+      sight: 930, hp: 515, hpG: 70, dmg: 58, dmgG: 7, armor: 15, armG: 3, range: 350, as: 1.0, ms: 308, pref: 318, fit: { top: 1, jungle: 0, bottom: 3, support: 0 },
+      passive: { name: 'Double Image', d: 'Every fourth basic attack fires a twin bolt for 60% damage.' },
+      builds: [
+        { id: 'twinshot', name: 'Twinshot', tag: 'Attack speed', d: 'The twin fires every third attack.', stats: { as: 1.06 }, mods: {} },
+        { id: 'shade', name: 'Shade', tag: 'Evasive', d: 'Phantom Step hides you longer and comes back faster.', mods: { 1: { cd: 7.5, stealth: 1.5 } } },
+        { id: 'kaleidoscope', name: 'Kaleidoscope', tag: 'Team fight', d: 'Hall of Mirrors is wider and comes up sooner, its shards lighter.', mods: { 2: { cd: 34, r_add: 50, shot: 34 } } },
+        { id: 'hollow', name: 'Hollow', tag: 'Trap', d: 'Your decoy bursts when it fades, slowing and striking enemies near it.', mods: { 1: { d: 'Dash, vanish, and leave a decoy that bursts.' } } },
+      ],
+      evolves: [
+        [{ id: 'splinter', name: 'Splinter', d: 'Split Shot cooldown 1 shorter.', mods: { 0: { cd_add: -1 } } }, { id: 'farstep', name: 'Far Step', d: 'Phantom Step reaches 50 farther.', mods: { 1: { range_add: 50 } } }],
+        [{ id: 'infinite', name: 'Infinite Regress', d: 'Hall of Mirrors lasts a second longer.', mods: { 2: { dur_add: 1 } } }, { id: 'crackedglass', name: 'Cracked Glass', d: 'Hall of Mirrors slows those inside by 30%.' }],
+      ],
+      kit: [
+        { name: 'Split Shot', d: 'Three bolts in a narrow fan. Extra bolts on one target hit for less.', fx: 'splitshot', cd: 6, range: 510, shape: 'line', w: 30, dmg: 88,
+          cast(s, c, a, A) { const seen = {}, car = {}; for (const r of [-.17, 0, .17]) { const co = Math.cos(r), si = Math.sin(r), dx = a.dx * co - a.dy * si, dy = a.dx * si + a.dy * co; fire(s, c, { dx, dy }, { speed: 1500, range: A.range, w: A.w, fx: 'splitshot', filter: 'units', hit(s, c, t, p) { const k = seen[t.id] ? .4 : 1; seen[t.id] = 1; hurt(s, c, t, A.dmg * k * pow(c), { skill: 1 }); if (t.kind === 'champ') skillHit(c, car); p.left = 0; } }); } },
+        },
+        { name: 'Phantom Step', d: 'Dash away and vanish for a moment, leaving your double behind.', fx: 'phantom', cd: 11, range: 230, shape: 'dash', w: 60, stealth: .8, keepStealth: true, pd: [230, 1300],
+          cast(s, c, a, A) { const x = c.x, y = c.y, z = field(s, c, 'decoy', { x, y, r: 26, dur: 2.2, x0: x, vx: 0, vy: 0 }); z.end = (s, z) => { s.ev.push({ e: 'boom', x: z.x, y: z.y, r: 120, fx: 'phantom' }); if (c.f.hollow) for (const t of enemiesIn(s, c, z.x, z.y, 150, true)) { hurt(s, c, t, 110 * pow(c), { skill: 1 }); slow(t, .4, 1.5); } }; dashDir(c, a.dx, a.dy, A.range, 1300); stealth(s, c, A.stealth); },
+        },
+        { name: 'Hall of Mirrors', d: 'Illusions ring a zone and fire shards at everyone inside.', fx: 'mirrors', cd: 50, range: 600, shape: 'circle', r: 240, dur: 3, shot: 46,
+          cast(s, c, a, A) { const z = field(s, c, 'mirrors', { x: a.tx, y: a.ty, r: A.r, dur: A.dur }); z.step = (s, z) => { if (s.tick % 9) return; for (const t of s.champs) if (t.alive && !t.air && t.team !== c.team && Math.hypot(t.x - z.x, t.y - z.y) < z.r + t.r) { hurt(s, c, t, A.shot * pow(c), { skill: 1 }); if (c.f.crackedglass) slow(t, .3, .5); s.ev.push({ e: 'phit', x: t.x, y: t.y, fx: 'mirrors' }); if (!z.counted) { z.counted = true; c.stats.skillHits++; } } }; },
+        },
+      ],
+      onBasic(s, c, t, o) { c.pstack = ((c.pstack || 0) + 1) % (c.f.twinshot ? 3 : 4); if (!c.pstack) homing(s, c, t, o.dmg * .6, 1100, 'bolt', { basic: 1 }); },
+    },
+
+    // ---------- 10.0 Villains ----------
+    cinder: {
+      name: 'Cinder', role: 'Pyromancer', blurb: 'She only wanted to warm up the city.', dtype: 'magic', arch: 'mage',
+      sight: 860, hp: 495, hpG: 66, dmg: 50, dmgG: 5, armor: 14, armG: 3, range: 320, as: .85, ms: 302, pref: 290, fit: { top: 1, jungle: 0, bottom: 3, support: 1 },
+      passive: { name: 'Kindling', d: 'Your abilities stack kindling on enemies. The third stack ignites them in a small blast.' },
+      builds: [
+        { id: 'pyre', name: 'Pyre', tag: 'Burn', d: 'Everything you ignite burns harder and longer.', mods: { 0: { dmg_add: -8 } } },
+        { id: 'ashwalker', name: 'Ashwalker', tag: 'Mobile', d: 'Scorched Earth is quicker to return and you run much faster on it.', mods: { 1: { cd: 6.6, dur: 3 } } },
+        { id: 'wildfire', name: 'Wildfire', tag: 'Spread', d: 'Ignition throws kindling onto nearby enemies.', mods: {} },
+        { id: 'firestorm', name: 'Firestorm', tag: 'Ultimate', d: 'Inferno comes up far sooner and lands quicker, with a smaller blast.', mods: { 2: { cd: 32, delay: .7, r_add: -45 } } },
+      ],
+      evolves: [
+        [{ id: 'kindlebolt', name: 'Quick Fuse', d: 'Firebolt cooldown 0.7 shorter.', mods: { 0: { cd_add: -.7 } } }, { id: 'widescorch', name: 'Wide Scorch', d: 'Scorched Earth is 30 wider.', mods: { 1: { r_add: 30 } } }],
+        [{ id: 'blackash', name: 'Black Ash', d: 'Inferno also blocks healing for 2 seconds.' }, { id: 'afterburn', name: 'Afterburn', d: 'Inferno leaves flames twice as long.' }],
+      ],
+      kit: [
+        { name: 'Firebolt', d: 'A quick bolt that sets kindling on the first enemy.', fx: 'firebolt', cd: 3.6, range: 495, shape: 'line', w: 40, dmg: 76,
+          cast(s, c, a, A) { fire(s, c, a, { speed: 1150, range: A.range, w: A.w, fx: 'firebolt', filter: 'units', hit(s, c, t, p) { hurt(s, c, t, A.dmg * pow(c), { skill: 1 }); if (t.kind === 'champ') skillHit(c, p); p.left = 0; if (t.alive) kindle(s, c, t, 1); } }); },
+        },
+        { name: 'Scorched Earth', d: 'Set the ground alight. Enemies burn, and you run faster on it.', fx: 'scorch', cd: 9, range: 420, shape: 'circle', r: 135, dur: 3.5, dps: 44,
+          cast(s, c, a, A) { const z = field(s, c, 'miasma', { x: a.tx, y: a.ty, r: A.r, dur: A.dur, fx: 'scorch', n: 0 }); z.step = (s, z) => { if (dist(c, z) < z.r) haste(c, c.f.ashwalker ? .32 : .15, .2); if (s.tick % 9) return; for (const t of enemiesIn(s, c, z.x, z.y, z.r)) { bleed(s, c, t, A.dps * pow(c) * (c.f.pyre ? 1.35 : 1), 2); if (s.tick % 27 === 0) kindle(s, c, t, 1); if (t.kind === 'champ' && !z.counted) { z.counted = true; c.stats.skillHits++; } } }; },
+        },
+        { name: 'Inferno', d: 'A long fuse, then a huge explosion that leaves the ground burning.', fx: 'inferno', cd: 50, range: 520, shape: 'circle', r: 235, delay: 1, dmg: 215,
+          cast(s, c, a, A) { blast(s, c, a.tx, a.ty, A.r, A.delay, (s, z) => { let hit = false; for (const t of enemiesIn(s, c, z.x, z.y, A.r)) { hurt(s, c, t, A.dmg * pow(c), { skill: 1 }); if (t.alive) kindle(s, c, t, 2); if (t.kind === 'champ') { hit = true; if (c.f.blackash) t.noHealT = Math.max(t.noHealT || 0, 2); } } if (hit) c.stats.skillHits++; const f = field(s, c, 'miasma', { x: z.x, y: z.y, r: A.r * .8, dur: c.f.afterburn ? 5 : 2.5, fx: 'scorch' }); f.step = (s, y) => { if (s.tick % 15) return; for (const t of enemiesIn(s, c, y.x, y.y, y.r)) bleed(s, c, t, 34 * pow(c), 1); }; }, 'inferno'); },
+        },
+      ],
+    },
+    ravager: {
+      name: 'Ravager', role: 'Feral beast', blurb: 'It smelled you three blocks ago.', dtype: 'phys', arch: 'bruiser',
+      sight: 740, hp: 575, hpG: 88, dmg: 66, dmgG: 8, armor: 22, armG: 3.5, range: 135, as: .98, ms: 335, pref: 100, melee: true, fit: { top: 2, jungle: 3, bottom: 0, support: 0 },
+      passive: { name: 'Bloodscent', d: 'Enemies below half health nearby are revealed to you, and you run faster toward them.' },
+      builds: [
+        { id: 'alpha', name: 'Alpha', tag: 'Jungle', d: 'Maul shreds monsters and heals much more from them.', mods: { 0: { d: 'Cleave in front. Far stronger against monsters.' } } },
+        { id: 'savage', name: 'Savage', tag: 'Cleave', d: 'Maul sweeps wider and reaches farther.', mods: { 0: { dot: .2, range_add: 40 } } },
+        { id: 'packleader', name: 'Pack Leader', tag: 'Team', d: 'Frenzy also hastens allies around you.', mods: {} },
+        { id: 'hemorrhage', name: 'Hemorrhage', tag: 'Bleed', d: 'Maul opens a deep bleed. Lighter strike.', mods: { 0: { dmg_add: -18, dps: 34 } } },
+      ],
+      evolves: [
+        [{ id: 'quickmaul', name: 'Quick Maul', d: 'Maul cooldown 0.8 shorter.', mods: { 0: { cd_add: -.8 } } }, { id: 'longpounce', name: 'Long Pounce', d: 'Pounce reaches 70 farther.', mods: { 1: { range_add: 70 } } }],
+        [{ id: 'unending', name: 'Unending', d: 'Frenzy lasts 2 seconds longer.', mods: { 2: { dur_add: 2 } } }, { id: 'goreroot', name: 'Pinning Claws', d: 'Pounce pins for 0.4 longer.', mods: { 1: { rootT_add: .4 } } }],
+      ],
+      kit: [
+        { name: 'Maul', d: 'Cleave in front, healing for part of the damage.', fx: 'maul', cd: 4.2, range: 190, shape: 'cone', w: 150, dmg: 84, dot: .5,
+          cast(s, c, a, A) { let got = 0; const n = cone(s, c, a, A.range, A.dot, t => { const m = c.f.alpha && t.kind === 'monster' ? 1.7 : 1, v = hurt(s, c, t, A.dmg * pow(c) * m, { skill: 1 }); got += (v || 0) * (m > 1 ? .3 : .16); if (A.dps && t.alive) bleed(s, c, t, A.dps * pow(c), 3); }); if (got) heal(s, c, c, got); if (n) c.stats.skillHits++; },
+        },
+        { name: 'Pounce', d: 'Leap onto an enemy and pin them. With no target, leap to the point.', fx: 'pounce', cd: 10, range: 340, shape: 'circle', r: 90, over: true, dmg: 78, rootT: .7,
+          cast(s, c, a, A) { const t = nearChamp(s, c, a.tx, a.ty, 180), g = t && dist(c, t) <= A.range + 45 ? t : null; c.air = .32; c.leap = { sx: c.x, sy: c.y, tx: g ? g.x : a.tx, ty: g ? g.y : a.ty, t: 0, total: .32, fn(s, c) { s.ev.push({ e: 'boom', x: c.x, y: c.y, r: 90, fx: 'pounce' }); const hit = g && g.alive && !g.air && dist(c, g) < 140 ? g : null; if (hit) { hurt(s, c, hit, A.dmg * pow(c), { skill: 1 }); root(s, hit, A.rootT); c.stats.skillHits++; } } }; },
+        },
+        { name: 'Frenzy', d: 'Lose yourself: much faster attacks, speed and lifesteal.', fx: 'frenzy', cd: 48, range: 0, shape: 'self', instant: true, dur: 6,
+          cast(s, c, a, A) { c.frenzyT = A.dur; haste(c, .22, A.dur); if (c.f.packleader) for (const al of alliesIn(s, c.team, c.x, c.y, 420)) if (al !== c) haste(al, .2, 4); },
+        },
+      ],
+      tick(s, c) { if (c.frenzyT > 0) c.frenzyT -= DT; c.asBonus = c.frenzyT > 0 ? .5 : 0; c.lsBonus = c.frenzyT > 0 ? .25 : 0; c.pready = c.frenzyT > 0 ? 1 : 0; if (s.tick % 15 === 0) for (const e of s.champs) if (e.alive && e.team !== c.team && e.hp / e.maxHp < .5 && dist(e, c) < 950) { e.revealT = Math.max(e.revealT || 0, .6); haste(c, .1, .55); } },
+    },
+    cataclysm: {
+      name: 'Cataclysm', role: 'Siege brute', blurb: 'Walks up to the wall. The wall reconsiders.', dtype: 'phys', arch: 'tank',
+      sight: 700, hp: 690, hpG: 106, dmg: 56, dmgG: 7, armor: 32, armG: 4.5, range: 150, as: .78, ms: 300, pref: 120, melee: true, fit: { top: 3, jungle: 1, bottom: 0, support: 1 },
+      passive: { name: 'Siege Engine', d: 'Every fifth basic attack splashes around the target. Your attacks hit structures 25% harder.' },
+      builds: [
+        { id: 'bastille', name: 'Bastille', tag: 'Tank', d: 'Entrench hardens you longer and comes back sooner. Lighter hits.', stats: { hp: 1.12, dmg: .9 }, mods: { 1: { cd: 9, dur: 2.8 } } },
+        { id: 'artillery', name: 'Artillery', tag: 'Poke', d: 'Bombard reaches much farther and lands wider.', mods: { 0: { range_add: 110, r_add: 25, cd_add: 1 } } },
+        { id: 'wreckingcrew', name: 'Wrecking Crew', tag: 'Split push', d: 'Everything hits structures far harder. Weaker in long fights.', stats: { hp: .95 }, mods: {} },
+        { id: 'moonquake', name: 'Moonquake', tag: 'Ultimate', d: 'Earthbreaker comes up far more often and lifts for less time.', mods: { 2: { cd: 32, knockT: .6 } } },
+      ],
+      evolves: [
+        [{ id: 'shrapnel', name: 'Shrapnel', d: 'Bombard slows those it hits by 35%.' }, { id: 'digin', name: 'Dig In', d: 'Entrench cooldown 2 shorter.', mods: { 1: { cd_add: -2 } } }],
+        [{ id: 'fault', name: 'Fault Line', d: 'Earthbreaker reaches 90 farther.', mods: { 2: { range_add: 90 } } }, { id: 'tremor', name: 'Tremor', d: 'The Entrench shockwave stuns for 0.6.' }],
+      ],
+      kit: [
+        { name: 'Bombard', d: 'Lob a shell onto the ground. It hits hard, slowly.', fx: 'bombard', cd: 7, range: 495, shape: 'circle', r: 130, delay: .75, dmg: 118,
+          cast(s, c, a, A) { const car = {}; blast(s, c, a.tx, a.ty, A.r, A.delay, (s, z) => { eachEnemy(s, c, z.x, z.y, A.r, t => { hurt(s, c, t, A.dmg * pow(c), { skill: 1 }); if (c.f.shrapnel) slow(t, .35, 1.2); if (t.kind === 'champ') skillHit(c, car); }); }, 'bombard'); },
+        },
+        { name: 'Entrench', d: 'Plant yourself and take far less damage, then release a shockwave.', fx: 'entrench', cd: 12, range: 0, shape: 'self', instant: true, dur: 2, dmg: 88,
+          cast(s, c, a, A) { c.drT = Math.max(c.drT, A.dur); slow(c, .35, A.dur); const z = field(s, c, 'miasma', { x: c.x, y: c.y, r: 190, dur: A.dur, fx: 'entrench' }); z.step = (s, z) => { z.x = c.x; z.y = c.y; if (!c.alive) z.t = 0; }; z.end = (s, z) => { if (!c.alive) return; s.ev.push({ e: 'boom', x: c.x, y: c.y, r: 190, fx: 'entrench' }); let hit = false; eachEnemy(s, c, c.x, c.y, 190, t => { hurt(s, c, t, A.dmg * pow(c), { skill: 1 }); if (t.kind === 'champ') { hit = true; if (c.f.tremor) stun(s, t, .6); } }); if (hit) c.stats.skillHits++; }; },
+        },
+        { name: 'Earthbreaker', d: 'Split the ground in a long line, lifting enemies and cracking structures.', fx: 'earthbreak', cd: 50, range: 540, shape: 'line', w: 150, delay: .6, dmg: 172, knockT: .9,
+          cast(s, c, a, A) { const len = rayWall(c.x, c.y, a.dx, a.dy, A.range), z = field(s, c, 'fissure', lineZone({ r: A.w / 2, dur: A.delay, fx: 'earthbreak' }, c.x, c.y, c.x + a.dx * len, c.y + a.dy * len)); z.fn = (s, z) => { s.ev.push({ e: 'boom', x: z.x, y: z.y, r: z.r, fx: 'earthbreak', x2: z.x2, y2: z.y2 }); let hit = false; const test = t => { if (t.alive && !t.air && t.team !== c.team && segDist(t.x, t.y, z.x1, z.y1, z.x2, z.y2) < A.w / 2 + t.r) { hurt(s, c, t, A.dmg * pow(c), { skill: 1 }); if (t.alive) knock(s, t, A.knockT); if (t.kind === 'champ') hit = true; } }; s.champs.forEach(test); s.minions.forEach(test); s.monsters.forEach(test); for (const t of s.towers) if (t.alive && t.team !== c.team && segDist(t.x, t.y, z.x1, z.y1, z.x2, z.y2) < A.w / 2 + t.r) hurt(s, c, t, A.dmg * pow(c) * 2.5, { skill: 1 }); if (hit) c.stats.skillHits++; }; },
+        },
+      ],
+      onBasic(s, c, t, o) { c.pstack = ((c.pstack || 0) + 1) % 5; if (t.kind === 'tower') o.dmg *= c.f.wreckingcrew ? 1.6 : 1.25; if (!c.pstack) { o.crit = true; for (const e of enemiesIn(s, c, t.x, t.y, 150)) if (e !== t) hurt(s, c, e, o.dmg * .5, { skill: 1 }); s.ev.push({ e: 'boom', x: t.x, y: t.y, r: 150, fx: 'bombard' }); } },
+    },
+    puppeteer: {
+      name: 'The Puppeteer', role: 'Controller', blurb: 'Everyone dances eventually.', dtype: 'magic', arch: 'support',
+      sight: 860, hp: 515, hpG: 74, dmg: 46, dmgG: 5, armor: 18, armG: 3.2, range: 300, as: .85, ms: 310, pref: 270, support: true, fit: { top: 0, jungle: 0, bottom: 1, support: 3 },
+      passive: { name: 'Strings', d: 'Enemies hit by your abilities are strung for 3 seconds and take 8% more damage from your whole team.' },
+      builds: [
+        { id: 'marionettist', name: 'Marionettist', tag: 'Roots', d: 'Thread holds longer and comes back sooner.', mods: { 0: { cd: 7, rootT: 1.2 } } },
+        { id: 'troupe', name: 'The Troupe', tag: 'Summons', d: 'Two puppets can stand at once, each shooting faster.', mods: { 1: { cd: 8, max: 2, every: 14 } } },
+        { id: 'maestro', name: 'Maestro', tag: 'Ultimate', d: 'Dance of Strings also seizes a second enemy nearby.', mods: { 2: { cd_add: 4 } } },
+        { id: 'ventriloquist', name: 'Ventriloquist', tag: 'Support', d: 'Puppets also heal the lowest ally near them.', mods: { 1: { shot_add: -8 } } },
+      ],
+      evolves: [
+        [{ id: 'silkthread', name: 'Silk Thread', d: 'Thread reaches 70 farther.', mods: { 0: { range_add: 70 } } }, { id: 'tougherwood', name: 'Hardwood', d: 'Puppets last 1.5 seconds longer.', mods: { 1: { dur_add: 1.5 } } }],
+        [{ id: 'cutstrings', name: 'Cut Strings', d: 'Strung enemies take 12% more instead of 8%.' }, { id: 'encore', name: 'Encore', d: 'Dance of Strings holds for 0.4 longer.', mods: { 2: { dur_add: .4 } } }],
+      ],
+      kit: [
+        { name: 'Thread', d: 'A fine line that roots the first champion it catches.', fx: 'thread', cd: 9, range: 480, shape: 'line', w: 40, dmg: 66, rootT: .9,
+          cast(s, c, a, A) { fire(s, c, a, { speed: 1250, range: A.range, w: A.w, fx: 'thread', filter: 'champ', hit(s, c, t, p) { if (t.team === c.team) return; hurt(s, c, t, A.dmg * pow(c), { skill: 1 }); if (t.alive) { root(s, t, A.rootT); string(s, c, t); } skillHit(c, p); p.left = 0; } }); },
+        },
+        { name: 'Puppet Guard', d: 'Place a puppet that shoots enemies near it.', fx: 'puppet', cd: 11, range: 420, shape: 'circle', r: 120, dur: 4, shot: 34, every: 18, max: 1,
+          cast(s, c, a, A) { const mine = s.zones.filter(z => z.kind === 'puppet' && z.owner === c); if (mine.length >= A.max) mine[0].t = .01; const z = field(s, c, 'puppet', { x: a.tx, y: a.ty, r: 26, dur: A.dur, n: 0 }); z.step = (s, z) => { if (++z.n < A.every) return; z.n = 0; let t = null, bd = 380; for (const e of s.champs) { if (!e.alive || e.air || e.team === c.team || !canSee(s, c.team, e)) continue; const d = Math.hypot(e.x - z.x, e.y - z.y); if (d < bd && hasLOS(z.x, z.y, e.x, e.y)) { bd = d; t = e; } } if (t) { homing(s, z, t, A.shot * pow(c), 1000, 'bolt', { team: c.team, owner: c, skill: 1, abil: 'Puppet Guard' }); string(s, c, t); if (!z.counted) { z.counted = true; c.stats.skillHits++; } } if (c.f.ventriloquist) { let al = null, f = .9; for (const b of alliesIn(s, c.team, z.x, z.y, 380)) { const v = b.hp / b.maxHp; if (v < f) { f = v; al = b; } } if (al) heal(s, c, al, 30 * pow(c)); } }; },
+        },
+        { name: 'Dance of Strings', d: 'Seize an enemy: they stagger toward you, helpless, then stumble free.', fx: 'dance', cd: 50, range: 420, shape: 'circle', r: 120, target: true, dur: 1.4, dmg: 120,
+          cast(s, c, a, A) { const t = nearChamp(s, c, a.tx, a.ty, 180); if (!t || dist(c, t) > A.range + 45 || !hasLOS(c.x, c.y, t.x, t.y)) return false; const go = u => { hurt(s, c, u, A.dmg * pow(c), { skill: 1 }); if (!u.alive) return; const n = norm(c.x - u.x, c.y - u.y); stun(s, u, A.dur); dashDir(u, n.x, n.y, Math.max(0, n.l - 110), 300, { forced: true }); string(s, c, u); s.ev.push({ e: 'boom', x: u.x, y: u.y, r: 70, fx: 'dance' }); }; go(t); if (c.f.maestro) { const o = enemiesIn(s, c, t.x, t.y, 330, true).find(e => e !== t && e.kind === 'champ'); if (o) go(o); } c.stats.skillHits++; },
+        },
+      ],
+    },
   };
 
   // ---------- balance table ----------
   // Sweep-driven tuning lives here, multiplying the base numbers above, so a balance pass is a table edit.
   // Kit: hp, dmg (basic attack), as, ms (added), abil (ability damage and healing). Build: pw (ability power), hp, dmg, as.
   const TUNE = {
-    kits: {},
-    builds: {},
+    kits: {cataclysm: { hp: 1.006, dmg: 1.006, abil: 1.006 }, cinder: { hp: 1.027, dmg: 1.027, abil: 1.027 }, deadbolt: { hp: 1.013, dmg: 1.013, abil: 1.013 }, duelist: { hp: 0.983, dmg: 0.983, abil: 0.983 }, gravel: { hp: 0.925, dmg: 0.925, abil: 0.925 }, hex: { hp: 1.038, dmg: 1.038, abil: 1.038 }, ione: { hp: 1.025, dmg: 1.025, abil: 1.025 }, ironjaw: { hp: 0.949, dmg: 0.949, abil: 0.949 }, kade: { hp: 0.931, dmg: 0.931, abil: 0.931 }, mirage: { hp: 0.99, dmg: 0.99, abil: 0.99 }, paragon: { hp: 0.969, dmg: 0.969, abil: 0.969 }, plague: { hp: 1.035, dmg: 1.035, abil: 1.035 }, puppeteer: { hp: 1.01, dmg: 1.01, abil: 1.01 }, ravager: { hp: 0.993, dmg: 0.993, abil: 0.993 }, sable: { hp: 1.017, dmg: 1.017, abil: 1.017 }, shiv: { hp: 1.027, dmg: 1.027, abil: 1.027 }, solenne: { hp: 1.017, dmg: 1.017, abil: 1.017 }, tidecaller: { hp: 0.981, dmg: 0.981, abil: 0.981 }, vesper: { hp: 1.005, dmg: 1.005, abil: 1.005 }, voltaic: { hp: 1.05, dmg: 1.05, abil: 1.05 }},
+    builds: { deluge: { pw: .92 }, sunlance: { pw: .94 }, twinshot: { dmg: .95 }, sunstriker: { pw: .95 }, apothecary: { pw: 1.14 }, cutthroat: { pw: 1.12 }, masquerade: { pw: 1.1 }, butcher: { pw: 1.06 }, fencer: { pw: 1.05 } },
   };
   const ABIL_KEYS = ['dmg', 'dmgF', 'dmgM', 'dmg0', 'dmg1', 'dmg2', 'dps', 'heal', 'shot'];
+  // Damage types. A kit's dtype is the default for its abilities; an ability's own `mag` overrides it. Basic attacks are physical.
+  const KIT_TYPE = { vesper: ['phys', 'marksman'], kade: ['phys', 'bruiser'], ione: ['magic', 'mage'], solenne: ['magic', 'support'], sable: ['phys', 'assassin'], gravel: ['phys', 'tank'], deadbolt: ['phys', 'marksman'], duelist: ['phys', 'bruiser'], hex: ['magic', 'mage'], plague: ['magic', 'support'], shiv: ['phys', 'assassin'], ironjaw: ['phys', 'tank'] };
+  const MAG_OVERRIDE = { Stomp: true, Avalanche: true, Demolish: true, Lockdown: true, 'Wrecking Ball': true, Deadeye: false };
+  const MAG_ABIL = {};
+  for (const id in KITS) {
+    const k = KITS[id], ty = KIT_TYPE[id]; if (ty) { k.dtype = ty[0]; k.arch = ty[1]; }
+    if (k.mr === undefined) k.mr = Math.round(k.armor * .7 + 8); if (k.mrG === undefined) k.mrG = Math.round(k.armG * 7) / 10;
+    for (const a of k.kit) { if (MAG_OVERRIDE[a.name] !== undefined) a.mag = MAG_OVERRIDE[a.name]; a.dtype = (a.mag === undefined ? k.dtype === 'magic' : a.mag) ? 'magic' : 'phys'; MAG_ABIL[a.name] = a.dtype === 'magic'; }
+  }
   for (const id in KITS) {
     const k = KITS[id], t = TUNE.kits[id] || {};
     if (t.hp) { k.hp = Math.round(k.hp * t.hp); k.hpG = Math.round(k.hpG * t.hp * 10) / 10; }
@@ -538,36 +792,98 @@
   }
   function spreadCurses(s, t) { const c = t.curseBy; if (!c || !c.alive) return; const n = t.curseN; for (const o of enemiesIn(s, c, t.x, t.y, 280, true)) if (o !== t) curse(s, c, o, Math.max(1, n - 1)); }
 
-  // Items: stats add up across the three slots. cost is the price of this step from its upgradesFrom.
+  // Items. ad = attack power (basics and physical abilities), ap = ability power (magic abilities), both as percentages.
+  // armor against physical, mr against magic; pen and mpen ignore a fraction of them. cost is the price of this step from its upgradesFrom.
   const ITEMS = [
-    { id: 'whetstone', name: 'Whetstone', d: '+9% damage.', cost: 350, tier: 1, tags: ['attack'], dmg: .09 },
+    // Attack
+    { id: 'whetstone', name: 'Whetstone', d: '+9% attack power.', cost: 350, tier: 1, tags: ['attack'], ad: .09 },
+    { id: 'serrated', name: 'Serrated Edge', d: '+18% attack power. Basic attacks on champions add a light bleed.', cost: 550, tier: 2, tags: ['attack'], upgradesFrom: 'whetstone', ad: .18, u: 'bleed' },
+    { id: 'trigger', name: 'Hair Trigger', d: '+9% attack power and 22% attack speed.', cost: 550, tier: 2, tags: ['attack', 'mobility'], upgradesFrom: 'whetstone', ad: .09, as: .22 },
+    { id: 'headsman', name: 'Headsman', d: '+30% attack power. Targets under 35% health take 15% more.', cost: 800, tier: 3, tags: ['attack'], upgradesFrom: 'serrated', ad: .3, u: 'headsman' },
+    { id: 'bloodfang', name: 'Bloodfang', d: '+20% attack power and 15% lifesteal.', cost: 800, tier: 3, tags: ['attack', 'sustain', 'bruiser'], upgradesFrom: 'serrated', ad: .2, lifesteal: .15 },
+    { id: 'stormlash', name: 'Stormlash', d: '+15% attack power and 40% attack speed. Every third attack arcs to one more enemy.', cost: 850, tier: 3, tags: ['attack'], upgradesFrom: 'trigger', ad: .15, as: .4, u: 'storm' },
+    { id: 'guillotine', name: 'Guillotine', d: '+44% attack power. Unique: targets under 35% health take 28% more.', cost: 1250, tier: 4, tags: ['attack'], upgradesFrom: 'headsman', ad: .44, u: 'guillotine', legendary: true },
+    { id: 'gorefang', name: 'Sanguine Fang', d: '+32% attack power and 24% lifesteal.', cost: 1250, tier: 4, tags: ['attack', 'sustain', 'bruiser'], upgradesFrom: 'bloodfang', ad: .32, lifesteal: .24, legendary: true },
+    { id: 'tempest', name: 'Tempest', d: '+26% attack power and 60% attack speed. Unique: every third attack arcs on; attacks mark targets.', cost: 1250, tier: 4, tags: ['attack'], upgradesFrom: 'stormlash', ad: .26, as: .6, u: ['storm', 'tempest'], legendary: true },
+    // Marksman
+    { id: 'sightglass', name: 'Sightglass', d: '+7% attack power and 8% attack speed.', cost: 350, tier: 1, tags: ['attack', 'marksman'], ad: .07, as: .08 },
+    { id: 'hairscope', name: 'Hairline Scope', d: '+14% attack power and 15% attack speed.', cost: 550, tier: 2, tags: ['attack', 'marksman'], upgradesFrom: 'sightglass', ad: .14, as: .15 },
+    { id: 'railpiece', name: 'Railpiece', d: '+24% attack power, 22% attack speed and 12% armour piercing.', cost: 850, tier: 3, tags: ['attack', 'marksman'], upgradesFrom: 'hairscope', ad: .24, as: .22, pen: .12 },
+    { id: 'quickdraw', name: 'Quickdraw Rig', d: '+12% attack power, 34% attack speed and +18 move speed.', cost: 800, tier: 3, tags: ['attack', 'marksman', 'mobility'], upgradesFrom: 'hairscope', ad: .12, as: .34, ms: 18 },
+    { id: 'deadshot', name: 'Deadshot', d: '+34% attack power, 28% attack speed, 18% armour piercing. Unique: basic attacks on healthy targets (over 70%) hit 22% harder.', cost: 1250, tier: 4, tags: ['attack', 'marksman'], upgradesFrom: 'railpiece', ad: .34, as: .28, pen: .18, u: 'deadshot', legendary: true },
+    { id: 'gunrunner', name: 'Gunrunner', d: '+18% attack power, 48% attack speed, +30 move speed. Unique: basic attacks on champions grant a burst of speed.', cost: 1200, tier: 4, tags: ['attack', 'marksman', 'mobility'], upgradesFrom: 'quickdraw', ad: .18, as: .48, ms: 30, u: 'gunrunner', legendary: true },
+    // Assassin
+    { id: 'dirk', name: 'Thin Dirk', d: '+7% attack power and 8% armour piercing.', cost: 350, tier: 1, tags: ['attack', 'assassin'], ad: .07, pen: .08 },
+    { id: 'stiletto', name: 'Stiletto', d: '+14% attack power and 15% armour piercing.', cost: 550, tier: 2, tags: ['attack', 'assassin'], upgradesFrom: 'dirk', ad: .14, pen: .15 },
+    { id: 'nightedge', name: 'Night Edge', d: '+24% attack power, 22% armour piercing. Unique: your first hit on a champion after 6 quiet seconds deals 25% more.', cost: 850, tier: 3, tags: ['attack', 'assassin'], upgradesFrom: 'stiletto', ad: .24, pen: .22, u: 'ambush' },
+    { id: 'bonesaw', name: 'Bonesaw', d: '+20% attack power, 15% armour piercing and 15% shorter cooldowns.', cost: 850, tier: 3, tags: ['attack', 'assassin', 'ability'], upgradesFrom: 'stiletto', ad: .2, pen: .15, cdr: .15 },
+    { id: 'widowmaker', name: 'Widowmaker', d: '+34% attack power, 30% armour piercing. Unique: an opening hit deals 40% more, and a takedown bursts you with speed.', cost: 1250, tier: 4, tags: ['attack', 'assassin'], upgradesFrom: 'nightedge', ad: .34, pen: .3, u: ['ambush', 'widow'], legendary: true },
+    { id: 'eclipse', name: 'Eclipse', d: '+30% attack power, 20% armour piercing, 22% shorter cooldowns. Unique: three hits on a champion within 2 seconds burn for 7% of their max health.', cost: 1250, tier: 4, tags: ['attack', 'assassin', 'ability'], upgradesFrom: 'bonesaw', ad: .3, pen: .2, cdr: .22, u: 'eclipse', legendary: true },
+    // Bruiser
+    { id: 'cudgel', name: 'Cudgel', d: '+6% attack power and +100 health.', cost: 350, tier: 1, tags: ['attack', 'bruiser'], ad: .06, hp: 100 },
+    { id: 'warhammer', name: 'Warhammer', d: '+12% attack power, +220 health and 8 armour.', cost: 550, tier: 2, tags: ['attack', 'bruiser'], upgradesFrom: 'cudgel', ad: .12, hp: 220, armor: 8 },
+    { id: 'ironmaul', name: 'Iron Maul', d: '+20% attack power, +380 health and 16 armour.', cost: 850, tier: 3, tags: ['attack', 'bruiser', 'tank'], upgradesFrom: 'warhammer', ad: .2, hp: 380, armor: 16 },
+    { id: 'ragebrand', name: 'Ragebrand', d: '+22% attack power, +260 health, 10% lifesteal and 10% shorter cooldowns.', cost: 850, tier: 3, tags: ['attack', 'bruiser', 'sustain'], upgradesFrom: 'warhammer', ad: .22, hp: 260, lifesteal: .1, cdr: .1 },
+    { id: 'kingsmaul', name: 'Kingsmaul', d: '+28% attack power, +620 health, 26 armour, 14 magic resist. Unique: basic attacks splash 25% around the target.', cost: 1250, tier: 4, tags: ['attack', 'bruiser', 'tank'], upgradesFrom: 'ironmaul', ad: .28, hp: 620, armor: 26, mr: 14, u: 'cleave', legendary: true },
+    { id: 'warbringer', name: 'Warbringer', d: '+32% attack power, +400 health, 16% lifesteal, 15% shorter cooldowns. Unique: below 40% health you deal 18% more.', cost: 1250, tier: 4, tags: ['attack', 'bruiser', 'sustain'], upgradesFrom: 'ragebrand', ad: .32, hp: 400, lifesteal: .16, cdr: .15, u: 'warbringer', legendary: true },
+    // Magic
+    { id: 'lens', name: 'Focus Lens', d: '+6% ability power and 8% shorter cooldowns.', cost: 400, tier: 1, tags: ['magic', 'ability'], ap: .06, cdr: .08 },
+    { id: 'capacitor', name: 'Capacitor', d: '16% shorter cooldowns and +14% ability power.', cost: 550, tier: 2, tags: ['magic', 'ability'], upgradesFrom: 'lens', cdr: .16, ap: .14 },
+    { id: 'overclock', name: 'Overclock', d: '28% shorter cooldowns and +26% ability power.', cost: 850, tier: 3, tags: ['magic', 'ability'], upgradesFrom: 'capacitor', cdr: .28, ap: .26 },
+    { id: 'singularity', name: 'Singularity', d: '38% shorter cooldowns and +38% ability power.', cost: 1250, tier: 4, tags: ['magic', 'ability'], upgradesFrom: 'overclock', cdr: .38, ap: .38, legendary: true },
+    { id: 'ember', name: 'Ember Shard', d: '+11% ability power.', cost: 350, tier: 1, tags: ['magic'], ap: .11 },
+    { id: 'focuscrystal', name: 'Focus Crystal', d: '+22% ability power.', cost: 550, tier: 2, tags: ['magic'], upgradesFrom: 'ember', ap: .22 },
+    { id: 'stormglass', name: 'Stormglass', d: '+36% ability power and 20% magic piercing.', cost: 850, tier: 3, tags: ['magic'], upgradesFrom: 'focuscrystal', ap: .36, mpen: .2 },
+    { id: 'ashwand', name: 'Ash Wand', d: '+32% ability power and 12% ability lifesteal.', cost: 850, tier: 3, tags: ['magic', 'sustain'], upgradesFrom: 'focuscrystal', ap: .32, vamp: .12 },
+    { id: 'voidheart', name: 'Voidheart', d: '+52% ability power and 32% magic piercing. Unique: abilities hit targets over 60% health 12% harder.', cost: 1250, tier: 4, tags: ['magic'], upgradesFrom: 'stormglass', ap: .52, mpen: .32, u: 'voidheart', legendary: true },
+    { id: 'worldburn', name: 'Worldburn', d: '+46% ability power and 18% ability lifesteal. Unique: abilities that hit champions burn them for 3 seconds.', cost: 1250, tier: 4, tags: ['magic', 'sustain'], upgradesFrom: 'ashwand', ap: .46, vamp: .18, u: 'worldburn', legendary: true },
+    { id: 'hexband', name: 'Hexed Band', d: '+14% ability power, +180 health.', cost: 550, tier: 2, tags: ['magic', 'bruiser'], upgradesFrom: 'ember', ap: .14, hp: 180 },
+    { id: 'soulcage', name: 'Soul Cage', d: '+26% ability power, +340 health and 12 magic resist.', cost: 850, tier: 3, tags: ['magic', 'bruiser'], upgradesFrom: 'hexband', ap: .26, hp: 340, mr: 12 },
+    { id: 'archlich', name: 'Archlich Crown', d: '+38% ability power, +560 health, 24 magic resist. Unique: once every 45 seconds a killing blow leaves you at 15% health instead.', cost: 1250, tier: 4, tags: ['magic', 'bruiser', 'tank'], upgradesFrom: 'soulcage', ap: .38, hp: 560, mr: 24, u: 'archlich', legendary: true },
+    // Tank
     { id: 'vest', name: 'Padded Vest', d: '+150 health and 10 armour.', cost: 350, tier: 1, tags: ['tank'], hp: 150, armor: 10 },
-    { id: 'boots', name: 'Quick Boots', d: '+20 move speed.', cost: 300, tier: 1, tags: ['mobility'], ms: 20 },
-    { id: 'lens', name: 'Focus Lens', d: '8% shorter cooldowns.', cost: 400, tier: 1, tags: ['ability'], cdr: .08 },
-    { id: 'satchel', name: 'Field Satchel', d: '+15% healing and shields. Small health regeneration.', cost: 350, tier: 1, tags: ['support'], healPow: .15, regen: .002, hp: 40 },
-    { id: 'serrated', name: 'Serrated Edge', d: '+18% damage. Basic attacks on champions add a light bleed.', cost: 550, tier: 2, tags: ['attack'], upgradesFrom: 'whetstone', dmg: .18, u: 'bleed' },
-    { id: 'trigger', name: 'Hair Trigger', d: '+9% damage and 22% attack speed.', cost: 550, tier: 2, tags: ['attack', 'mobility'], upgradesFrom: 'whetstone', dmg: .09, as: .22 },
     { id: 'plate', name: 'Riot Plate', d: '+300 health and 22 armour.', cost: 550, tier: 2, tags: ['tank'], upgradesFrom: 'vest', hp: 300, armor: 22 },
-    { id: 'spurs', name: 'Chase Spurs', d: '+34 move speed.', cost: 450, tier: 2, tags: ['mobility'], upgradesFrom: 'boots', ms: 34 },
-    { id: 'capacitor', name: 'Capacitor', d: '16% shorter cooldowns and +10% ability damage.', cost: 550, tier: 2, tags: ['ability'], upgradesFrom: 'lens', cdr: .16, ap: .1 },
-    { id: 'medkit', name: 'Medkit', d: '+30% healing and shields, and more regeneration.', cost: 500, tier: 2, tags: ['support'], upgradesFrom: 'satchel', healPow: .3, regen: .004, hp: 100 },
-    { id: 'headsman', name: 'Headsman', d: '+30% damage. Targets under 35% health take 15% more.', cost: 800, tier: 3, tags: ['attack'], upgradesFrom: 'serrated', dmg: .3, u: 'headsman' },
-    { id: 'bloodfang', name: 'Bloodfang', d: '+20% damage and 15% lifesteal on basic attacks and abilities.', cost: 800, tier: 3, tags: ['attack', 'sustain'], upgradesFrom: 'serrated', dmg: .2, lifesteal: .15 },
-    { id: 'stormlash', name: 'Stormlash', d: '+15% damage and 40% attack speed. Every third attack arcs to one more enemy.', cost: 850, tier: 3, tags: ['attack'], upgradesFrom: 'trigger', dmg: .15, as: .4, u: 'storm' },
     { id: 'bastion', name: 'Bastion', d: '+550 health, 40 armour. Grants a shield when you fall below half health, once every 30 seconds.', cost: 850, tier: 3, tags: ['tank'], upgradesFrom: 'plate', hp: 550, armor: 40, u: 'bastion' },
     { id: 'spikeguard', name: 'Spikeguard', d: '+420 health, 50 armour. Melee attackers take 25% of the damage back.', cost: 800, tier: 3, tags: ['tank'], upgradesFrom: 'plate', hp: 420, armor: 50, u: 'thorns' },
-    { id: 'phase', name: 'Phase Treads', d: '+48 move speed and 8% shorter cooldowns. Speed burst after any ability.', cost: 750, tier: 3, tags: ['mobility', 'ability'], upgradesFrom: 'spurs', ms: 48, cdr: .08, u: 'phase' },
-    { id: 'overclock', name: 'Overclock', d: '28% shorter cooldowns and +22% ability damage.', cost: 850, tier: 3, tags: ['ability'], upgradesFrom: 'capacitor', cdr: .28, ap: .22 },
+    { id: 'citadel', name: 'Citadel', d: '+800 health, 60 armour, 20 magic resist. Unique: a bigger shield below half health, every 20 seconds.', cost: 1250, tier: 4, tags: ['tank'], upgradesFrom: 'bastion', hp: 800, armor: 60, mr: 20, u: ['bastion', 'citadel'], legendary: true },
+    { id: 'thornwall', name: 'Thornwall', d: '+620 health, 72 armour, 16 magic resist. Unique: melee attackers take 40% back.', cost: 1250, tier: 4, tags: ['tank'], upgradesFrom: 'spikeguard', hp: 620, armor: 72, mr: 16, u: ['thorns', 'thornwall'], legendary: true },
+    { id: 'cloak', name: 'Warded Cloak', d: '+80 health and 14 magic resist.', cost: 350, tier: 1, tags: ['tank', 'resist'], hp: 80, mr: 14 },
+    { id: 'nullweave', name: 'Nullweave', d: '+200 health and 28 magic resist.', cost: 550, tier: 2, tags: ['tank', 'resist'], upgradesFrom: 'cloak', hp: 200, mr: 28 },
+    { id: 'wardmail', name: 'Wardmail', d: '+420 health and 48 magic resist.', cost: 850, tier: 3, tags: ['tank', 'resist'], upgradesFrom: 'nullweave', hp: 420, mr: 48 },
+    { id: 'spellbreaker', name: 'Spellbreaker', d: '+300 health, 36 magic resist, +22 move speed.', cost: 800, tier: 3, tags: ['tank', 'resist', 'mobility'], upgradesFrom: 'nullweave', hp: 300, mr: 36, ms: 22 },
+    { id: 'aegisprime', name: 'Prime Aegis', d: '+700 health, 76 magic resist, 18 armour. Unique: the first ability that hits you every 20 seconds is halved.', cost: 1250, tier: 4, tags: ['tank', 'resist'], upgradesFrom: 'wardmail', hp: 700, mr: 76, armor: 18, u: 'aegisprime', legendary: true },
+    { id: 'girdle', name: 'Iron Girdle', d: '+220 health.', cost: 350, tier: 1, tags: ['tank'], hp: 220 },
+    { id: 'titanbelt', name: 'Titan Belt', d: '+460 health and a little regeneration.', cost: 550, tier: 2, tags: ['tank'], upgradesFrom: 'girdle', hp: 460, regen: .003 },
+    { id: 'titanheart', name: 'Titan Heart', d: '+800 health, 16 armour, 16 magic resist, more regeneration.', cost: 850, tier: 3, tags: ['tank'], upgradesFrom: 'titanbelt', hp: 800, armor: 16, mr: 16, regen: .006 },
+    { id: 'worldtree', name: 'Worldtree', d: '+1250 health, 30 armour, 30 magic resist. Unique: out of combat for 5 seconds you heal 4% a second.', cost: 1250, tier: 4, tags: ['tank'], upgradesFrom: 'titanheart', hp: 1250, armor: 30, mr: 30, regen: .008, u: 'worldtree', legendary: true },
+    // Support
+    { id: 'satchel', name: 'Field Satchel', d: '+15% healing and shields. Small health regeneration.', cost: 350, tier: 1, tags: ['support'], healPow: .15, regen: .002, hp: 40 },
+    { id: 'medkit', name: 'Medkit', d: '+30% healing and shields, and more regeneration.', cost: 500, tier: 2, tags: ['support'], upgradesFrom: 'satchel', healPow: .3, regen: .004, hp: 100 },
     { id: 'sanctum', name: 'Sanctum', d: '+55% healing and shields, regeneration, and allies near you take 8% less damage.', cost: 800, tier: 3, tags: ['support'], upgradesFrom: 'medkit', healPow: .55, regen: .006, hp: 220, u: 'sanctum' },
-    // Legendary: the top tier. Unique effects stack onto the tier below.
-    { id: 'guillotine', name: 'Guillotine', d: '+44% damage. Targets under 35% health take 28% more.', cost: 1250, tier: 4, tags: ['attack'], upgradesFrom: 'headsman', dmg: .44, u: 'guillotine', legendary: true },
-    { id: 'gorefang', name: 'Sanguine Fang', d: '+32% damage and 24% lifesteal.', cost: 1250, tier: 4, tags: ['attack', 'sustain'], upgradesFrom: 'bloodfang', dmg: .32, lifesteal: .24, legendary: true },
-    { id: 'tempest', name: 'Tempest', d: '+26% damage and 60% attack speed. Every third attack arcs on; attacks mark targets.', cost: 1250, tier: 4, tags: ['attack'], upgradesFrom: 'stormlash', dmg: .26, as: .6, u: ['storm', 'tempest'], legendary: true },
-    { id: 'citadel', name: 'Citadel', d: '+800 health, 60 armour. A bigger shield below half health, every 20 seconds.', cost: 1250, tier: 4, tags: ['tank'], upgradesFrom: 'bastion', hp: 800, armor: 60, u: ['bastion', 'citadel'], legendary: true },
-    { id: 'thornwall', name: 'Thornwall', d: '+620 health, 72 armour. Melee attackers take 40% back.', cost: 1250, tier: 4, tags: ['tank'], upgradesFrom: 'spikeguard', hp: 620, armor: 72, u: ['thorns', 'thornwall'], legendary: true },
-    { id: 'ghoststep', name: 'Ghoststep', d: '+64 move speed, 12% shorter cooldowns, and a bigger burst after any ability.', cost: 1200, tier: 4, tags: ['mobility', 'ability'], upgradesFrom: 'phase', ms: 64, cdr: .12, u: 'phase', legendary: true },
-    { id: 'singularity', name: 'Singularity', d: '38% shorter cooldowns and +34% ability damage.', cost: 1250, tier: 4, tags: ['ability'], upgradesFrom: 'overclock', cdr: .38, ap: .34, legendary: true },
-    { id: 'sanctuary', name: 'Sanctuary', d: '+85% healing and shields, more regeneration, and allies near you take 15% less damage.', cost: 1200, tier: 4, tags: ['support'], upgradesFrom: 'sanctum', healPow: .85, regen: .009, hp: 360, u: ['sanctum', 'sanctuary'], legendary: true },
+    { id: 'sanctuary', name: 'Sanctuary', d: '+85% healing and shields, more regeneration. Unique: allies near you take 15% less damage.', cost: 1200, tier: 4, tags: ['support'], upgradesFrom: 'sanctum', healPow: .85, regen: .009, hp: 360, u: ['sanctum', 'sanctuary'], legendary: true },
+    { id: 'censer', name: 'Censer', d: '+24% healing and shields, +8% ability power.', cost: 500, tier: 2, tags: ['support', 'magic'], upgradesFrom: 'satchel', healPow: .24, ap: .08, hp: 60 },
+    { id: 'lifewarden', name: 'Lifewarden', d: '+42% healing and shields, +16% ability power, 12% shorter cooldowns.', cost: 800, tier: 3, tags: ['support', 'magic', 'ability'], upgradesFrom: 'censer', healPow: .42, ap: .16, cdr: .12, hp: 140 },
+    { id: 'saintsbell', name: "Saint's Bell", d: '+66% healing and shields, +26% ability power, 20% shorter cooldowns. Unique: your heals also grant 8% damage for 3 seconds.', cost: 1200, tier: 4, tags: ['support', 'magic', 'ability'], upgradesFrom: 'lifewarden', healPow: .66, ap: .26, cdr: .2, hp: 240, u: 'saintsbell', legendary: true },
+    { id: 'banner', name: 'Field Banner', d: '+100 health, +8 move speed.', cost: 350, tier: 1, tags: ['support', 'mobility'], hp: 100, ms: 8 },
+    { id: 'warbanner', name: 'War Banner', d: '+240 health, +14 move speed, 10 armour, 10 magic resist.', cost: 550, tier: 2, tags: ['support', 'tank'], upgradesFrom: 'banner', hp: 240, ms: 14, armor: 10, mr: 10 },
+    { id: 'rallystandard', name: 'Rally Standard', d: '+400 health, 18 armour, 18 magic resist. Unique: allies near you deal 6% more.', cost: 850, tier: 3, tags: ['support', 'tank'], upgradesFrom: 'warbanner', hp: 400, armor: 18, mr: 18, u: 'rally' },
+    { id: 'highbanner', name: 'High Banner', d: '+620 health, 30 armour, 30 magic resist. Unique: allies near you deal 12% more.', cost: 1200, tier: 4, tags: ['support', 'tank'], upgradesFrom: 'rallystandard', hp: 620, armor: 30, mr: 30, u: ['rally', 'highbanner'], legendary: true },
+    // Mobility
+    { id: 'boots', name: 'Quick Boots', d: '+20 move speed.', cost: 300, tier: 1, tags: ['mobility'], ms: 20 },
+    { id: 'spurs', name: 'Chase Spurs', d: '+34 move speed.', cost: 450, tier: 2, tags: ['mobility'], upgradesFrom: 'boots', ms: 34 },
+    { id: 'phase', name: 'Phase Treads', d: '+48 move speed and 8% shorter cooldowns. Speed burst after any ability.', cost: 750, tier: 3, tags: ['mobility', 'ability'], upgradesFrom: 'spurs', ms: 48, cdr: .08, u: 'phase' },
+    { id: 'ghoststep', name: 'Ghoststep', d: '+64 move speed, 12% shorter cooldowns. Unique: a bigger burst after any ability.', cost: 1200, tier: 4, tags: ['mobility', 'ability'], upgradesFrom: 'phase', ms: 64, cdr: .12, u: ['phase', 'ghoststep'], legendary: true },
+    { id: 'stridegreaves', name: 'Stride Greaves', d: '+44 move speed, 14 armour and 14 magic resist.', cost: 750, tier: 3, tags: ['mobility', 'tank'], upgradesFrom: 'spurs', ms: 44, armor: 14, mr: 14 },
+    { id: 'stormgreaves', name: 'Storm Greaves', d: '+60 move speed, 24 armour and 24 magic resist. Unique: being stunned or rooted grants a burst of speed when it ends.', cost: 1200, tier: 4, tags: ['mobility', 'tank'], upgradesFrom: 'stridegreaves', ms: 60, armor: 24, mr: 24, u: 'stormgreaves', legendary: true },
+    // Jungle
+    { id: 'machete', name: 'Machete', d: '+25% damage to monsters, +5% attack power.', cost: 350, tier: 1, tags: ['jungle', 'attack'], mon: .25, ad: .05 },
+    { id: 'trailblade', name: 'Trail Blade', d: '+40% damage to monsters, +12% attack power. Monster kills heal you.', cost: 550, tier: 2, tags: ['jungle', 'attack'], upgradesFrom: 'machete', mon: .4, ad: .12, u: 'forager' },
+    { id: 'apexfang', name: 'Apex Fang', d: '+55% damage to monsters, +24% attack power, 8% lifesteal. Monster kills heal you.', cost: 850, tier: 3, tags: ['jungle', 'attack', 'sustain'], upgradesFrom: 'trailblade', mon: .55, ad: .24, lifesteal: .08, u: 'forager' },
+    { id: 'sovereign', name: 'Jungle Sovereign', d: '+70% damage to monsters, +34% attack power, 12% lifesteal. Unique: +25% damage to bosses.', cost: 1250, tier: 4, tags: ['jungle', 'attack', 'sustain'], upgradesFrom: 'apexfang', mon: .7, ad: .34, lifesteal: .12, u: ['forager', 'sovereign'], legendary: true },
+    { id: 'spiritmoss', name: 'Spirit Moss', d: '+25% damage to monsters, +7% ability power.', cost: 350, tier: 1, tags: ['jungle', 'magic'], mon: .25, ap: .07 },
+    { id: 'wildbloom', name: 'Wild Bloom', d: '+42% damage to monsters, +18% ability power. Monster kills heal you.', cost: 550, tier: 2, tags: ['jungle', 'magic'], upgradesFrom: 'spiritmoss', mon: .42, ap: .18, u: 'forager' },
+    { id: 'stormroot', name: 'Stormroot', d: '+58% damage to monsters, +32% ability power, +20 move speed. Monster kills heal you.', cost: 850, tier: 3, tags: ['jungle', 'magic', 'mobility'], upgradesFrom: 'wildbloom', mon: .58, ap: .32, ms: 20, u: 'forager' },
+    { id: 'skyrender', name: 'Skyrender', d: '+72% damage to monsters, +46% ability power, +34 move speed. Unique: +25% damage to bosses.', cost: 1250, tier: 4, tags: ['jungle', 'magic', 'mobility'], upgradesFrom: 'stormroot', mon: .72, ap: .46, ms: 34, u: ['forager', 'sovereign'], legendary: true },
     // Consumables: bought and used in one tap, no slot.
     { id: 'potion', name: 'Health Potion', d: 'Restores 40% of max health over 8 seconds.', cost: 110, tier: 1, tags: ['consumable'], consumable: true },
     { id: 'cleanse', name: 'Cleanse', d: 'Clears stuns, roots, slows, poison and curses at once. 25 second cooldown.', cost: 170, tier: 1, tags: ['consumable'], consumable: true },
@@ -603,15 +919,37 @@
     cutthroat: ['headsman', 'phase', 'bloodfang'], nightblade: ['headsman', 'bloodfang', 'phase'], butcher: ['bloodfang', 'headsman', 'phase'], venomous: ['stormlash', 'bloodfang', 'phase'],
     brawler: ['bloodfang', 'bastion', 'phase'], wrecker: ['overclock', 'bastion', 'phase'], bouncer: ['bastion', 'phase', 'spikeguard'], fortress: ['bastion', 'spikeguard', 'sanctum'],
   };
+  REC.stormchaser = ['apexfang', 'phase', 'ragebrand']; REC.surge = ['stormroot', 'phase', 'stormglass']; REC.conductor = ['stormroot', 'overclock', 'phase']; REC.thunderhead = ['stormglass', 'phase', 'soulcage'];
+  REC.wellspring = ['sanctum', 'overclock', 'phase']; REC.undertow = ['lifewarden', 'overclock', 'phase']; REC.deluge = ['lifewarden', 'sanctum', 'phase']; REC.abyss = ['overclock', 'stridegreaves', 'sanctum'];
+  REC.skyknight = ['ragebrand', 'phase', 'ironmaul']; REC.sunstriker = ['headsman', 'phase', 'ironmaul']; REC.titanwing = ['ragebrand', 'phase', 'bastion']; REC.aegisborn = ['ironmaul', 'wardmail', 'phase'];
+  REC.twinshot = ['stormlash', 'railpiece', 'phase']; REC.shade = ['railpiece', 'phase', 'headsman']; REC.kaleidoscope = ['headsman', 'railpiece', 'phase']; REC.hollow = ['quickdraw', 'headsman', 'phase'];
+  REC.pyre = ['stormglass', 'overclock', 'phase']; REC.ashwalker = ['ashwand', 'phase', 'overclock']; REC.wildfire = ['stormglass', 'ashwand', 'phase']; REC.firestorm = ['overclock', 'stormglass', 'phase'];
+  REC.alpha = ['apexfang', 'phase', 'ragebrand']; REC.savage = ['ragebrand', 'ironmaul', 'phase']; REC.packleader = ['ragebrand', 'rallystandard', 'phase']; REC.hemorrhage = ['nightedge', 'bloodfang', 'phase'];
+  REC.bastille = ['bastion', 'wardmail', 'phase']; REC.artillery = ['ironmaul', 'overclock', 'phase']; REC.wreckingcrew = ['ironmaul', 'stormlash', 'phase']; REC.moonquake = ['ironmaul', 'bastion', 'phase'];
+  REC.marionettist = ['lifewarden', 'overclock', 'phase']; REC.troupe = ['overclock', 'lifewarden', 'phase']; REC.maestro = ['overclock', 'sanctum', 'phase']; REC.ventriloquist = ['sanctum', 'lifewarden', 'phase'];
+  // Other genuine routes per archetype, on top of each build's signature route (path 0).
+  const ARCH_PATHS = {
+    marksman: [['Rapid', ['quickdraw', 'stormlash', 'railpiece', 'phase', 'bloodfang']], ['Heavy', ['railpiece', 'headsman', 'bloodfang', 'phase', 'spellbreaker']]],
+    mage: [['Burst', ['stormglass', 'overclock', 'phase', 'ashwand', 'soulcage']], ['Battle', ['soulcage', 'ashwand', 'overclock', 'phase', 'wardmail']]],
+    support: [['Devoted', ['sanctum', 'lifewarden', 'phase', 'rallystandard', 'wardmail']], ['Warmaster', ['rallystandard', 'lifewarden', 'stridegreaves', 'bastion', 'wardmail']]],
+    assassin: [['Night', ['nightedge', 'phase', 'bonesaw', 'bloodfang', 'wardmail']], ['Ambush', ['bonesaw', 'nightedge', 'headsman', 'phase', 'spellbreaker']]],
+    bruiser: [['Unkillable', ['ironmaul', 'ragebrand', 'stridegreaves', 'wardmail', 'bastion']], ['Reaver', ['ragebrand', 'bloodfang', 'phase', 'ironmaul', 'wardmail']]],
+    tank: [['Wall', ['bastion', 'wardmail', 'titanheart', 'stridegreaves', 'spikeguard']], ['Crusher', ['ironmaul', 'wardmail', 'stridegreaves', 'bastion', 'titanheart']]],
+  };
+  const MAGIC_SWAP = { headsman: 'stormglass', bloodfang: 'ashwand', stormlash: 'soulcage', spikeguard: 'wardmail', ironmaul: 'soulcage', ragebrand: 'soulcage', nightedge: 'stormglass', bonesaw: 'overclock', apexfang: 'stormroot', railpiece: 'stormglass', quickdraw: 'ashwand' }, PHYS_SWAP = { overclock: 'bonesaw', stormglass: 'headsman', ashwand: 'bloodfang', soulcage: 'ironmaul', stormroot: 'apexfang' };
   // Filler for the last two slots per kit class, after the build's three core items.
-  const REC_FILL = { back: ['bloodfang', 'bastion'], front: ['spikeguard', 'bastion'], flank: ['bloodfang', 'bastion'], peel: ['bastion', 'overclock'] };
-  const LEGEND = { headsman: 'guillotine', bloodfang: 'gorefang', stormlash: 'tempest', bastion: 'citadel', spikeguard: 'thornwall', phase: 'ghoststep', overclock: 'singularity', sanctum: 'sanctuary' };
-  // Five final items in buying order: the build's three cores, then two fillers from different chains.
-  function recommended(champ, build) {
-    const k = KITS[champ]; if (!k) return []; const b = build || k.builds[0].id, core = (REC[b] || REC[k.builds[0].id]).slice();
-    for (const f of [...REC_FILL[CLASS[champ] || 'front'], 'bastion', 'overclock', 'bloodfang', 'phase', 'sanctum', 'spikeguard', 'headsman']) if (core.length < 5 && !core.includes(f)) core.push(f);
-    return core;
+  const REC_FILL = { back: ['bloodfang', 'wardmail'], front: ['wardmail', 'bastion'], flank: ['bloodfang', 'wardmail'], peel: ['wardmail', 'overclock'] };
+  const LEGEND = { headsman: 'guillotine', bloodfang: 'gorefang', stormlash: 'tempest', bastion: 'citadel', spikeguard: 'thornwall', phase: 'ghoststep', overclock: 'singularity', sanctum: 'sanctuary', railpiece: 'deadshot', quickdraw: 'gunrunner', nightedge: 'widowmaker', bonesaw: 'eclipse', ironmaul: 'kingsmaul', ragebrand: 'warbringer', stormglass: 'voidheart', ashwand: 'worldburn', soulcage: 'archlich', wardmail: 'aegisprime', titanheart: 'worldtree', lifewarden: 'saintsbell', rallystandard: 'highbanner', stridegreaves: 'stormgreaves', apexfang: 'sovereign', stormroot: 'skyrender' };
+  const swapFor = (k, id) => k.dtype === 'magic' ? (MAGIC_SWAP[id] || id) : (PHYS_SWAP[id] || id);
+  // Every genuine item route for a build: [{name, items}]. Path 0 is the build's signature route.
+  function itemPaths(champ, build) {
+    const k = KITS[champ]; if (!k) return []; const b = build || k.builds[0].id, core = [...new Set((REC[b] || REC[k.builds[0].id]).map(i => swapFor(k, i)))];
+    for (const f of [...REC_FILL[CLASS[champ] || 'front'], 'wardmail', 'bastion', 'phase', 'stridegreaves', k.dtype === 'magic' ? 'overclock' : 'bloodfang', 'titanheart']) { const g = swapFor(k, f); if (core.length < 5 && !core.includes(g)) core.push(g); }
+    const out = [{ name: 'Signature', items: core }];
+    for (const [name, items] of ARCH_PATHS[k.arch] || []) { const u = [...new Set(items.map(i => swapFor(k, i)))]; for (const f of ['wardmail', 'bastion', 'phase', 'stridegreaves', 'titanheart', 'lifewarden', k.dtype === 'magic' ? 'overclock' : 'bloodfang']) { const g = swapFor(k, f); if (u.length < 5 && !u.includes(g)) u.push(g); } out.push({ name, items: u }); }
+    return out;
   }
+  function recommended(champ, build, path) { const p = itemPaths(champ, build); return p.length ? (p[path || 0] || p[0]).items : []; }
   // Default build per kit and role, for bots and for a seat with none chosen.
   function defaultBuild(champ, role, roll) {
     const k = KITS[champ], ids = k.builds.map(x => x.id), avoid = BOT_BUILD_AVOID[champ] || {}, pool = ids.filter(b => !(avoid[b] || []).includes(role));
@@ -619,11 +957,37 @@
   }
   // Build fits: which build does not suit a given role (bot defaults only; players are free).
   const BOT_BUILD_AVOID = {
+    tidecaller: { undertow: ['bottom'] }, puppeteer: { ventriloquist: ['bottom'] }, voltaic: { stormchaser: ['top'] }, ravager: { alpha: ['top'] }, cataclysm: { bastille: [] },
     solenne: { sunlance: ['support'], lifebringer: ['bottom', 'top'], protector: ['bottom', 'top'], radiant: ['bottom', 'top'] },
     plague: { apothecary: ['top', 'bottom'], bloodletter: ['support', 'bottom'], ward: ['top'] },
     ione: { stellar: ['top', 'bottom'] }, hex: { jinx: ['top', 'bottom'] },
     kade: { vanguard: ['jungle'], breaker: ['jungle'] }, gravel: { warden: ['top', 'jungle'] }, ironjaw: { bouncer: ['jungle'] },
   };
+
+  // Lane proficiencies: picked per seat before the match (seat.prof), independent of the champion.
+  const PROFS = {
+    top: [
+      { id: 'challenger', name: 'Challenger', d: '+10% damage to champions while no ally is near you.' },
+      { id: 'ironclad', name: 'Ironclad', d: 'Take 18% less damage under your own towers.' },
+      { id: 'demolisher', name: 'Demolisher', d: 'Your attacks and abilities hit structures 35% harder.' },
+    ],
+    jungle: [
+      { id: 'predator', name: 'Predator', d: '+25% damage to monsters and +15% to bosses.' },
+      { id: 'killstrike', name: 'Kill Strike', d: 'A monster that falls under 10% health is finished instantly and heals you 8%. 10 seconds to recharge, 30 after a boss.' },
+      { id: 'tracker', name: 'Tracker', d: '+12% move speed in the jungle and +25% gold from camps.' },
+    ],
+    bottom: [
+      { id: 'harvester', name: 'Harvester', d: '+30% gold from minion last hits.' },
+      { id: 'tempo', name: 'Tempo', d: 'Basic attacks on champions build attack speed: up to five stacks of 6% that fade after 3 seconds.' },
+      { id: 'longsight', name: 'Long Sight', d: '+120 sight. Your first hit on a champion after 4 quiet seconds deals 25% more.' },
+    ],
+    support: [
+      { id: 'guardian', name: 'Guardian', d: '+20% healing and shields.' },
+      { id: 'pathfinder', name: 'Pathfinder', d: 'Hold a third beacon, recharge beacons twice as fast and see farther from them.' },
+      { id: 'patron', name: 'Patron', d: 'Assists pay 40% more, and you earn passive gold 60% faster.' },
+    ],
+  };
+  const PROF_IDS = {}; for (const r in PROFS) for (const p of PROFS[r]) PROF_IDS[p.id] = r;
 
   // Marks earned at the end of a match.
   function marksEarned(won, st) { st = st || {}; return Math.round(30 + (won ? 45 : 0) + Math.min(30, (st.kills || 0) * 3 + (st.assists || 0) * 1.5) + Math.min(10, (st.skillHits || 0) * .1)); }

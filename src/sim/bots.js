@@ -30,16 +30,17 @@
     };
   }
 
-  const CLASS = { vesper: 'back', ione: 'back', solenne: 'peel', kade: 'front', gravel: 'front', sable: 'flank', deadbolt: 'back', hex: 'back', plague: 'peel', duelist: 'front', ironjaw: 'front', shiv: 'flank' };
+  const CLASS = { vesper: 'back', ione: 'back', solenne: 'peel', kade: 'front', gravel: 'front', sable: 'flank', deadbolt: 'back', hex: 'back', plague: 'peel', duelist: 'front', ironjaw: 'front', shiv: 'flank', voltaic: 'flank', tidecaller: 'peel', paragon: 'front', mirage: 'back', cinder: 'back', ravager: 'flank', cataclysm: 'front', puppeteer: 'peel' };
   function makeBot(s, c, skill) {
     const i = c.slot, b = {
       skill: 0, sk: null, lane: c.role === 'top' ? 0 : 1, cls: CLASS[c.champ] || 'front', mask: navMask(c.team), next: i * .05 + .02, foes: [], tid: 0, closest: 1e9, ratio: 1, noise: 0, noiseAt: 0, strafe: i % 2 ? 1 : -1,
       gx: c.x, gy: c.y, ga: 20, hasGoal: false, vx: 0, vy: 0, vecT: 0, ex: 0, ey: 0, evadeT: 0, dodgeAt: 0, dodgeSeen: 0, path: null, pi: 0, pgx: 0, pgy: 0, needPath: false, sx: c.x, sy: c.y, stuck: 0, still: false, diveOk: false,
       et: null, etTanks: 0, castAt: 0, chargeHold: 1.12, threatT: 9, parry: false, low: false, fighting: false, lhSoon: false, lastHome: 0, gank: null, gankCd: 0, deaths: [], siegeT: 0,
-      route: null, routeI: 0, cycles: 0, gankReady: false, chase: 0, noChase: 0, tradeT: 0, task: 'spawn', safeUntil: 0,
+      buyPath: 0, potAt: 0, route: null, routeI: 0, cycles: 0, gankReady: false, chase: 0, noChase: 0, tradeT: 0, task: 'spawn', safeUntil: 0,
       setSkill(x) { b.skill = clamp(x, 0, 1); b.sk = skillProfile(b.skill); },
     };
     b.setSkill(skill !== undefined ? skill : c.skill !== undefined ? c.skill : .5);
+    b.buyPath = hash01((s.seed || 7) + c.team * 31, c.slot + 77) * itemPaths(c.champ, c.build).length | 0;
     return b;
   }
 
@@ -333,7 +334,7 @@
 
   // Effective health times damage, square-rooted so a team's power adds up the Lanchester way.
   // A team knows its own cooldowns; enemy cooldowns are assumed up.
-  const BURST = { vesper: [190, 0, 260], kade: [124, 0, 185], ione: [82, 165, 345], solenne: [72, 0, 90], sable: [138, 0, 180], gravel: [64, 62, 165], deadbolt: [62, 160, 240], duelist: [220, 0, 150], hex: [100, 0, 240], plague: [120, 170, 0], shiv: [150, 0, 252], ironjaw: [130, 70, 165] };
+  const BURST = { vesper: [190, 0, 260], kade: [124, 0, 185], ione: [82, 165, 345], solenne: [72, 0, 90], sable: [138, 0, 180], gravel: [64, 62, 165], deadbolt: [62, 160, 240], duelist: [220, 0, 150], hex: [100, 0, 240], plague: [120, 170, 0], shiv: [150, 0, 252], ironjaw: [130, 70, 165], voltaic: [120, 90, 190], tidecaller: [80, 60, 170], paragon: [95, 95, 230], mirage: [150, 0, 170], cinder: [110, 80, 280], ravager: [130, 90, 160], cataclysm: [140, 90, 190], puppeteer: [75, 80, 140] };
   function power(u, foe) {
     const B = BURST[u.champ], pw = pow(u); let burst = 0;
     for (let i = 0; i < 3; i++) if (i < 2 || u.lvl >= 3) burst += (foe || u.cd[i] <= 1.5 ? 1 : .15) * B[i] * pw / (u.kit[i].cd || 6);
@@ -352,7 +353,7 @@
     if (ai.phase === 'lane') return bot || null;
     return s.champs.find(a => a.team === c.team && a !== c && !a.bot && a.alive && a.role !== 'support') || bot || s.champs.find(a => a.team === c.team && a !== c && a.alive) || null;
   }
-  const CARRY = { vesper: 1, ione: .9, sable: .7, kade: .4, solenne: .3, gravel: 0, deadbolt: 1, hex: .9, shiv: .7, duelist: .4, plague: .3, ironjaw: 0 };
+  const CARRY = { vesper: 1, ione: .9, sable: .7, kade: .4, solenne: .3, gravel: 0, deadbolt: 1, hex: .9, shiv: .7, duelist: .4, plague: .3, ironjaw: 0, voltaic: .7, tidecaller: .3, paragon: .4, mirage: 1, cinder: .9, ravager: .4, cataclysm: 0, puppeteer: .3 };
 
   // Rough tower damage for the next shots at the current time, with compounding.
   const towerShot = (s, stack) => (160 + s.t * .24) * Math.min(4, Math.pow(1.45, stack));
@@ -370,27 +371,12 @@
     return n;
   }
 
-  // Next purchase: walk the recommended chains, finishing one before starting the next.
+  // Next purchase: three core items, then a legendary, weaving the remaining chains with more legendaries.
   function nextBuy(s, c) {
-    const rec = recommended(c.champ, c.build);
-    for (const id of rec) {
-      const path = itemPath(id); let step = null, top = -1;
-      for (let i = path.length - 1; i >= 0; i--) if (c.items.includes(path[i])) { top = i; break; }
-      if (top === path.length - 1) continue;
-      step = path[top + 1];
-      const price = itemPrice(c, step);
-      if (price === null) continue;
-      return { id: step, cost: price };
-    }
-    // Then upgrade to legendaries, in the same order.
-    for (const id of rec) {
-      const up = LEGEND[id]; if (!up) continue;
-      if (c.items.includes(up)) continue;
-      if (!c.items.includes(id)) continue;
-      const price = itemPrice(c, up);
-      if (price === null) continue;
-      return { id: up, cost: price };
-    }
+    const rec = recommended(c.champ, c.build, c.bot ? c.bot.buyPath : 0);
+    const chain = id => { const path = itemPath(id); let top = -1; for (let i = path.length - 1; i >= 0; i--) if (c.items.includes(path[i])) { top = i; break; } if (top === path.length - 1) return null; const step = path[top + 1], cost = itemPrice(c, step); return cost === null ? null : { id: step, cost }; };
+    const legend = id => { const up = LEGEND[id]; if (!up || c.items.includes(up) || !c.items.includes(id)) return null; const cost = itemPrice(c, up); return cost === null ? null : { id: up, cost }; };
+    for (const [fn, i] of [[chain, 0], [chain, 1], [chain, 2], [legend, 0], [chain, 3], [legend, 1], [chain, 4], [legend, 2], [legend, 3], [legend, 4]]) { const n = rec[i] && fn(rec[i]); if (n) return n; }
     return null;
   }
 
@@ -754,12 +740,81 @@
       if (mode === 'fight' && rdy(c, 2) && d < c.kit[2].range - 40 && b.ratio >= .9 && losClear(s, c.x, c.y, t.x, t.y) && ultWorth(s, c, b, t)) { const p = lead(s, c, b, t, 1000); cast(c, 2, p.tx, p.ty); return true; }
       return false;
     },
+    voltaic(s, c, b, t, d, mode) {
+      if (!t) return false;
+      const A0 = c.kit[0], A2 = c.kit[2];
+      if (mode === 'retreat') { if (rdy(c, 0) && c.rootT <= 0) { const a = awayPoint(s, c, t, A0.range); cast(c, 0, a.x, a.y); return true; } return false; }
+      if (mode === 'fight' && rdy(c, 2) && d < A2.range - 40 && losClear(s, c.x, c.y, t.x, t.y) && (ultWorth(s, c, b, t) || t.stunT > 0)) { const p = lead(s, c, b, t, 1900, A2.delay); cast(c, 2, p.tx, p.ty); return true; }
+      if (mode === 'fight' && rdy(c, 1) && d < 280) { cast(c, 1, c.x, c.y); return true; }
+      if (rdy(c, 0) && d < A0.range + 20 && c.rootT <= 0 && losClear(s, c.x, c.y, t.x, t.y) && (mode === 'fight' || b.ratio >= 1)) { const n = norm(t.x - c.x, t.y - c.y); cast(c, 0, t.x + n.x * 60, t.y + n.y * 60); return true; }
+      return false;
+    },
+    tidecaller(s, c, b, t, d, mode) {
+      const A0 = c.kit[0], A1 = c.kit[1], A2 = c.kit[2];
+      if (rdy(c, 1)) { const a = threatenedAlly(s, c, b); if (a && dist(a, c) < A1.range && (b.sk.iq > .4 || s.rand() < .3)) { cast(c, 1, a.x, a.y); return true; } }
+      if (rdy(c, 2)) { let n = 0; for (const a of s.champs) if (a.alive && a.team === c.team && dist(a, c) < 420 && frac(a) < .6) n++; if ((n >= 1 && b.closest < 620) || (t && mode === 'fight' && ultWorth(s, c, b, t) && d < A2.range - 80)) { const x = t || c; cast(c, 2, x.x, x.y); return true; } }
+      if (rdy(c, 0)) { let ally = null, low = .85; for (const a of s.champs) if (a !== c && a.alive && a.team === c.team && dist(a, c) < A0.range - 20 && frac(a) < low && losClear(s, c.x, c.y, a.x, a.y)) { low = frac(a); ally = a; } if (ally) { const p = lead(s, c, b, ally, 1050); cast(c, 0, p.tx, p.ty); return true; } if (t && mode !== 'retreat' && d < A0.range - 20 && losClear(s, c.x, c.y, t.x, t.y)) { const p = lead(s, c, b, t, 1050); cast(c, 0, p.tx, p.ty); return true; } }
+      if (t && rdy(c, 1) && d < A1.range && losClear(s, c.x, c.y, t.x, t.y) && (mode === 'fight' || (mode === 'retreat' && d < 260))) { cast(c, 1, t.x, t.y); return true; }
+      return false;
+    },
+    paragon(s, c, b, t, d, mode) {
+      if (!t) return false;
+      const A0 = c.kit[0], A1 = c.kit[1], A2 = c.kit[2];
+      if (mode === 'retreat') { if (rdy(c, 0)) { const a = awayPoint(s, c, t, A0.range); cast(c, 0, a.x, a.y); return true; } return false; }
+      if (mode === 'fight' && rdy(c, 2) && d < A2.range - 60 && b.ratio >= .9 && (ultWorth(s, c, b, t) || t.stunT > 0)) { const p = lead(s, c, b, t, 0, 1.05); cast(c, 2, p.tx, p.ty); return true; }
+      if (mode === 'fight' && rdy(c, 0) && d > 150 && d < A0.range + 30) { const p = lead(s, c, b, t, 0, .4); cast(c, 0, p.tx, p.ty); return true; }
+      if (rdy(c, 1) && d < A1.range && losClear(s, c.x, c.y, t.x, t.y) && (mode === 'fight' || b.ratio >= 1)) { cast(c, 1, t.x, t.y); return true; }
+      return false;
+    },
+    mirage(s, c, b, t, d, mode) {
+      if (!t) return false;
+      const A0 = c.kit[0], A1 = c.kit[1], A2 = c.kit[2];
+      if (rdy(c, 1) && (mode === 'retreat' || d < 200)) { const a = awayPoint(s, c, t, A1.range); cast(c, 1, a.x, a.y); return true; }
+      if (mode === 'fight' && rdy(c, 2) && d < A2.range - 30 && losClear(s, c.x, c.y, t.x, t.y) && (ultWorth(s, c, b, t) || t.slowT > 0 || t.stunT > 0)) { cast(c, 2, t.x + t.vx * .3, t.y + t.vy * .3); return true; }
+      if (mode !== 'retreat' && rdy(c, 0) && d < A0.range - 20 && !lineBlocked(s, c, b, t.x, t.y, 34)) { const p = lead(s, c, b, t, 1500); cast(c, 0, p.tx, p.ty); return true; }
+      return false;
+    },
+    cinder(s, c, b, t, d, mode) {
+      if (!t) return false;
+      const A0 = c.kit[0], A1 = c.kit[1], A2 = c.kit[2];
+      if (mode === 'retreat') { if (rdy(c, 1) && d < 340) { cast(c, 1, c.x, c.y); return true; } return false; }
+      if (mode === 'fight' && rdy(c, 2) && d < A2.range + 60 && losClear(s, c.x, c.y, t.x, t.y)) { let near = 0; for (const e of b.foes) if (dist(e, t) < A2.r) near++; if (near >= 2 || ultWorth(s, c, b, t) || t.stunT > 0 || t.rootT > 0) { const p = lead(s, c, b, t, 0, A2.delay); cast(c, 2, p.tx, p.ty); return true; } }
+      if (rdy(c, 0) && d < A0.range - 30 && !lineBlocked(s, c, b, t.x, t.y, 40)) { const p = lead(s, c, b, t, 1150); cast(c, 0, p.tx, p.ty); return true; }
+      if (rdy(c, 1) && d < A1.range + 40 && losClear(s, c.x, c.y, t.x, t.y) && (mode === 'fight' || b.ratio >= 1)) { const p = lead(s, c, b, t, 0, .5); cast(c, 1, p.tx, p.ty); return true; }
+      return false;
+    },
+    ravager(s, c, b, t, d, mode) {
+      if (!t) return false;
+      const A0 = c.kit[0], A1 = c.kit[1];
+      if (mode === 'retreat') { if (rdy(c, 1)) { const a = awayPoint(s, c, t, A1.range); cast(c, 1, a.x, a.y); return true; } return false; }
+      if (mode === 'fight' && rdy(c, 2) && d < 320 && (b.ratio >= 1 || ultWorth(s, c, b, t))) { cast(c, 2, c.x, c.y); return true; }
+      if (mode === 'fight' && rdy(c, 1) && d > 150 && d < A1.range + 30) { cast(c, 1, t.x, t.y); return true; }
+      if (rdy(c, 0) && d < A0.range && losClear(s, c.x, c.y, t.x, t.y) && (mode === 'fight' || b.ratio >= 1)) { cast(c, 0, t.x, t.y); return true; }
+      return false;
+    },
+    cataclysm(s, c, b, t, d, mode) {
+      if (!t) return false;
+      const A0 = c.kit[0], A2 = c.kit[2];
+      if (rdy(c, 1) && b.closest < 260 && (mode === 'retreat' || mode === 'fight')) { cast(c, 1, c.x, c.y); return true; }
+      if (mode === 'retreat') return false;
+      if (mode === 'fight' && rdy(c, 2) && d < A2.range - 40 && b.ratio >= .9 && losClear(s, c.x, c.y, t.x, t.y)) { const n = norm(t.x - c.x, t.y - c.y); let line = 0; for (const e of b.foes) if (segDist(e.x, e.y, c.x, c.y, c.x + n.x * A2.range, c.y + n.y * A2.range) < 95) line++; if (line >= 2 || ultWorth(s, c, b, t) || t.stunT > 0) { const p = lead(s, c, b, t, 0, A2.delay); cast(c, 2, p.tx, p.ty); return true; } }
+      if (rdy(c, 0) && d < A0.range && losClear(s, c.x, c.y, t.x, t.y) && (mode === 'fight' || b.ratio >= 1)) { const p = lead(s, c, b, t, 0, A0.delay); cast(c, 0, p.tx, p.ty); return true; }
+      return false;
+    },
+    puppeteer(s, c, b, t, d, mode) {
+      if (!t) return false;
+      const A0 = c.kit[0], A1 = c.kit[1], A2 = c.kit[2];
+      if (rdy(c, 2) && d < A2.range + 20 && losClear(s, c.x, c.y, t.x, t.y) && (mode === 'retreat' ? d < 300 : mode === 'fight' && (ultWorth(s, c, b, t) || frac(t) < .55))) { cast(c, 2, t.x, t.y); return true; }
+      if (rdy(c, 0) && d < A0.range - 20 && !lineBlocked(s, c, b, t.x, t.y, 40) && (mode !== 'poke' || b.ratio >= 1)) { const p = lead(s, c, b, t, 1250); cast(c, 0, p.tx, p.ty); return true; }
+      if (rdy(c, 1) && d < A1.range + 180 && mode !== 'retreat') { const n = norm(t.x - c.x, t.y - c.y), l = Math.min(A1.range - 20, Math.max(60, d - 120)); cast(c, 1, c.x + n.x * l, c.y + n.y * l); return true; }
+      return false;
+    },
   };
   function useCombo(s, c, b, t, mode) {
     if (c.charge || c.chan || (s.t < b.castAt && !b.parry && !(c.recast[0] > 0 || c.recast[1] > 0))) return;
     if (COMBO[c.champ](s, c, b, t, t ? dist(c, t) : 1e9, mode)) b.castAt = s.t + b.sk.gap * (.7 + s.rand() * .6);
   }
-  const PVE = { vesper: [0], kade: [0], ione: [1, 0], solenne: [], sable: [0], gravel: [1], deadbolt: [1], duelist: [0], hex: [0], plague: [0], shiv: [0], ironjaw: [0, 1] };
+  const PVE = { vesper: [0], kade: [0], ione: [1, 0], solenne: [], sable: [0], gravel: [1], deadbolt: [1], duelist: [0], hex: [0], plague: [0], shiv: [0], ironjaw: [0, 1], voltaic: [0], tidecaller: [], paragon: [1], mirage: [0], cinder: [0, 1], ravager: [0], cataclysm: [0], puppeteer: [1] };
   function castPve(s, c, b, m, d) {
     if (c.charge || c.chan || s.t < b.castAt) return;
     for (const i of PVE[c.champ]) {
@@ -1051,7 +1106,7 @@
 
     if (homeD < 360) { b.lastHome = s.t; if (f > .92) b.low = false; }
     // Forge the moment it's affordable: anyone can press the button from anywhere.
-    const nb = nextBuy(s, c); if (nb && c.gold >= nb.cost) c.q.push({ t: 'buy', id: nb.id });
+    const nb = nextBuy(s, c), keep = s.t > 720 && sk.iq > .35 ? buybackCost(s, c) * (.5 + .5 * sk.macro) : 0; if (nb && c.gold >= nb.cost + keep) c.q.push({ t: 'buy', id: nb.id });
     botSpend(s, c, b, ai, nb);
     if (c.lvl >= 4 && c.evolved[0] < 0) c.q.push({ t: 'evolve', tier: 0, choice: botEvolve(c, 0) });
     if (c.lvl >= 8 && c.evolved[1] < 0) c.q.push({ t: 'evolve', tier: 1, choice: botEvolve(c, 1) });
@@ -1153,7 +1208,7 @@
 
     // Poke with whatever is free when standing somewhere safe.
     const safeSpot = !towerOver(s, c.team, c.x, c.y) && b.ratio >= .7 && f > .4;
-    if (t ? safeSpot && !(laning && s.t < b.tradeT) : c.champ === 'solenne') useCombo(s, c, b, t, 'poke');
+    if (t ? safeSpot && !(laning && s.t < b.tradeT) : c.champ === 'solenne' || c.champ === 'tidecaller') useCombo(s, c, b, t, 'poke');
   }
 
   // Build-aware evolve choice, tier 0 and tier 1. Bots can read their own build.
@@ -1170,40 +1225,45 @@
     apothecary: [1, 0], pestilence: [0, 1], bloodletter: [1, 1], ward: [0, 0],
     cutthroat: [1, 0], nightblade: [0, 1], butcher: [1, 1], venomous: [0, 0],
     brawler: [1, 1], wrecker: [0, 1], bouncer: [1, 0], fortress: [0, 0],
+    stormchaser: [0, 0], surge: [0, 1], conductor: [1, 1], thunderhead: [1, 1], wellspring: [0, 1], undertow: [1, 0], deluge: [0, 1], abyss: [1, 0],
+    skyknight: [0, 1], sunstriker: [1, 0], titanwing: [0, 0], aegisborn: [1, 1], twinshot: [0, 1], shade: [1, 0], kaleidoscope: [1, 1], hollow: [1, 0],
+    pyre: [0, 1], ashwalker: [1, 1], wildfire: [0, 0], firestorm: [0, 1], alpha: [1, 0], savage: [0, 0], packleader: [1, 0], hemorrhage: [0, 1],
+    bastille: [1, 1], artillery: [0, 0], wreckingcrew: [0, 0], moonquake: [1, 0], marionettist: [0, 1], troupe: [1, 0], maestro: [0, 1], ventriloquist: [1, 0],
   };
   const botEvolve = (c, tier) => { const v = BOT_EVOLVE[c.build]; return v ? v[tier] : 0; };
 
   // Consumables as reactions: heal in a fight, shrug off a disable, spare gold becomes a war elixir.
   function botConsumables(s, c, b, ai, t, d) {
     const iq = b.sk.iq, f = frac(c), gold = c.gold, buy = id => c.q.push({ t: 'buy', id });
-    if (iq > .35 && !(c.potT > 0) && f < .5 && gold >= 110 && (b.fighting || b.closest < 600 || s.t - (b.hurtAt || -9) < 2.5 || b.low) && dist(c, s.fountains[c.team]) > 700 && hash01(c.id, s.t | 0) < .35 + .6 * iq) { buy('potion'); return; }
+    if (iq > .35 && !(c.potT > 0) && f < .4 && s.t >= b.potAt && gold >= 220 && (b.potAt = s.t + 30 - 12 * iq, true) && (b.fighting || b.closest < 600 || s.t - (b.hurtAt || -9) < 2.5 || b.low) && dist(c, s.fountains[c.team]) > 700 && hash01(c.id, s.t | 0) < .35 + .6 * iq) { buy('potion'); return; }
     if (iq > .5 && (c.stunT > .5 || c.rootT > .5 || c.polyT > .4) && !(c.cleanseCd > 0) && gold >= 170 && b.closest < 700) { buy('cleanse'); return; }
     if (iq > .55 && !(c.elixT > 0) && !(c.tonicT > 0) && b.low && gold >= 120 && dist(c, s.fountains[c.team]) > 1300 && b.closest < 500) { buy('tonic'); return; }
   }
-  // When the items are done or gold piles up: elixir before fights, then reinforcements and the city.
+  // Gold beyond the next item: an elixir before an objective, reinforcements for a push, then the people bar.
   function botSpend(s, c, b, ai, nb) {
     if ((s.tick + c.id * 3) % 30 !== 0) return;
-    const late = s.t > 600, reserve = (late ? buybackCost(s, c) : 0) + (nb ? nb.cost : 0), spare = c.gold - reserve - 80;
-    if (spare < 100) return;
-    if (late && !(c.elixT > 0) && spare > 280 && (ai.hoard || ai.push !== null || b.fighting)) { c.q.push({ t: 'buy', id: 'elixir' }); return; }
-    if (s.t > 400 && spare > reinforceCost(s, c) + 120 && s.t >= s.reinforceAt[c.team]) {
-      const lane = ai.push !== null ? ai.push : ([0, 1].map(l => s.towers.filter(t => t.alive && t.team !== c.team && t.lane === l).length).reduce((a, x, i, arr) => x < arr[a] ? i : a, 0));
+    const late = s.t > 720, keep = late ? buybackCost(s, c) * (.5 + .5 * b.sk.macro) : 0, spare = c.gold - keep - (nb && nb.cost < 700 ? nb.cost : 0) - 60;
+    if (spare < 100 || hash01(c.id, s.t / 5 | 0) > .3 + .7 * b.sk.macro) return;
+    const fightDue = ai.hoard && ai.hoard.ids.includes(c.id) || ai.push !== null || b.fighting;
+    if (s.t > 480 && !(c.elixT > 0) && spare > 300 && fightDue) { c.q.push({ t: 'buy', id: 'elixir' }); return; }
+    if (s.t > 420 && spare > reinforceCost(s, c) + 60 && s.t >= s.reinforceAt[c.team] && (ai.push !== null || s.t > 660)) {
+      const left = [0, 1].map(l => s.towers.filter(t => t.alive && t.team !== c.team && t.lane === l).length), lane = ai.push !== null ? ai.push : (left[0] < left[1] ? 0 : left[1] < left[0] ? 1 : s.laneInfo[c.team][0].n > s.laneInfo[c.team][1].n ? 0 : 1);
       c.q.push({ t: 'reinforce', lane }); return;
     }
-    const noBonus = c.team ? s.hope > 30 : s.hope < 70;
-    if (s.t > 360 && noBonus && spare > fundCost(s, c.team) + 200 && !(c.fundCd > 0) && hash01(c.id, s.t / 6 | 0) < .5) { c.q.push({ t: 'fund' }); return; }
+    const noBonus = c.team ? s.hope > 34 : s.hope < 66;
+    if (s.t > 420 && noBonus && spare > fundCost(s, c.team) + 80 && !(c.fundCd > 0)) { c.q.push({ t: 'fund' }); return; }
     if (c.beacons === 0 && spare > 150 && (c.role === 'support' || c.role === 'jungle')) c.q.push({ t: 'buy', id: 'beaconkit' });
   }
   // Dead bots still shop and decide on buyback.
   function botDead(s, c, b) {
     if ((s.tick + c.id * 7) % 20 !== 0) return;
-    const nb = nextBuy(s, c); if (nb && c.gold >= nb.cost) c.q.push({ t: 'buy', id: nb.id });
-    if (s.practice || c.buybackCd > 0 || c.respawn < 12) return;
+    const nb = nextBuy(s, c), keep = s.t > 720 && b.sk.iq > .35 ? buybackCost(s, c) : 0; if (nb && c.gold >= nb.cost + keep) c.q.push({ t: 'buy', id: nb.id });
+    if (s.practice || c.buybackCd > 0 || c.respawn < 9) return;
     const cost = buybackCost(s, c); if (c.gold < cost) return;
     const core = s.towers.find(t => t.team === c.team && t.sub === 'core'), coreOpen = !core.alive ? false : towerOpen(s, core);
     let danger = 0; if (coreOpen) { for (const e of s.champs) if (e.team !== c.team && e.alive && dist(e, core) < 900) danger++; for (const m of s.minions) if (m.team !== c.team && m.alive && dist(m, core) < 500) danger += .35; }
     const late = s.t > 780, rich = c.gold > cost * 2.2;
-    if ((danger >= 1.5 && hash01(c.id, s.t / 5 | 0) < .35 + .6 * b.sk.macro) || (late && rich && hash01(c.id, s.t / 8 | 0) < .3 + .3 * b.sk.iq)) c.q.push({ t: 'buyback' });
+    if ((danger >= 1.5 && hash01(c.id, s.t / 5 | 0) < .35 + .6 * b.sk.macro) || (late && (rich || c.respawn > 18) && hash01(c.id, s.t / 8 | 0) < .25 + .35 * b.sk.iq)) c.q.push({ t: 'buyback' });
   }
 
   // Beacons, by role: supports and junglers light the map; laners watch their own brush.
@@ -1213,7 +1273,7 @@
     if (c.beacons <= keep && s.t < LATE_AT) return;
     const has = (x, y) => s.beacons.some(z => z.alive && z.team === c.team && Math.hypot(z.x - x, z.y - y) < 400);
     let best = null, bv = 0;
-    const consider = (x, y, v) => { const d = Math.hypot(x - c.x, y - c.y); if (d > 460 || has(x, y)) return; if (v / (1 + d / 900) > bv) { bv = v / (1 + d / 900); best = { x, y }; } };
+    const consider = (x, y, v) => { const d = Math.hypot(x - c.x, y - c.y); if (d > BEACON_RANGE + 30 || has(x, y)) return; if (v / (1 + d / 900) > bv) { bv = v / (1 + d / 900); best = { x, y }; } };
     for (const br of s.map.brush) consider(br.x, br.y, c.role === 'support' || c.role === 'jungle' ? 3 : (Math.abs(br.y - (b.lane ? H - 330 : 330)) < 500 ? 2 : .6));
     for (const B of s.bosses) if (!B.up && B.at - s.t < 40) { const n = norm(B.x - c.x, B.y - c.y); consider(B.x - n.x * 280, B.y - n.y * 280, B.kind === 'colossus' ? 4 : 2.5); }
     if (s.event && (s.event.phase === 'warn' || s.event.t > 8)) consider(s.event.x, s.event.y, 3);

@@ -29,7 +29,7 @@
 //     bans[0] are kits removed from the Heroes' roster, bans[1] from the Villains'.
 //   Net.ban(kit)                     vote for an ENEMY kit (Sim.ROSTER[1 - mySide]). Each team removes its most
 //                                    voted kit when the ban phase ends; ends early once everyone has voted.
-//   Net.pick({champ, role, build, tier, finish, trail, recall})  any subset; changeable until locked.
+//   Net.pick({champ, role, build, prof, tier, finish, trail, recall})  any subset; changeable until locked.
 //                                    Host rejects a banned kit or one a teammate holds ('draft' shows the truth).
 //   Net.lock()                       lock in. Phase ends when all online humans lock, or at the timer
 //                                    (unpicked humans get an available kit; phase becomes 'done').
@@ -357,6 +357,7 @@ const Net = (() => {
     if (o.build !== undefined && cur.champ && Sim.KITS[cur.champ].builds.some(b => b.id === o.build)) cur.build = o.build;
     if (o.tier !== undefined) cur.tier = Math.max(0, Math.min(5, o.tier | 0));
     for (const k of ['finish', 'trail', 'recall']) if (o[k] !== undefined) cur[k] = clean(o[k], 40);
+    if (o.prof !== undefined && cur.role && (Sim.PROFS[cur.role] || []).some(x => x.id === o.prof)) cur.prof = o.prof;
     pushDraft();
   }
   function draftLock(p) { const d = draft; if (!d || d.phase !== 'pick') return; const cur = d.picks[p.pid]; if (!cur || !cur.champ) return; cur.locked = true; pushDraft(); draftTick(); }
@@ -380,7 +381,7 @@ const Net = (() => {
     const teams = [0, 1].map(side => {
       const seats = players.filter(p => sideOf(p.team) === side).map(p => {
         const q = d.picks[p.pid] || {};
-        return { champ: q.champ, role: q.role, tier: q.tier || 0, human: true, remote: p.pid !== 0, pid: p.pid, name: p.name, build: q.build, finish: q.finish, trail: q.trail, recall: q.recall };
+        return { champ: q.champ, role: q.role, tier: q.tier || 0, human: true, remote: p.pid !== 0, pid: p.pid, name: p.name, build: q.build, prof: q.prof, finish: q.finish, trail: q.trail, recall: q.recall };
       });
       const used = new Set(seats.map(x => x.champ)), pool = kitsOf(side).filter(k => !used.has(k) && !d.bans[side].includes(k));
       for (let i = pool.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [pool[i], pool[j]] = [pool[j], pool[i]]; }
@@ -657,7 +658,7 @@ const Net = (() => {
   }
   const clampMv = v => Math.max(-1, Math.min(1, isFinite(v) ? v : 0));
   // Commands with no position, or only simple fields, travel as [10, t, fields...] and are whitelisted here.
-  const SIMPLE = { buyback: [], reinforce: ['lane'], fund: ['amount'], surrender: ['vote'], use: ['slot'] };
+  const SIMPLE = { buyback: [], reinforce: ['lane'], fund: ['amount'], surrender: ['vote'], use: ['slot'], pref: ['v'] };
   function hostBefore() {
     for (const p of players) {
       if (p.host || !p.link || p.seat < 0) continue;
@@ -683,7 +684,7 @@ const Net = (() => {
         else if (v === 7) c.q.push({ t: 'evolve', tier: sl, choice: m[2] | 0 });
         else if (v === 8 && ok(m[1], m[2])) c.q.push({ t: 'beacon', tx: c.x + m[1], ty: c.y + m[2] });
         else if (v === 9 && ok(m[2], m[3])) c.q.push({ t: 'ping', kind: String(m[1]), x: m[2], y: m[3] });
-        else if (v === 10 && SIMPLE[m[1]]) { const q = { t: m[1] }; SIMPLE[m[1]].forEach((k, i) => { const x = m[i + 2]; if (typeof x === 'number' && isFinite(x)) q[k] = x; else if (typeof x === 'boolean') q[k] = x; }); c.q.push(q); }
+        else if (v === 10 && SIMPLE[m[1]]) { const q = { t: m[1] }; SIMPLE[m[1]].forEach((k, i) => { const x = m[i + 2]; if (typeof x === 'number' && isFinite(x)) q[k] = x; else if (typeof x === 'boolean' || x === 'hp' || x === 'pct') q[k] = x; }); c.q.push(q); }
       }
       l.cmdq.length = 0;
     }

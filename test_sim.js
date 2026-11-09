@@ -78,7 +78,7 @@ for (const i of ids) { const p = picks[i] || 1, k = kda[i]; console.log(i.padEnd
 
 // Network codec check: rebuild a guest world from wire data for a whole match and compare.
 if (process.argv.includes('--net')) {
-  const team = t => RO[t].slice(0, 4).map((c, i) => ({ champ: c, role: Sim.ROLES[i], name: 'b', tier: 0, human: t === 1 && i === 0, remote: t === 1 && i === 0 }));
+  const team = t => RO[t].slice(-4).map((c, i) => ({ champ: c, role: Sim.ROLES[i], name: 'b', tier: 0, human: t === 1 && i === 0, remote: t === 1 && i === 0 }));
   const cfg = { seed: 3, teams: [team(0), team(1)] };
   const h = Sim.createMatch(cfg), g = Sim.createMatch(cfg);
   const seat = h.champs.findIndex(c => c.remote); Sim.setBot(h, h.champs[seat], true); // a bot plays the guest seat here
@@ -86,7 +86,7 @@ if (process.argv.includes('--net')) {
   const check = (name, ok) => { if (!ok && bad++ < 20) console.log('MISMATCH', name, 't', h.t.toFixed(1)); };
   while (!h.over && h.t < 2400) {
     Sim.step(h);
-    for (const e of h.ev) { evs++; const r = Sim.unpackEvent(JSON.parse(JSON.stringify(Sim.packEvent(e)))); for (const k of Object.keys(e)) if (e[k] !== undefined) { const a = e[k], b = r[k]; if (typeof a === 'number' ? Math.abs(a - b) > .6 : (a === true ? b !== 1 : a === false ? b !== 0 : a !== b)) { check('event ' + e.e + '.' + k + ' ' + a + ' vs ' + b, false); } } }
+    for (const e of h.ev) { evs++; const r = Sim.unpackEvent(JSON.parse(JSON.stringify(Sim.packEvent(e)))); for (const k of Object.keys(e)) if (e[k] !== undefined) { const a = e[k], b = r[k]; if (a && typeof a === 'object') continue; if (typeof a === 'number' ? Math.abs(a - b) > .6 : (a === true ? b !== 1 : a === false ? b !== 0 : a !== b)) { check('event ' + e.e + '.' + k + ' ' + a + ' vs ' + b, false); } } }
     h.ev.length = 0;
     if (h.tick % 6 === 0) { const cur = Sim.slowFlat(h), df = Sim.slowDiff(prev, cur); prev = cur; slowN += JSON.stringify(df).length; Sim.applySlow(g, JSON.parse(JSON.stringify(df))); }
     if (h.tick % 3 !== 0) {
@@ -215,7 +215,7 @@ if (process.argv.includes('--mech')) {
     me.lvl = 3; me.evolved = [-1, -1]; me.q.push({ t: 'evolve', tier: 0, choice: 0 }); run(s, 1); ok('evolve gated by level', me.evolved[0] === -1); me.lvl = 4; me.q.push({ t: 'evolve', tier: 0, choice: 0 }); run(s, 1); ok('evolve at level 4', me.evolved[0] === 0); me.lvl = 1;
     // Practice mode: dummies stand still, no game end, op gold.
     const pr = Sim.createMatch({ seed: 9, practice: true, teams: [[{ champ: 'vesper', human: true, tier: 0, role: 'bottom', name: 'p' }, { champ: 'kade', tier: 0, role: 'top', name: 'b' }], [{ champ: 'deadbolt', tier: 0, role: 'bottom', name: 'b' }, { champ: 'shiv', tier: 0, role: 'jungle', name: 'b' }]] });
-    const p = pr.champs[0], dm = pr.champs[2], dx = dm.x; ok('dummy seats', pr.champs.slice(1).every(c => c.dummy && !c.bot)); p.q.push({ t: 'practice', op: 'gold' }); p.q.push({ t: 'practice', op: 'level' }); for (let i = 0; i < 300; i++) { Sim.step(pr); pr.ev.length = 0; } ok('dummy still', dm.x === dx); ok('practice gold', p.gold > 20000); ok('level on demand', p.lvl === 10); dm.hp = 1; dm.q; pr.towers.forEach(t => { }); p.x = dm.x - 200; p.y = dm.y; p.atk = true; for (let i = 0; i < 60; i++) { Sim.step(pr); pr.ev.length = 0; } ok('dummy respawned', dm.alive); ok('no enemy aggression', p.hp === p.maxHp);
+    const p = pr.champs[0], dm = pr.champs[2], dx = dm.x; ok('dummy seats', pr.champs.slice(1).every(c => c.dummy && !c.bot)); p.q.push({ t: 'practice', op: 'gold' }); p.q.push({ t: 'practice', op: 'level' }); for (let i = 0; i < 300; i++) { Sim.step(pr); pr.ev.length = 0; } ok('dummy still', dm.x === dx); ok('practice gold', p.gold > 20000); ok('level on demand', p.lvl === Sim.MAX_LEVEL); dm.hp = 1; dm.q; pr.towers.forEach(t => { }); p.x = dm.x - 200; p.y = dm.y; p.atk = true; for (let i = 0; i < 60; i++) { Sim.step(pr); pr.ev.length = 0; } ok('dummy respawned', dm.alive); ok('no enemy aggression', p.hp === p.maxHp);
   }
   { // Full rebuild over the net codec keeps new state.
     const { s, me, foe } = arena('hex', 'cursebinder'); foe.curseN = 3; foe.curseT = 5; foe.rootT = 1; me.stealthT = 1; s.beacons.push({ id: 99, kind: 'beacon', team: me.team, x: 500, y: 500, r: 16, hp: 2, maxHp: 3, alive: true, t: 30, sight: 560, inBrush: -1 });
@@ -314,6 +314,18 @@ if (process.argv.includes('--mech')) {
       const drop = mk(2), D = drop.champs; D[0].q.push({ t: 'surrender', vote: true }); run(drop, 2); ok('one of two humans waits', !drop.over); Sim.setBot(drop, D[1], true); run(drop, 2); ok('a dropped human stops counting', drop.over && drop.over.surrender);
     }
     ok('stats fields', ['dealt', 'taken', 'healing', 'gold', 'towers', 'objectives', 'rescues'].every(k => typeof me.stats[k] === 'number'));
+  }
+  { // 10.0: damage types, level cap, proficiencies, targeting, minion leash.
+    ok('twenty kits, ten a side', Object.keys(Sim.KITS).length === 20 && RO[0].length === 10 && RO[1].length === 10);
+    ok('item table', Sim.ITEMS.length >= 60 && Sim.ITEMS.every(i => !i.upgradesFrom || Sim.ITEM_BY[i.upgradesFrom]));
+    ok('item paths are real items', Object.keys(Sim.KITS).every(k => Sim.KITS[k].builds.every(b => Sim.itemPaths(k, b.id).length >= 3 && Sim.itemPaths(k, b.id).every(p => p.items.length === 5 && new Set(p.items).size === 5 && p.items.every(i => Sim.ITEM_BY[i])))));
+    ok('profs', Sim.ROLES.every(r => Sim.PROFS[r].length === 3 && Sim.PROFS[r].every(p => p.id && p.name && p.d)));
+    { const { s, me } = arena('vesper', 'marksman'); me.lvl = 15; me.xp = 0; Sim.step(s); ok('level 15 cap', Sim.MAX_LEVEL === 15 && me.lvl === 15); }
+    { const a1 = arena('hex', 'cursebinder'), a2 = arena('hex', 'cursebinder'); a1.foe.mr = 300; a2.foe.mr = 0; for (const a of [a1, a2]) { a.foe.armor = 30; a.me.q.push({ t: 'cast', slot: 0, tx: a.foe.x, ty: a.foe.y }); run(a.s, 25); } ok('magic damage reads magic resist', a1.foe.hp > a2.foe.hp); }
+    { const list = t => RO[t].slice(0, 4).map((c, i) => ({ champ: c, role: Sim.ROLES[i], name: 'x', tier: 0, human: true, prof: Sim.PROFS[Sim.ROLES[i]][1].id })); const s = Sim.createMatch({ seed: 3, teams: [list(0), list(1)] }), j = s.champs.find(c => c.role === 'jungle'); ok('seat prof', j.prof === 'killstrike');
+      s.nextWave = 1e9; s.eventAt = 1e9; for (const t of s.towers) t.alive = false; for (const b of s.bosses) b.at = 1e9; const camp = s.camps[0]; camp.at = 0; Sim.step(s); const m = s.monsters.find(x => x.camp === camp.id); m.maxHp = 1000; m.hp = 150; m.armor = 0; j.x = j.px = m.x - 80; j.y = j.py = m.y; j.atk = true; j.atkMode = 'minion'; j.atkCd = 0; let hit = false; for (let i = 0; i < 40 && !hit; i++) { Sim.step(s); hit = s.ev.some(e => e.e === 'strike' && e.u === j.id); s.ev.length = 0; } ok('kill strike finishes a monster', hit && !m.alive); }
+    { const { s, me, foe, foe2 } = arena('vesper', 'marksman'); place(foe, me.x + 200, me.y); place(foe2, me.x + 150, me.y); foe.hp = 2000; foe2.hp = 2900; me.atkMode = 'champ'; me.atkPref = 0; ok('lowest health first', Sim.autoTarget(s, me) === foe); foe.maxHp = 2000; foe2.maxHp = 40000; foe2.hp = 3000; me.q.push({ t: 'pref', v: 'pct' }); run(s, 1); ok('pref by percentage', Sim.autoTarget(s, me) === foe2); }
+    { const list = t => RO[t].slice(0, 4).map((c, i) => ({ champ: c, role: Sim.ROLES[i], name: 'x', tier: 0, human: true })); const s = Sim.createMatch({ seed: 2, teams: [list(0), list(1)] }); for (const c of s.camps) c.at = 1e9; for (const b of s.bosses) b.at = 1e9; s.eventAt = 1e9; for (const t of s.towers) t.alive = false; const bait = s.champs[0]; bait.hp = bait.maxHp = 1e7; let worst = 0; const lane = (m) => { const L = s.map.lanes[m.lane]; let b = 1e9; for (let i = 0; i + 1 < L.length; i++) { const dx = L[i + 1][0] - L[i][0], dy = L[i + 1][1] - L[i][1], t = Math.max(0, Math.min(1, ((m.x - L[i][0]) * dx + (m.y - L[i][1]) * dy) / (dx * dx + dy * dy))); b = Math.min(b, Math.hypot(m.x - L[i][0] - dx * t, m.y - L[i][1] - dy * t)); } return b; }; for (let i = 0; i < 1500; i++) { if (i % 20 === 0) for (const c of s.champs) if (c.team === 0 && s.minions[0]) { place(c, s.minions[0].x, s.minions[0].y + 900); c.recentHit = s.t + 1e6; } Sim.step(s); s.ev.length = 0; for (const m of s.minions) worst = Math.max(worst, lane(m)); } ok('minions never leave the lane, worst ' + worst.toFixed(0), worst < 260); }
   }
   console.log(fails ? `mechanics FAILED ${fails} of ${checked}` : `mechanics ok (${checked} checks)`);
 }

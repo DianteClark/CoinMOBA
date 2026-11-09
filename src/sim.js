@@ -23,6 +23,14 @@
 //   feed gains bounty; fund{u,team,a}; reinforce{u,team,lane}; buyback{u}; surrender{team,phase,yes,no,need} (phase open|pass|fail); consume{u,id}; boon{team,kind,on}; civ gains n (allies inside).
 // Exports for UI: Sim.buybackCost(s,c), Sim.reinforceCost(s,c), Sim.fundCost(s,team), Sim.sellValue(id), Sim.CONSUMABLES (id list), Sim.BOSS_INFO[kind] = {name,d,boon}, Sim.EVENT_INFO[kind] = {name,d,boon}, Sim.BOON_INFO[kind] = {name,d}, Sim.ITEM_SLOTS = 5, Sim.SURRENDER_AT = 600.
 // Items: tier 1..3 as before, tier 4 is legendary (it.legendary = true); it.consumable = true for consumables (no slot, no sell).
+// 10.0 additions (names final):
+//   Sim.MAX_LEVEL = 15. Sim.PROFS[role] = [{id,name,d}], three per role; seats take seat.prof; c.prof on champions. Sim.ROSTER is 10 per side.
+//   Items: Sim.ITEMS has 85 entries; fields ad, ap, armor, mr, pen, mpen, vamp, mon; tags are categories for the shop (attack marksman assassin bruiser magic ability tank resist support mobility jungle sustain consumable). Sim.itemPaths(champ, build) = [{name, items}]; Sim.recommended(champ, build, path = 0).
+//   Damage: physical versus armor, magic versus c.mr. Kit field dtype 'phys'|'magic', arch; each ability a.dtype. c.mr on champions.
+//   Targeting: command {t:'pref',v:'hp'|'pct'} sets c.targetPref (seat.targetPref too). Sim.quickTarget(s, c, reach) = the enemy champion a tap should fire at (lowest health in reach), else null. Sim.autoTarget follows players, then the surroundings.
+//   New fx: arcdash overload thunder riptide bubble tsunami skyward solarfist meteordrop splitshot phantom mirrors firebolt scorch inferno ignite maul pounce frenzy bombard entrench earthbreak thread puppet dance.
+//   New zone kinds: tidewave (moves; r, dx, dy), mirrors (x,y,r), puppet (x,y). Existing kinds carry new fx: fissure 'thunder'|'earthbreak', miasma 'scorch'|'entrench'.
+//   New event: strike{u,x,y} (Kill Strike lands). c.pstack carries passive stacks for Mirage, Tidecaller, Paragon and Cataclysm; c.pready for Voltaic and Ravager.
 // ==== end NET STATE ====
 const Sim = (() => {
   const SCALE = 1.2, W = 5184, H = 3072, TICK = 30, DT = 1 / TICK;
@@ -51,16 +59,21 @@ const Sim = (() => {
   //   main street        y 1070-1490 (420 wide)   river corridor x 1950-2370 (420 wide)
   // Entrances into each jungle half: the diagonal lane mouth, the north gap at x 1500-1760 (from the lane),
   // the two south gaps at x 870-1090 and 1320-1620 (from main street), and the river corridor.
-  const LANE_TOP = [[340, 1280], [470, 880], [720, 600], [1120, 370], [1640, 330], [2160, 330], [2680, 330], [3200, 370], [3600, 600], [3850, 880], [3980, 1280]].map(p => p.map(S));
+  // 10.0: each lane has a chicane: it climbs to the outer wall around the first towers, then dips to a contested bridge at the river.
+  const LANE_TOP = [[340, 1280], [470, 880], [720, 600], [1100, 365], [1500, 270], [1860, 330], [2160, 405], [2460, 330], [2820, 270], [3220, 365], [3600, 600], [3850, 880], [3980, 1280]].map(p => p.map(S));
   const RIVER = [[2240, -80], [2160, 330], [2120, 800], [2160, 1280], [2200, 1760], [2160, 2230], [2080, 2640]].map(p => p.map(S));
   const QUAD_CLIFFS = [
-    [1130, 540, 370, 90], [1760, 540, 190, 90],   // north side of the jungle: lane wall, with a gank gap between
-    [1090, 980, 230, 90], [1620, 980, 320, 90],   // south side of the jungle, leaving gaps to main street
+    // North rim of the jungle: three segments, two gank gaps onto the lane.
+    [1040, 540, 300, 90], [1560, 540, 210, 90],
+    // Inner pillars: they pocket the camps and make two routes through each jungle half.
+    [1340, 700, 90, 170], [1810, 730, 90, 180],
+    // South rim: gaps to main street near the base, in the middle and by the river.
+    [1000, 980, 250, 90], [1470, 980, 190, 90], [1880, 980, 90, 90],
     [780, 880, 90, 230],                          // base rampart, framing the centre gate
-    [1430, 1240, 80, 80],                         // main street cover, on the axis
+    [1320, 1195, 90, 90],                         // main street cover
   ].map(r => r.map(S));
   const QUAD_FOREST = [[0, 0, 440, 470], [0, 470, 210, 260]].map(r => r.map(S));
-  const QUAD_BRUSH = [[1300, 465, 75], [1630, 600, 105], [2010, 450, 70], [1490, 1130, 90]].map(r => r.map(S));
+  const QUAD_BRUSH = [[1450, 590, 95], [1860, 610, 80], [1195, 455, 70], [1570, 1150, 90], [1360, 1040, 75]].map(r => r.map(S));
   const FOUNTAIN_HEAL_R = 432, FOUNTAIN_BURN_R = 408;
   const four = fn => [[0, 0], [1, 0], [0, 1], [1, 1]].forEach(([mx, my]) => fn(mx, my));
   const WALLS = (() => {
@@ -76,7 +89,7 @@ const Sim = (() => {
   const ARENAS = [
     { kind: 'colossus', x: W / 2, y: H / 2, r: 440 },
     { kind: 'warlord', x: W / 2, y: 960, r: 260 }, { kind: 'foreman', x: W / 2, y: H - 960, r: 260 },
-    { kind: 'sentinel', x: 1500, y: H / 2, r: 240, side: 0 }, { kind: 'sentinel', x: W - 1500, y: H / 2, r: 240, side: 1 },
+    { kind: 'sentinel', x: 1300, y: H / 2, r: 240, side: 0 }, { kind: 'sentinel', x: W - 1300, y: H / 2, r: 240, side: 1 },
   ];
   const EVENT_SPOTS = [[1900, H / 2], [W - 1900, H / 2], [W / 2, 700], [W / 2, H - 700]];
   const CONVOY_PATH = [[W / 2 + 60, 300], [W / 2 + 60, 900], [W / 2 + 60, H / 2], [W / 2 + 60, H - 900], [W / 2 + 60, H - 300]];
@@ -151,7 +164,9 @@ const Sim = (() => {
   }
 
   // ---------- champion kits ----------
-  const pow = c => (1 + .09 * (c.lvl - 1)) * (1 + c.st.dmg + c.st.ap) * (c.buffT > 0 ? 1.2 : 1) * (c.elixT > 0 ? 1.15 : 1) * (c.dropT > 0 ? 1.1 : 1) * ((c.buildDef && c.buildDef.pw) || 1);
+  const MAX_LEVEL = 15, LVL_G = .66; // a level is worth a third less than before, so 15 levels stay in the old power band
+  const isMag = c => (curAbil && MAG_ABIL[curAbil] !== undefined) ? MAG_ABIL[curAbil] : KITS[c.champ].dtype === 'magic';
+  const pow = c => (1 + .09 * LVL_G * (c.lvl - 1)) * (1 + c.st.dmg + (isMag(c) ? c.st.ap : c.st.ad)) * (c.buffT > 0 ? 1.2 : 1) * (c.elixT > 0 ? 1.15 : 1) * (c.dropT > 0 ? 1.1 : 1) * ((c.buildDef && c.buildDef.pw) || 1);
   // Which ability a nested projectile, zone, dash or damage over time belongs to, for the death recap.
   let curAbil = null;
 
@@ -180,14 +195,16 @@ const Sim = (() => {
       vesper: { name: 'Longshot', title: 'The watchful marksman' }, kade: { name: 'Captain Riposte', title: 'Master of the counter' },
       ione: { name: 'Starling', title: 'Caller of falling stars' }, solenne: { name: 'Dawnbringer', title: 'Healer of the first light' },
       sable: { name: 'Nightfall', title: 'Quiet hand of justice' }, gravel: { name: 'Bulwark', title: 'The wall that walks' },
+      voltaic: { name: 'Voltaic', title: 'First at every scene' }, tidecaller: { name: 'Tidecaller', title: 'The harbour keeps her promises' }, paragon: { name: 'Paragon', title: 'The sky is not the limit' }, mirage: { name: 'Mirage', title: 'Three of her, none of her' },
     },
     villain: {
       deadbolt: { name: 'Deadbolt', title: 'Locks on and waits' }, duelist: { name: 'The Duelist', title: 'Never dropped a grudge' },
       hex: { name: 'Madame Hex', title: 'Curses by appointment' }, plague: { name: 'The Plague Doctor', title: 'Prescribes only trouble' },
       shiv: { name: 'Shiv', title: 'Gone before you look' }, ironjaw: { name: 'Ironjaw', title: 'Bites through bank vaults' },
+      cinder: { name: 'Cinder', title: 'Burns her bridges, and yours' }, ravager: { name: 'Ravager', title: 'Something got out of the zoo' }, cataclysm: { name: 'Cataclysm', title: 'The end of the block' }, puppeteer: { name: 'The Puppeteer', title: 'Pulls every string in town' },
     },
   };
-  const ROSTER = [['vesper', 'kade', 'ione', 'solenne', 'sable', 'gravel'], ['deadbolt', 'duelist', 'hex', 'plague', 'shiv', 'ironjaw']];
+  const ROSTER = [['vesper', 'kade', 'ione', 'solenne', 'sable', 'gravel', 'voltaic', 'tidecaller', 'paragon', 'mirage'], ['deadbolt', 'duelist', 'hex', 'plague', 'shiv', 'ironjaw', 'cinder', 'ravager', 'cataclysm', 'puppeteer']];
   const charOf = (team, kit) => CHARS.hero[kit] || CHARS.villain[kit] || CHARS[team ? 'villain' : 'hero'][ROSTER[team ? 1 : 0][0]];
   // Every tower must out-range every basic attack by 70, so nothing can plink a tower from outside its reach.
   const TOWER_RANGE = 430, CORE_RANGE = 470, MAX_ATTACK_RANGE = TOWER_RANGE - 70;
@@ -200,7 +217,7 @@ const Sim = (() => {
   const poly = (s, t, d) => { if (t.kind === 'tower' || t.boss) return; stun(s, t, d); t.polyT = Math.max(t.polyT || 0, d); s.ev.push({ e: 'poly', u: t.id }); };
   const poison = (s, c, t, dps, d) => { if (t.kind === 'tower') return; t.poisonT = Math.max(t.poisonT || 0, d); t.poisonDps = Math.max(t.poisonT > 0 ? t.poisonDps || 0 : 0, dps); t.poisonBy = c; t.poisonAbil = curAbil; };
   const bleed = (s, c, t, dps, d) => { if (t.kind === 'tower') return; t.bleedDps = t.bleedT > 0 ? Math.max(t.bleedDps, dps) : dps; t.bleedT = Math.max(t.bleedT || 0, d); t.bleedBy = c; t.bleedAbil = curAbil; };
-  const hpow = c => pow(c) * (1 + c.st.healPow);
+  const hpow = c => pow(c) * (1 + c.st.healPow) * (c.prof === 'guardian' ? 1.2 : 1);
   const curseCap = c => c.f && c.f.cursebinder ? 5 : 3;
   const curse = (s, c, t, n) => { t.curseN = Math.min(curseCap(c), (t.curseT > 0 ? t.curseN || 0 : 0) + n); t.curseT = c.f.cursebinder ? 9 : 6; t.curseBy = c; s.ev.push({ e: 'curse', u: t.id, n: t.curseN }); };
   const stealth = (s, c, d) => { c.stealthT = Math.max(c.stealthT || 0, d); c.revealT = 0; s.ev.push({ e: 'stealth', u: c.id, on: true }); };
@@ -215,6 +232,13 @@ const Sim = (() => {
   const cone = (s, c, a, reach, dot, fn) => { let n = 0; eachEnemy(s, c, c.x, c.y, reach, t => { const v = norm(t.x - c.x, t.y - c.y); if (v.x * a.dx + v.y * a.dy >= dot && hasLOS(c.x, c.y, t.x, t.y)) { fn(t); n += t.kind === 'champ' ? 1 : 0; } }); return n; };
   // Faces the nearest visible enemy champion in reach, for tap-to-fire abilities on a phone.
   const autoFace = (s, c, reach) => { const t = nearChamp(s, c, c.x, c.y, reach); if (t && hasLOS(c.x, c.y, t.x, t.y)) { const n = norm(t.x - c.x, t.y - c.y); c.fx = n.x; c.fy = n.y; return { dx: n.x, dy: n.y, t }; } return { dx: c.fx || 1, dy: c.fy || 0, t: null }; };
+
+  // ---------- 10.0 kit helpers ----------
+  function arcBolt(s, c, from, dmg, n, name) { const list = enemiesIn(s, c, from.x, from.y, 260, true).filter(e => e !== from).sort((a, b) => (b.kind === 'champ') - (a.kind === 'champ')).slice(0, n); const was = curAbil; curAbil = name; for (const e of list) { hurt(s, c, e, dmg, { skill: 1 }); s.ev.push({ e: 'phit', x: e.x, y: e.y, fx: 'thunder' }); } curAbil = was; }
+  function tideTick(s, c) { c.tideN = (c.tideN || 0) + 1; c.pstack = c.tideN % 3; if (c.tideN % 3) return; s.ev.push({ e: 'boom', x: c.x, y: c.y, r: 180, fx: 'riptide' }); for (const a of alliesIn(s, c.team, c.x, c.y, c.f.wellspring ? 420 : 300)) heal(s, c, a, a.maxHp * .05); }
+  function skyLand(s, c, r, dmg, slowA, stunT, fx) { s.ev.push({ e: 'boom', x: c.x, y: c.y, r, fx }); let hit = false; eachEnemy(s, c, c.x, c.y, r, t => { hurt(s, c, t, dmg, { skill: 1 }); if (t.kind === 'champ') { hit = true; if (stunT) stun(s, t, stunT); else if (slowA) slow(t, slowA, 1.2); } }); if (hit) c.stats.skillHits++; c.altN = 3; if (c.f.freeflight) heal(s, c, c, c.maxHp * .1); }
+  function kindle(s, c, t, n) { if (t.kind === 'tower') return; const had = t.kindleT > 0 ? t.kindleN || 0 : 0, v = had + n; t.kindleT = 5; if (v < 3) { t.kindleN = v; return; } t.kindleN = 0; hurt(s, c, t, 62 * pow(c) * (c.f.pyre ? 1.25 : 1), { skill: 1, crit: 1 }); s.ev.push({ e: 'boom', x: t.x, y: t.y, r: 80, fx: 'ignite' }); if (t.alive) bleed(s, c, t, 26 * pow(c) * (c.f.pyre ? 1.4 : 1), 2.5); if (c.f.wildfire) for (const o of enemiesIn(s, c, t.x, t.y, 220, true)) if (o !== t) kindle(s, c, o, 1); }
+  function string(s, c, t) { t.stringT = 3; t.stringK = c.f.cutstrings ? 1.12 : 1.08; t.stringBy = c.team; }
 
   const KITS = {
     // ---------- Heroes ----------
@@ -553,7 +577,7 @@ const Sim = (() => {
       sight: 850, hp: 520, hpG: 76, dmg: 46, dmgG: 5, armor: 20, armG: 3.5, range: 300, as: .85, ms: 310, pref: 270, support: true, fit: { top: 2, jungle: 0, bottom: 1, support: 3 },
       passive: { name: 'Vile Recovery', d: 'Poisoned enemies nearby slowly heal you.' },
       builds: [
-        { id: 'apothecary', name: 'Apothecary', tag: 'Support', d: 'Leech feeds allies for much more and comes back faster. Weak poison.', mods: { 1: { cd: 7, heal: .9, d: 'Tether an enemy, draining them and feeding your lowest ally for much more.' }, 0: { dps_add: -8 } } },
+        { id: 'apothecary', name: 'Apothecary', tag: 'Support', d: 'Leech feeds allies for much more and comes back faster. Weak poison.', mods: { 1: { cd: 7, heal: 1.15, d: 'Tether an enemy, draining them and feeding your lowest ally for much more.' }, 0: { dps_add: -8 } } },
         { id: 'pestilence', name: 'Pestilence', tag: 'Damage over time', d: 'Miasma is wider, longer and far deadlier.', mods: { 0: { r_add: 35, dur: 7.5, dps_add: 9 }, 1: { heal: .3 } } },
         { id: 'bloodletter', name: 'Bloodletter', tag: 'Bruiser', d: 'Leech feeds only you, drains hard, and your attacks land sturdily. A top laner who will not die.', stats: { hp: 1.15, dmg: 1.1 }, mods: { 1: { dps_add: 24, heal: .8, d: 'Tether an enemy and drain them. Feeds only you.' } } },
         { id: 'ward', name: 'The Ward', tag: 'Zone', d: 'Quarantine comes up far sooner and slows harder.', mods: { 2: { cd: 32, slowA: .42, r_add: 30 } } },
@@ -658,16 +682,261 @@ const Sim = (() => {
       onDamaged(s, c, a) { c.rage = Math.min(100, (c.rage || 0) + a / c.maxHp * 220); c.rageAt = s.t; },
       tick(s, c) { if (c.rage > 0 && s.t - (c.rageAt || 0) > 5) c.rage = Math.max(0, c.rage - 8 * DT); c.pstack = Math.round((c.rage || 0) / 20); if (c.f.fortress && c.rage >= 20 && s.tick % 30 === 0) { shield(s, c, c.maxHp * .03 * c.rage / 20, 2.5); c.rage -= 8; } if (c.f.bloodlust) c.asBonus = .12 * (c.rage || 0) / 100; },
     },
+
+    // ---------- 10.0 Heroes ----------
+    voltaic: {
+      name: 'Voltaic', role: 'Lightning speedster', blurb: 'Run fast, hit first, arrive as weather.', dtype: 'phys', arch: 'assassin',
+      sight: 760, hp: 520, hpG: 76, dmg: 62, dmgG: 8, armor: 18, armG: 3, range: 130, as: 1.08, ms: 345, pref: 98, melee: true, fit: { top: 1, jungle: 3, bottom: 0, support: 0 },
+      passive: { name: 'Static Charge', d: 'Moving builds charge. At full charge your next basic attack arcs lightning into two nearby enemies.' },
+      builds: [
+        { id: 'stormchaser', name: 'Stormchaser', tag: 'Jungle', d: 'Arc Dash tears through monsters and charges you faster off them.', mods: { 0: { d: 'Dash through a line. Far stronger against monsters.' } } },
+        { id: 'surge', name: 'Surge', tag: 'Duration', d: 'Overload lasts much longer and comes back sooner.', mods: { 1: { cd: 10, dur: 4.6 } } },
+        { id: 'conductor', name: 'Conductor', tag: 'Chains', d: 'Charge fills twice as fast and arcs jump to four enemies. Lighter dash.', mods: { 0: { dmg_add: -16 } } },
+        { id: 'thunderhead', name: 'Thunderhead', tag: 'Engage', d: 'Ride the Lightning comes up far more often, with a lighter stun.', mods: { 2: { cd: 30, stun: .55 } } },
+      ],
+      evolves: [
+        [{ id: 'quicksilver', name: 'Quicksilver', d: 'Arc Dash cooldown 1.2 shorter.', mods: { 0: { cd_add: -1.2 } } }, { id: 'groundfault', name: 'Ground Fault', d: 'Arc Dash slows champions it hits by 30%.' }],
+        [{ id: 'skybreak', name: 'Skybreak', d: 'The Ride the Lightning trail is 40 wider.', mods: { 2: { w_add: 40 } } }, { id: 'afterimage', name: 'Afterimage', d: 'Ride the Lightning fully charges Static Charge.' }],
+      ],
+      kit: [
+        { name: 'Arc Dash', d: 'Dash through a line of enemies. Hitting a champion adds charge.', fx: 'arcdash', cd: 6.5, range: 270, shape: 'dash', w: 80, pd: [270, 1500], dmg: 66,
+          cast(s, c, a, A) { const car = {}; dashDir(c, a.dx, a.dy, A.range, 1500, { onHit(s, c, t) { hurt(s, c, t, A.dmg * pow(c) * (c.f.stormchaser && t.kind === 'monster' ? 1.7 : 1), { skill: 1 }); if (t.kind === 'champ') { skillHit(c, car); c.volt = Math.min(100, (c.volt || 0) + 35); if (c.f.groundfault) slow(t, .3, 1.2); } else if (c.f.stormchaser) c.volt = Math.min(100, (c.volt || 0) + 20); } }); },
+        },
+        { name: 'Overload', d: 'Burn hot: faster attacks and speed, and every basic attack arcs.', fx: 'overload', cd: 13, range: 0, shape: 'self', instant: true, dur: 3,
+          cast(s, c, a, A) { c.overT = A.dur; haste(c, .22, A.dur); },
+        },
+        { name: 'Ride the Lightning', d: 'Become a bolt along a line. The trail detonates a moment later and stuns.', fx: 'thunder', cd: 46, range: 520, shape: 'line', w: 120, delay: .55, dmg: 170, stun: .95,
+          cast(s, c, a, A) {
+            const len = Math.max(0, rayWall(c.x, c.y, a.dx, a.dy, A.range + c.r) - c.r), x0 = c.x, y0 = c.y; dashDir(c, a.dx, a.dy, A.range, 1900, { unstop: true }); if (c.f.afterimage) c.volt = 100;
+            const z = field(s, c, 'fissure', lineZone({ r: A.w / 2, dur: A.delay, fx: 'thunder' }, x0, y0, x0 + a.dx * len, y0 + a.dy * len));
+            z.fn = (s, z) => { s.ev.push({ e: 'boom', x: z.x, y: z.y, r: z.r, fx: 'thunder', x2: z.x2, y2: z.y2 }); let hit = false; const test = t => { if (t.alive && !t.air && t.team !== c.team && segDist(t.x, t.y, z.x1, z.y1, z.x2, z.y2) < A.w / 2 + t.r) { hurt(s, c, t, A.dmg * pow(c), { skill: 1 }); if (t.alive) stun(s, t, A.stun); if (t.kind === 'champ') hit = true; } }; s.champs.forEach(test); s.minions.forEach(test); s.monsters.forEach(test); if (hit) c.stats.skillHits++; };
+          },
+        },
+      ],
+      tick(s, c) { const v = Math.hypot(c.vx || 0, c.vy || 0); if (v > 40) c.volt = Math.min(100, (c.volt || 0) + (c.f.conductor ? .36 : .18) * v * DT * .1 * 3); c.pready = (c.volt || 0) >= 100 ? 1 : 0; if (c.overT > 0) c.overT -= DT; c.asBonus = c.overT > 0 ? .45 : 0; },
+      onBasic(s, c, t, o) { if (c.pready || c.overT > 0) { if (c.pready) c.volt = 0; arcBolt(s, c, t, 44 * pow(c), c.f.conductor ? 4 : 2, 'Static Charge'); o.crit = true; } },
+    },
+    tidecaller: {
+      name: 'Tidecaller', role: 'Water controller', blurb: 'The tide does not ask.', dtype: 'magic', arch: 'support',
+      sight: 850, hp: 530, hpG: 76, dmg: 46, dmgG: 5, armor: 20, armG: 3.5, range: 300, as: .85, ms: 310, pref: 270, support: true, fit: { top: 0, jungle: 0, bottom: 1, support: 3 },
+      passive: { name: 'High Tide', d: 'Every third ability you cast restores 5% health to allies around you.' },
+      builds: [
+        { id: 'wellspring', name: 'Wellspring', tag: 'Healer', d: 'Riptide heals far more, High Tide reaches farther. Softer pushes.', mods: { 0: { heal_add: 45, push: 50 } } },
+        { id: 'undertow', name: 'Undertow', tag: 'Displace', d: 'Riptide drags enemies toward you instead of away and hits harder.', mods: { 0: { dmg_add: 22, heal_add: -30, d: 'A wave that drags enemies toward you and heals allies.' } } },
+        { id: 'deluge', name: 'Deluge', tag: 'Team fight', d: 'Tsunami comes up sooner and is wider.', mods: { 2: { cd: 34, w_add: 60 } } },
+        { id: 'abyss', name: 'Abyss', tag: 'Control', d: 'Bubble holds enemies longer but shields allies less.', mods: { 1: { stunT: 1.45, shield_add: -50, cd_add: 1.5 } } },
+      ],
+      evolves: [
+        [{ id: 'swiftcurrent', name: 'Swift Current', d: 'Riptide cooldown 1 shorter.', mods: { 0: { cd_add: -1 } } }, { id: 'deepbubble', name: 'Deep Bubble', d: 'Bubble reaches 75 farther.', mods: { 1: { range_add: 75 } } }],
+        [{ id: 'rogue', name: 'Rogue Wave', d: 'Tsunami stuns enemies for 0.6 as it strikes them.' }, { id: 'stillwater', name: 'Still Water', d: 'Tsunami heals allies twice as much and hastens them.' }],
+      ],
+      kit: [
+        { name: 'Riptide', d: 'A wave that pushes enemies away and heals every ally it passes.', fx: 'riptide', cd: 6, range: 480, shape: 'line', w: 66, heal: 92, dmg: 70, push: 110,
+          cast(s, c, a, A) { tideTick(s, c); const car = {}; fire(s, c, a, { speed: 1050, range: A.range, w: A.w, fx: 'riptide', pierce: true, filter: 'allchamp', hit(s, c, t, p) {
+            if (t.team === c.team) { heal(s, c, t, A.heal * pow(c)); skillHit(c, car); return; }
+            hurt(s, c, t, A.dmg * pow(c), { skill: 1 }); skillHit(c, car); if (t.alive) { slow(t, .3, 1.2); const dir = c.f.undertow ? -1 : 1, l = Math.min(A.push, c.f.undertow ? Math.max(0, dist(c, t) - 90) : A.push); dashDir(t, a.dx * dir, a.dy * dir, l, 900, { forced: true }); }
+          } }); },
+        },
+        { name: 'Bubble', d: 'Encase a champion: an ally is shielded and cleansed, an enemy is held.', fx: 'bubble', cd: 12, range: 405, shape: 'circle', r: 100, target: true, shield: 150, stunT: 1,
+          cast(s, c, a, A) {
+            let t = null, bd = 180; for (const e of s.champs) { if (!e.alive || e.air || (e !== c && e.team !== c.team && !canSee(s, c.team, e))) continue; const d = Math.hypot(e.x - a.tx, e.y - a.ty); if (d < bd) { bd = d; t = e; } }
+            if (!t || dist(c, t) > A.range + 45 || !hasLOS(c.x, c.y, t.x, t.y)) return false; tideTick(s, c); c.stats.skillHits++;
+            s.ev.push({ e: 'boom', x: t.x, y: t.y, r: 70, fx: 'bubble' });
+            if (t.team === c.team) { shield(s, t, A.shield * hpow(c), 3); t.stunT = t.rootT = t.slowT = 0; } else { stun(s, t, A.stunT); t.revealT = Math.max(t.revealT || 0, A.stunT); }
+          },
+        },
+        { name: 'Tsunami', d: 'A great wave rolls forward, sweeping enemies back and lifting allies.', fx: 'tsunami', cd: 52, range: 700, shape: 'line', w: 280, dmg: 150, heal: 150,
+          cast(s, c, a, A) { tideTick(s, c);
+            const z = field(s, c, 'tidewave', { x: c.x, y: c.y, r: A.w / 2, dur: 1.35, fx: 'tsunami', dx: a.dx, dy: a.dy, hits: {}, stop: rayWall(c.x, c.y, a.dx, a.dy, A.range) / 1.35 });
+            z.step = (s, z) => { z.x += z.dx * z.stop * DT; z.y += z.dy * z.stop * DT; for (const t of s.champs) { if (!t.alive || t.air || z.hits[t.id] || Math.hypot(t.x - z.x, t.y - z.y) > z.r + t.r) continue; z.hits[t.id] = 1;
+              if (t.team === c.team) { heal(s, c, t, A.heal * pow(c) * (c.f.stillwater ? 2 : 1)); if (c.f.stillwater) haste(t, .25, 2.5); }
+              else { hurt(s, c, t, A.dmg * pow(c), { skill: 1 }); if (t.alive) { slow(t, .35, 1.5); dashDir(t, z.dx, z.dy, 170, 900, { forced: true }); if (c.f.rogue) stun(s, t, .6); } if (!z.counted) { z.counted = true; c.stats.skillHits++; } } } };
+          },
+        },
+      ],
+    },
+    paragon: {
+      name: 'Paragon', role: 'Sky bruiser', blurb: 'Comes down harder than he goes up.', dtype: 'phys', arch: 'bruiser',
+      sight: 740, hp: 630, hpG: 96, dmg: 63, dmgG: 8, armor: 27, armG: 4, range: 145, as: .92, ms: 320, pref: 108, melee: true, fit: { top: 3, jungle: 2, bottom: 0, support: 1 },
+      passive: { name: 'Altitude', d: 'Landing from any leap makes your next three basic attacks hit 25% harder.' },
+      builds: [
+        { id: 'skyknight', name: 'Skyknight', tag: 'Mobile', d: 'Skyward comes back fast and lands lighter.', mods: { 0: { cd: 6.2, dmg_add: -18 } } },
+        { id: 'sunstriker', name: 'Sunstriker', tag: 'Damage', d: 'Solar Fist hits much harder and reaches farther, but shields less.', mods: { 1: { dmg_add: 34, range_add: 35, shield: .05 } } },
+        { id: 'titanwing', name: 'Titanwing', tag: 'Global', d: 'Meteor Drop comes up far more often, with a smaller impact.', mods: { 2: { cd: 34, r_add: -40, dmg_add: -30 } } },
+        { id: 'aegisborn', name: 'Aegisborn', tag: 'Tank', d: 'Solar Fist shields far more. Sturdy, lighter hits.', stats: { hp: 1.12, dmg: .9 }, mods: { 1: { shield: .18 } } },
+      ],
+      evolves: [
+        [{ id: 'updraft', name: 'Updraft', d: 'Skyward reaches 70 farther.', mods: { 0: { range_add: 70 } } }, { id: 'radiantfist', name: 'Radiant Fist', d: 'Solar Fist cooldown 1.5 shorter.', mods: { 1: { cd_add: -1.5 } } }],
+        [{ id: 'shockfall', name: 'Shockfall', d: 'Meteor Drop leaves shaking ground that slows.' }, { id: 'freeflight', name: 'Free Flight', d: 'Landing restores 10% of your health.' }],
+      ],
+      kit: [
+        { name: 'Skyward', d: 'Leap to a point and land with a slowing shock.', fx: 'skyward', cd: 9, range: 330, shape: 'circle', r: 120, over: true, dmg: 76,
+          cast(s, c, a, A) { c.air = .4; c.leap = { sx: c.x, sy: c.y, tx: a.tx, ty: a.ty, t: 0, total: .4, fn(s, c) { skyLand(s, c, A.r, A.dmg * pow(c), .8, 0, 'skyward'); } }; },
+        },
+        { name: 'Solar Fist', d: 'A punch that drives champions back and shields you for each one struck.', fx: 'solarfist', cd: 7, range: 190, shape: 'cone', w: 140, dmg: 78, shield: .08,
+          cast(s, c, a, A) { const n = cone(s, c, a, A.range, .45, t => { hurt(s, c, t, A.dmg * pow(c), { skill: 1 }); if (t.alive && t.kind === 'champ') dashDir(t, a.dx, a.dy, 120, 1000, { forced: true }); }); if (n) { c.stats.skillHits++; shield(s, c, c.maxHp * A.shield * n, 3); } },
+        },
+        { name: 'Meteor Drop', d: 'Rise out of reach, then fall anywhere nearby with a stunning impact.', fx: 'meteordrop', cd: 58, range: 760, shape: 'circle', r: 210, over: true, dmg: 190,
+          cast(s, c, a, A) { c.air = 1.05; c.leap = { sx: c.x, sy: c.y, tx: a.tx, ty: a.ty, t: 0, total: 1.05, fn(s, c) { skyLand(s, c, A.r, A.dmg * pow(c), 0, .85, 'meteordrop'); if (c.f.shockfall) field(s, c, 'miasma', { x: c.x, y: c.y, r: A.r, dur: 2.5, fx: 'meteordrop', step(s, z) { if (s.tick % 6 === 0) for (const t of enemiesIn(s, c, z.x, z.y, z.r)) slow(t, .35, .4); } }); } }; },
+        },
+      ],
+      onBasic(s, c, t, o) { if (c.altN > 0) { c.altN--; o.dmg *= 1.25; o.crit = true; } },
+      tick(s, c) { c.pstack = c.altN || 0; c.pready = c.altN > 0 ? 1 : 0; },
+    },
+    mirage: {
+      name: 'Mirage', role: 'Illusion marksman', blurb: 'Aim at the one that is not there.', dtype: 'phys', arch: 'marksman',
+      sight: 930, hp: 515, hpG: 70, dmg: 58, dmgG: 7, armor: 15, armG: 3, range: 350, as: 1.0, ms: 308, pref: 318, fit: { top: 1, jungle: 0, bottom: 3, support: 0 },
+      passive: { name: 'Double Image', d: 'Every fourth basic attack fires a twin bolt for 60% damage.' },
+      builds: [
+        { id: 'twinshot', name: 'Twinshot', tag: 'Attack speed', d: 'The twin fires every third attack.', stats: { as: 1.06 }, mods: {} },
+        { id: 'shade', name: 'Shade', tag: 'Evasive', d: 'Phantom Step hides you longer and comes back faster.', mods: { 1: { cd: 7.5, stealth: 1.5 } } },
+        { id: 'kaleidoscope', name: 'Kaleidoscope', tag: 'Team fight', d: 'Hall of Mirrors is wider and comes up sooner, its shards lighter.', mods: { 2: { cd: 34, r_add: 50, shot: 34 } } },
+        { id: 'hollow', name: 'Hollow', tag: 'Trap', d: 'Your decoy bursts when it fades, slowing and striking enemies near it.', mods: { 1: { d: 'Dash, vanish, and leave a decoy that bursts.' } } },
+      ],
+      evolves: [
+        [{ id: 'splinter', name: 'Splinter', d: 'Split Shot cooldown 1 shorter.', mods: { 0: { cd_add: -1 } } }, { id: 'farstep', name: 'Far Step', d: 'Phantom Step reaches 50 farther.', mods: { 1: { range_add: 50 } } }],
+        [{ id: 'infinite', name: 'Infinite Regress', d: 'Hall of Mirrors lasts a second longer.', mods: { 2: { dur_add: 1 } } }, { id: 'crackedglass', name: 'Cracked Glass', d: 'Hall of Mirrors slows those inside by 30%.' }],
+      ],
+      kit: [
+        { name: 'Split Shot', d: 'Three bolts in a narrow fan. Extra bolts on one target hit for less.', fx: 'splitshot', cd: 6, range: 510, shape: 'line', w: 30, dmg: 88,
+          cast(s, c, a, A) { const seen = {}, car = {}; for (const r of [-.17, 0, .17]) { const co = Math.cos(r), si = Math.sin(r), dx = a.dx * co - a.dy * si, dy = a.dx * si + a.dy * co; fire(s, c, { dx, dy }, { speed: 1500, range: A.range, w: A.w, fx: 'splitshot', filter: 'units', hit(s, c, t, p) { const k = seen[t.id] ? .4 : 1; seen[t.id] = 1; hurt(s, c, t, A.dmg * k * pow(c), { skill: 1 }); if (t.kind === 'champ') skillHit(c, car); p.left = 0; } }); } },
+        },
+        { name: 'Phantom Step', d: 'Dash away and vanish for a moment, leaving your double behind.', fx: 'phantom', cd: 11, range: 230, shape: 'dash', w: 60, stealth: .8, keepStealth: true, pd: [230, 1300],
+          cast(s, c, a, A) { const x = c.x, y = c.y, z = field(s, c, 'decoy', { x, y, r: 26, dur: 2.2, x0: x, vx: 0, vy: 0 }); z.end = (s, z) => { s.ev.push({ e: 'boom', x: z.x, y: z.y, r: 120, fx: 'phantom' }); if (c.f.hollow) for (const t of enemiesIn(s, c, z.x, z.y, 150, true)) { hurt(s, c, t, 110 * pow(c), { skill: 1 }); slow(t, .4, 1.5); } }; dashDir(c, a.dx, a.dy, A.range, 1300); stealth(s, c, A.stealth); },
+        },
+        { name: 'Hall of Mirrors', d: 'Illusions ring a zone and fire shards at everyone inside.', fx: 'mirrors', cd: 50, range: 600, shape: 'circle', r: 240, dur: 3, shot: 46,
+          cast(s, c, a, A) { const z = field(s, c, 'mirrors', { x: a.tx, y: a.ty, r: A.r, dur: A.dur }); z.step = (s, z) => { if (s.tick % 9) return; for (const t of s.champs) if (t.alive && !t.air && t.team !== c.team && Math.hypot(t.x - z.x, t.y - z.y) < z.r + t.r) { hurt(s, c, t, A.shot * pow(c), { skill: 1 }); if (c.f.crackedglass) slow(t, .3, .5); s.ev.push({ e: 'phit', x: t.x, y: t.y, fx: 'mirrors' }); if (!z.counted) { z.counted = true; c.stats.skillHits++; } } }; },
+        },
+      ],
+      onBasic(s, c, t, o) { c.pstack = ((c.pstack || 0) + 1) % (c.f.twinshot ? 3 : 4); if (!c.pstack) homing(s, c, t, o.dmg * .6, 1100, 'bolt', { basic: 1 }); },
+    },
+
+    // ---------- 10.0 Villains ----------
+    cinder: {
+      name: 'Cinder', role: 'Pyromancer', blurb: 'She only wanted to warm up the city.', dtype: 'magic', arch: 'mage',
+      sight: 860, hp: 495, hpG: 66, dmg: 50, dmgG: 5, armor: 14, armG: 3, range: 320, as: .85, ms: 302, pref: 290, fit: { top: 1, jungle: 0, bottom: 3, support: 1 },
+      passive: { name: 'Kindling', d: 'Your abilities stack kindling on enemies. The third stack ignites them in a small blast.' },
+      builds: [
+        { id: 'pyre', name: 'Pyre', tag: 'Burn', d: 'Everything you ignite burns harder and longer.', mods: { 0: { dmg_add: -8 } } },
+        { id: 'ashwalker', name: 'Ashwalker', tag: 'Mobile', d: 'Scorched Earth is quicker to return and you run much faster on it.', mods: { 1: { cd: 6.6, dur: 3 } } },
+        { id: 'wildfire', name: 'Wildfire', tag: 'Spread', d: 'Ignition throws kindling onto nearby enemies.', mods: {} },
+        { id: 'firestorm', name: 'Firestorm', tag: 'Ultimate', d: 'Inferno comes up far sooner and lands quicker, with a smaller blast.', mods: { 2: { cd: 32, delay: .7, r_add: -45 } } },
+      ],
+      evolves: [
+        [{ id: 'kindlebolt', name: 'Quick Fuse', d: 'Firebolt cooldown 0.7 shorter.', mods: { 0: { cd_add: -.7 } } }, { id: 'widescorch', name: 'Wide Scorch', d: 'Scorched Earth is 30 wider.', mods: { 1: { r_add: 30 } } }],
+        [{ id: 'blackash', name: 'Black Ash', d: 'Inferno also blocks healing for 2 seconds.' }, { id: 'afterburn', name: 'Afterburn', d: 'Inferno leaves flames twice as long.' }],
+      ],
+      kit: [
+        { name: 'Firebolt', d: 'A quick bolt that sets kindling on the first enemy.', fx: 'firebolt', cd: 3.6, range: 495, shape: 'line', w: 40, dmg: 76,
+          cast(s, c, a, A) { fire(s, c, a, { speed: 1150, range: A.range, w: A.w, fx: 'firebolt', filter: 'units', hit(s, c, t, p) { hurt(s, c, t, A.dmg * pow(c), { skill: 1 }); if (t.kind === 'champ') skillHit(c, p); p.left = 0; if (t.alive) kindle(s, c, t, 1); } }); },
+        },
+        { name: 'Scorched Earth', d: 'Set the ground alight. Enemies burn, and you run faster on it.', fx: 'scorch', cd: 9, range: 420, shape: 'circle', r: 135, dur: 3.5, dps: 44,
+          cast(s, c, a, A) { const z = field(s, c, 'miasma', { x: a.tx, y: a.ty, r: A.r, dur: A.dur, fx: 'scorch', n: 0 }); z.step = (s, z) => { if (dist(c, z) < z.r) haste(c, c.f.ashwalker ? .32 : .15, .2); if (s.tick % 9) return; for (const t of enemiesIn(s, c, z.x, z.y, z.r)) { bleed(s, c, t, A.dps * pow(c) * (c.f.pyre ? 1.35 : 1), 2); if (s.tick % 27 === 0) kindle(s, c, t, 1); if (t.kind === 'champ' && !z.counted) { z.counted = true; c.stats.skillHits++; } } }; },
+        },
+        { name: 'Inferno', d: 'A long fuse, then a huge explosion that leaves the ground burning.', fx: 'inferno', cd: 50, range: 520, shape: 'circle', r: 235, delay: 1, dmg: 215,
+          cast(s, c, a, A) { blast(s, c, a.tx, a.ty, A.r, A.delay, (s, z) => { let hit = false; for (const t of enemiesIn(s, c, z.x, z.y, A.r)) { hurt(s, c, t, A.dmg * pow(c), { skill: 1 }); if (t.alive) kindle(s, c, t, 2); if (t.kind === 'champ') { hit = true; if (c.f.blackash) t.noHealT = Math.max(t.noHealT || 0, 2); } } if (hit) c.stats.skillHits++; const f = field(s, c, 'miasma', { x: z.x, y: z.y, r: A.r * .8, dur: c.f.afterburn ? 5 : 2.5, fx: 'scorch' }); f.step = (s, y) => { if (s.tick % 15) return; for (const t of enemiesIn(s, c, y.x, y.y, y.r)) bleed(s, c, t, 34 * pow(c), 1); }; }, 'inferno'); },
+        },
+      ],
+    },
+    ravager: {
+      name: 'Ravager', role: 'Feral beast', blurb: 'It smelled you three blocks ago.', dtype: 'phys', arch: 'bruiser',
+      sight: 740, hp: 575, hpG: 88, dmg: 66, dmgG: 8, armor: 22, armG: 3.5, range: 135, as: .98, ms: 335, pref: 100, melee: true, fit: { top: 2, jungle: 3, bottom: 0, support: 0 },
+      passive: { name: 'Bloodscent', d: 'Enemies below half health nearby are revealed to you, and you run faster toward them.' },
+      builds: [
+        { id: 'alpha', name: 'Alpha', tag: 'Jungle', d: 'Maul shreds monsters and heals much more from them.', mods: { 0: { d: 'Cleave in front. Far stronger against monsters.' } } },
+        { id: 'savage', name: 'Savage', tag: 'Cleave', d: 'Maul sweeps wider and reaches farther.', mods: { 0: { dot: .2, range_add: 40 } } },
+        { id: 'packleader', name: 'Pack Leader', tag: 'Team', d: 'Frenzy also hastens allies around you.', mods: {} },
+        { id: 'hemorrhage', name: 'Hemorrhage', tag: 'Bleed', d: 'Maul opens a deep bleed. Lighter strike.', mods: { 0: { dmg_add: -18, dps: 34 } } },
+      ],
+      evolves: [
+        [{ id: 'quickmaul', name: 'Quick Maul', d: 'Maul cooldown 0.8 shorter.', mods: { 0: { cd_add: -.8 } } }, { id: 'longpounce', name: 'Long Pounce', d: 'Pounce reaches 70 farther.', mods: { 1: { range_add: 70 } } }],
+        [{ id: 'unending', name: 'Unending', d: 'Frenzy lasts 2 seconds longer.', mods: { 2: { dur_add: 2 } } }, { id: 'goreroot', name: 'Pinning Claws', d: 'Pounce pins for 0.4 longer.', mods: { 1: { rootT_add: .4 } } }],
+      ],
+      kit: [
+        { name: 'Maul', d: 'Cleave in front, healing for part of the damage.', fx: 'maul', cd: 4.2, range: 190, shape: 'cone', w: 150, dmg: 84, dot: .5,
+          cast(s, c, a, A) { let got = 0; const n = cone(s, c, a, A.range, A.dot, t => { const m = c.f.alpha && t.kind === 'monster' ? 1.7 : 1, v = hurt(s, c, t, A.dmg * pow(c) * m, { skill: 1 }); got += (v || 0) * (m > 1 ? .3 : .16); if (A.dps && t.alive) bleed(s, c, t, A.dps * pow(c), 3); }); if (got) heal(s, c, c, got); if (n) c.stats.skillHits++; },
+        },
+        { name: 'Pounce', d: 'Leap onto an enemy and pin them. With no target, leap to the point.', fx: 'pounce', cd: 10, range: 340, shape: 'circle', r: 90, over: true, dmg: 78, rootT: .7,
+          cast(s, c, a, A) { const t = nearChamp(s, c, a.tx, a.ty, 180), g = t && dist(c, t) <= A.range + 45 ? t : null; c.air = .32; c.leap = { sx: c.x, sy: c.y, tx: g ? g.x : a.tx, ty: g ? g.y : a.ty, t: 0, total: .32, fn(s, c) { s.ev.push({ e: 'boom', x: c.x, y: c.y, r: 90, fx: 'pounce' }); const hit = g && g.alive && !g.air && dist(c, g) < 140 ? g : null; if (hit) { hurt(s, c, hit, A.dmg * pow(c), { skill: 1 }); root(s, hit, A.rootT); c.stats.skillHits++; } } }; },
+        },
+        { name: 'Frenzy', d: 'Lose yourself: much faster attacks, speed and lifesteal.', fx: 'frenzy', cd: 48, range: 0, shape: 'self', instant: true, dur: 6,
+          cast(s, c, a, A) { c.frenzyT = A.dur; haste(c, .22, A.dur); if (c.f.packleader) for (const al of alliesIn(s, c.team, c.x, c.y, 420)) if (al !== c) haste(al, .2, 4); },
+        },
+      ],
+      tick(s, c) { if (c.frenzyT > 0) c.frenzyT -= DT; c.asBonus = c.frenzyT > 0 ? .5 : 0; c.lsBonus = c.frenzyT > 0 ? .25 : 0; c.pready = c.frenzyT > 0 ? 1 : 0; if (s.tick % 15 === 0) for (const e of s.champs) if (e.alive && e.team !== c.team && e.hp / e.maxHp < .5 && dist(e, c) < 950) { e.revealT = Math.max(e.revealT || 0, .6); haste(c, .1, .55); } },
+    },
+    cataclysm: {
+      name: 'Cataclysm', role: 'Siege brute', blurb: 'Walks up to the wall. The wall reconsiders.', dtype: 'phys', arch: 'tank',
+      sight: 700, hp: 690, hpG: 106, dmg: 56, dmgG: 7, armor: 32, armG: 4.5, range: 150, as: .78, ms: 300, pref: 120, melee: true, fit: { top: 3, jungle: 1, bottom: 0, support: 1 },
+      passive: { name: 'Siege Engine', d: 'Every fifth basic attack splashes around the target. Your attacks hit structures 25% harder.' },
+      builds: [
+        { id: 'bastille', name: 'Bastille', tag: 'Tank', d: 'Entrench hardens you longer and comes back sooner. Lighter hits.', stats: { hp: 1.12, dmg: .9 }, mods: { 1: { cd: 9, dur: 2.8 } } },
+        { id: 'artillery', name: 'Artillery', tag: 'Poke', d: 'Bombard reaches much farther and lands wider.', mods: { 0: { range_add: 110, r_add: 25, cd_add: 1 } } },
+        { id: 'wreckingcrew', name: 'Wrecking Crew', tag: 'Split push', d: 'Everything hits structures far harder. Weaker in long fights.', stats: { hp: .95 }, mods: {} },
+        { id: 'moonquake', name: 'Moonquake', tag: 'Ultimate', d: 'Earthbreaker comes up far more often and lifts for less time.', mods: { 2: { cd: 32, knockT: .6 } } },
+      ],
+      evolves: [
+        [{ id: 'shrapnel', name: 'Shrapnel', d: 'Bombard slows those it hits by 35%.' }, { id: 'digin', name: 'Dig In', d: 'Entrench cooldown 2 shorter.', mods: { 1: { cd_add: -2 } } }],
+        [{ id: 'fault', name: 'Fault Line', d: 'Earthbreaker reaches 90 farther.', mods: { 2: { range_add: 90 } } }, { id: 'tremor', name: 'Tremor', d: 'The Entrench shockwave stuns for 0.6.' }],
+      ],
+      kit: [
+        { name: 'Bombard', d: 'Lob a shell onto the ground. It hits hard, slowly.', fx: 'bombard', cd: 7, range: 495, shape: 'circle', r: 130, delay: .75, dmg: 118,
+          cast(s, c, a, A) { const car = {}; blast(s, c, a.tx, a.ty, A.r, A.delay, (s, z) => { eachEnemy(s, c, z.x, z.y, A.r, t => { hurt(s, c, t, A.dmg * pow(c), { skill: 1 }); if (c.f.shrapnel) slow(t, .35, 1.2); if (t.kind === 'champ') skillHit(c, car); }); }, 'bombard'); },
+        },
+        { name: 'Entrench', d: 'Plant yourself and take far less damage, then release a shockwave.', fx: 'entrench', cd: 12, range: 0, shape: 'self', instant: true, dur: 2, dmg: 88,
+          cast(s, c, a, A) { c.drT = Math.max(c.drT, A.dur); slow(c, .35, A.dur); const z = field(s, c, 'miasma', { x: c.x, y: c.y, r: 190, dur: A.dur, fx: 'entrench' }); z.step = (s, z) => { z.x = c.x; z.y = c.y; if (!c.alive) z.t = 0; }; z.end = (s, z) => { if (!c.alive) return; s.ev.push({ e: 'boom', x: c.x, y: c.y, r: 190, fx: 'entrench' }); let hit = false; eachEnemy(s, c, c.x, c.y, 190, t => { hurt(s, c, t, A.dmg * pow(c), { skill: 1 }); if (t.kind === 'champ') { hit = true; if (c.f.tremor) stun(s, t, .6); } }); if (hit) c.stats.skillHits++; }; },
+        },
+        { name: 'Earthbreaker', d: 'Split the ground in a long line, lifting enemies and cracking structures.', fx: 'earthbreak', cd: 50, range: 540, shape: 'line', w: 150, delay: .6, dmg: 172, knockT: .9,
+          cast(s, c, a, A) { const len = rayWall(c.x, c.y, a.dx, a.dy, A.range), z = field(s, c, 'fissure', lineZone({ r: A.w / 2, dur: A.delay, fx: 'earthbreak' }, c.x, c.y, c.x + a.dx * len, c.y + a.dy * len)); z.fn = (s, z) => { s.ev.push({ e: 'boom', x: z.x, y: z.y, r: z.r, fx: 'earthbreak', x2: z.x2, y2: z.y2 }); let hit = false; const test = t => { if (t.alive && !t.air && t.team !== c.team && segDist(t.x, t.y, z.x1, z.y1, z.x2, z.y2) < A.w / 2 + t.r) { hurt(s, c, t, A.dmg * pow(c), { skill: 1 }); if (t.alive) knock(s, t, A.knockT); if (t.kind === 'champ') hit = true; } }; s.champs.forEach(test); s.minions.forEach(test); s.monsters.forEach(test); for (const t of s.towers) if (t.alive && t.team !== c.team && segDist(t.x, t.y, z.x1, z.y1, z.x2, z.y2) < A.w / 2 + t.r) hurt(s, c, t, A.dmg * pow(c) * 2.5, { skill: 1 }); if (hit) c.stats.skillHits++; }; },
+        },
+      ],
+      onBasic(s, c, t, o) { c.pstack = ((c.pstack || 0) + 1) % 5; if (t.kind === 'tower') o.dmg *= c.f.wreckingcrew ? 1.6 : 1.25; if (!c.pstack) { o.crit = true; for (const e of enemiesIn(s, c, t.x, t.y, 150)) if (e !== t) hurt(s, c, e, o.dmg * .5, { skill: 1 }); s.ev.push({ e: 'boom', x: t.x, y: t.y, r: 150, fx: 'bombard' }); } },
+    },
+    puppeteer: {
+      name: 'The Puppeteer', role: 'Controller', blurb: 'Everyone dances eventually.', dtype: 'magic', arch: 'support',
+      sight: 860, hp: 515, hpG: 74, dmg: 46, dmgG: 5, armor: 18, armG: 3.2, range: 300, as: .85, ms: 310, pref: 270, support: true, fit: { top: 0, jungle: 0, bottom: 1, support: 3 },
+      passive: { name: 'Strings', d: 'Enemies hit by your abilities are strung for 3 seconds and take 8% more damage from your whole team.' },
+      builds: [
+        { id: 'marionettist', name: 'Marionettist', tag: 'Roots', d: 'Thread holds longer and comes back sooner.', mods: { 0: { cd: 7, rootT: 1.2 } } },
+        { id: 'troupe', name: 'The Troupe', tag: 'Summons', d: 'Two puppets can stand at once, each shooting faster.', mods: { 1: { cd: 8, max: 2, every: 14 } } },
+        { id: 'maestro', name: 'Maestro', tag: 'Ultimate', d: 'Dance of Strings also seizes a second enemy nearby.', mods: { 2: { cd_add: 4 } } },
+        { id: 'ventriloquist', name: 'Ventriloquist', tag: 'Support', d: 'Puppets also heal the lowest ally near them.', mods: { 1: { shot_add: -8 } } },
+      ],
+      evolves: [
+        [{ id: 'silkthread', name: 'Silk Thread', d: 'Thread reaches 70 farther.', mods: { 0: { range_add: 70 } } }, { id: 'tougherwood', name: 'Hardwood', d: 'Puppets last 1.5 seconds longer.', mods: { 1: { dur_add: 1.5 } } }],
+        [{ id: 'cutstrings', name: 'Cut Strings', d: 'Strung enemies take 12% more instead of 8%.' }, { id: 'encore', name: 'Encore', d: 'Dance of Strings holds for 0.4 longer.', mods: { 2: { dur_add: .4 } } }],
+      ],
+      kit: [
+        { name: 'Thread', d: 'A fine line that roots the first champion it catches.', fx: 'thread', cd: 9, range: 480, shape: 'line', w: 40, dmg: 66, rootT: .9,
+          cast(s, c, a, A) { fire(s, c, a, { speed: 1250, range: A.range, w: A.w, fx: 'thread', filter: 'champ', hit(s, c, t, p) { if (t.team === c.team) return; hurt(s, c, t, A.dmg * pow(c), { skill: 1 }); if (t.alive) { root(s, t, A.rootT); string(s, c, t); } skillHit(c, p); p.left = 0; } }); },
+        },
+        { name: 'Puppet Guard', d: 'Place a puppet that shoots enemies near it.', fx: 'puppet', cd: 11, range: 420, shape: 'circle', r: 120, dur: 4, shot: 34, every: 18, max: 1,
+          cast(s, c, a, A) { const mine = s.zones.filter(z => z.kind === 'puppet' && z.owner === c); if (mine.length >= A.max) mine[0].t = .01; const z = field(s, c, 'puppet', { x: a.tx, y: a.ty, r: 26, dur: A.dur, n: 0 }); z.step = (s, z) => { if (++z.n < A.every) return; z.n = 0; let t = null, bd = 380; for (const e of s.champs) { if (!e.alive || e.air || e.team === c.team || !canSee(s, c.team, e)) continue; const d = Math.hypot(e.x - z.x, e.y - z.y); if (d < bd && hasLOS(z.x, z.y, e.x, e.y)) { bd = d; t = e; } } if (t) { homing(s, z, t, A.shot * pow(c), 1000, 'bolt', { team: c.team, owner: c, skill: 1, abil: 'Puppet Guard' }); string(s, c, t); if (!z.counted) { z.counted = true; c.stats.skillHits++; } } if (c.f.ventriloquist) { let al = null, f = .9; for (const b of alliesIn(s, c.team, z.x, z.y, 380)) { const v = b.hp / b.maxHp; if (v < f) { f = v; al = b; } } if (al) heal(s, c, al, 30 * pow(c)); } }; },
+        },
+        { name: 'Dance of Strings', d: 'Seize an enemy: they stagger toward you, helpless, then stumble free.', fx: 'dance', cd: 50, range: 420, shape: 'circle', r: 120, target: true, dur: 1.4, dmg: 120,
+          cast(s, c, a, A) { const t = nearChamp(s, c, a.tx, a.ty, 180); if (!t || dist(c, t) > A.range + 45 || !hasLOS(c.x, c.y, t.x, t.y)) return false; const go = u => { hurt(s, c, u, A.dmg * pow(c), { skill: 1 }); if (!u.alive) return; const n = norm(c.x - u.x, c.y - u.y); stun(s, u, A.dur); dashDir(u, n.x, n.y, Math.max(0, n.l - 110), 300, { forced: true }); string(s, c, u); s.ev.push({ e: 'boom', x: u.x, y: u.y, r: 70, fx: 'dance' }); }; go(t); if (c.f.maestro) { const o = enemiesIn(s, c, t.x, t.y, 330, true).find(e => e !== t && e.kind === 'champ'); if (o) go(o); } c.stats.skillHits++; },
+        },
+      ],
+    },
   };
 
   // ---------- balance table ----------
   // Sweep-driven tuning lives here, multiplying the base numbers above, so a balance pass is a table edit.
   // Kit: hp, dmg (basic attack), as, ms (added), abil (ability damage and healing). Build: pw (ability power), hp, dmg, as.
   const TUNE = {
-    kits: {},
-    builds: {},
+    kits: {cataclysm: { hp: 1.006, dmg: 1.006, abil: 1.006 }, cinder: { hp: 1.027, dmg: 1.027, abil: 1.027 }, deadbolt: { hp: 1.013, dmg: 1.013, abil: 1.013 }, duelist: { hp: 0.983, dmg: 0.983, abil: 0.983 }, gravel: { hp: 0.925, dmg: 0.925, abil: 0.925 }, hex: { hp: 1.038, dmg: 1.038, abil: 1.038 }, ione: { hp: 1.025, dmg: 1.025, abil: 1.025 }, ironjaw: { hp: 0.949, dmg: 0.949, abil: 0.949 }, kade: { hp: 0.931, dmg: 0.931, abil: 0.931 }, mirage: { hp: 0.99, dmg: 0.99, abil: 0.99 }, paragon: { hp: 0.969, dmg: 0.969, abil: 0.969 }, plague: { hp: 1.035, dmg: 1.035, abil: 1.035 }, puppeteer: { hp: 1.01, dmg: 1.01, abil: 1.01 }, ravager: { hp: 0.993, dmg: 0.993, abil: 0.993 }, sable: { hp: 1.017, dmg: 1.017, abil: 1.017 }, shiv: { hp: 1.027, dmg: 1.027, abil: 1.027 }, solenne: { hp: 1.017, dmg: 1.017, abil: 1.017 }, tidecaller: { hp: 0.981, dmg: 0.981, abil: 0.981 }, vesper: { hp: 1.005, dmg: 1.005, abil: 1.005 }, voltaic: { hp: 1.05, dmg: 1.05, abil: 1.05 }},
+    builds: { deluge: { pw: .92 }, sunlance: { pw: .94 }, twinshot: { dmg: .95 }, sunstriker: { pw: .95 }, apothecary: { pw: 1.14 }, cutthroat: { pw: 1.12 }, masquerade: { pw: 1.1 }, butcher: { pw: 1.06 }, fencer: { pw: 1.05 } },
   };
   const ABIL_KEYS = ['dmg', 'dmgF', 'dmgM', 'dmg0', 'dmg1', 'dmg2', 'dps', 'heal', 'shot'];
+  // Damage types. A kit's dtype is the default for its abilities; an ability's own `mag` overrides it. Basic attacks are physical.
+  const KIT_TYPE = { vesper: ['phys', 'marksman'], kade: ['phys', 'bruiser'], ione: ['magic', 'mage'], solenne: ['magic', 'support'], sable: ['phys', 'assassin'], gravel: ['phys', 'tank'], deadbolt: ['phys', 'marksman'], duelist: ['phys', 'bruiser'], hex: ['magic', 'mage'], plague: ['magic', 'support'], shiv: ['phys', 'assassin'], ironjaw: ['phys', 'tank'] };
+  const MAG_OVERRIDE = { Stomp: true, Avalanche: true, Demolish: true, Lockdown: true, 'Wrecking Ball': true, Deadeye: false };
+  const MAG_ABIL = {};
+  for (const id in KITS) {
+    const k = KITS[id], ty = KIT_TYPE[id]; if (ty) { k.dtype = ty[0]; k.arch = ty[1]; }
+    if (k.mr === undefined) k.mr = Math.round(k.armor * .7 + 8); if (k.mrG === undefined) k.mrG = Math.round(k.armG * 7) / 10;
+    for (const a of k.kit) { if (MAG_OVERRIDE[a.name] !== undefined) a.mag = MAG_OVERRIDE[a.name]; a.dtype = (a.mag === undefined ? k.dtype === 'magic' : a.mag) ? 'magic' : 'phys'; MAG_ABIL[a.name] = a.dtype === 'magic'; }
+  }
   for (const id in KITS) {
     const k = KITS[id], t = TUNE.kits[id] || {};
     if (t.hp) { k.hp = Math.round(k.hp * t.hp); k.hpG = Math.round(k.hpG * t.hp * 10) / 10; }
@@ -713,36 +982,98 @@ const Sim = (() => {
   }
   function spreadCurses(s, t) { const c = t.curseBy; if (!c || !c.alive) return; const n = t.curseN; for (const o of enemiesIn(s, c, t.x, t.y, 280, true)) if (o !== t) curse(s, c, o, Math.max(1, n - 1)); }
 
-  // Items: stats add up across the three slots. cost is the price of this step from its upgradesFrom.
+  // Items. ad = attack power (basics and physical abilities), ap = ability power (magic abilities), both as percentages.
+  // armor against physical, mr against magic; pen and mpen ignore a fraction of them. cost is the price of this step from its upgradesFrom.
   const ITEMS = [
-    { id: 'whetstone', name: 'Whetstone', d: '+9% damage.', cost: 350, tier: 1, tags: ['attack'], dmg: .09 },
+    // Attack
+    { id: 'whetstone', name: 'Whetstone', d: '+9% attack power.', cost: 350, tier: 1, tags: ['attack'], ad: .09 },
+    { id: 'serrated', name: 'Serrated Edge', d: '+18% attack power. Basic attacks on champions add a light bleed.', cost: 550, tier: 2, tags: ['attack'], upgradesFrom: 'whetstone', ad: .18, u: 'bleed' },
+    { id: 'trigger', name: 'Hair Trigger', d: '+9% attack power and 22% attack speed.', cost: 550, tier: 2, tags: ['attack', 'mobility'], upgradesFrom: 'whetstone', ad: .09, as: .22 },
+    { id: 'headsman', name: 'Headsman', d: '+30% attack power. Targets under 35% health take 15% more.', cost: 800, tier: 3, tags: ['attack'], upgradesFrom: 'serrated', ad: .3, u: 'headsman' },
+    { id: 'bloodfang', name: 'Bloodfang', d: '+20% attack power and 15% lifesteal.', cost: 800, tier: 3, tags: ['attack', 'sustain', 'bruiser'], upgradesFrom: 'serrated', ad: .2, lifesteal: .15 },
+    { id: 'stormlash', name: 'Stormlash', d: '+15% attack power and 40% attack speed. Every third attack arcs to one more enemy.', cost: 850, tier: 3, tags: ['attack'], upgradesFrom: 'trigger', ad: .15, as: .4, u: 'storm' },
+    { id: 'guillotine', name: 'Guillotine', d: '+44% attack power. Unique: targets under 35% health take 28% more.', cost: 1250, tier: 4, tags: ['attack'], upgradesFrom: 'headsman', ad: .44, u: 'guillotine', legendary: true },
+    { id: 'gorefang', name: 'Sanguine Fang', d: '+32% attack power and 24% lifesteal.', cost: 1250, tier: 4, tags: ['attack', 'sustain', 'bruiser'], upgradesFrom: 'bloodfang', ad: .32, lifesteal: .24, legendary: true },
+    { id: 'tempest', name: 'Tempest', d: '+26% attack power and 60% attack speed. Unique: every third attack arcs on; attacks mark targets.', cost: 1250, tier: 4, tags: ['attack'], upgradesFrom: 'stormlash', ad: .26, as: .6, u: ['storm', 'tempest'], legendary: true },
+    // Marksman
+    { id: 'sightglass', name: 'Sightglass', d: '+7% attack power and 8% attack speed.', cost: 350, tier: 1, tags: ['attack', 'marksman'], ad: .07, as: .08 },
+    { id: 'hairscope', name: 'Hairline Scope', d: '+14% attack power and 15% attack speed.', cost: 550, tier: 2, tags: ['attack', 'marksman'], upgradesFrom: 'sightglass', ad: .14, as: .15 },
+    { id: 'railpiece', name: 'Railpiece', d: '+24% attack power, 22% attack speed and 12% armour piercing.', cost: 850, tier: 3, tags: ['attack', 'marksman'], upgradesFrom: 'hairscope', ad: .24, as: .22, pen: .12 },
+    { id: 'quickdraw', name: 'Quickdraw Rig', d: '+12% attack power, 34% attack speed and +18 move speed.', cost: 800, tier: 3, tags: ['attack', 'marksman', 'mobility'], upgradesFrom: 'hairscope', ad: .12, as: .34, ms: 18 },
+    { id: 'deadshot', name: 'Deadshot', d: '+34% attack power, 28% attack speed, 18% armour piercing. Unique: basic attacks on healthy targets (over 70%) hit 22% harder.', cost: 1250, tier: 4, tags: ['attack', 'marksman'], upgradesFrom: 'railpiece', ad: .34, as: .28, pen: .18, u: 'deadshot', legendary: true },
+    { id: 'gunrunner', name: 'Gunrunner', d: '+18% attack power, 48% attack speed, +30 move speed. Unique: basic attacks on champions grant a burst of speed.', cost: 1200, tier: 4, tags: ['attack', 'marksman', 'mobility'], upgradesFrom: 'quickdraw', ad: .18, as: .48, ms: 30, u: 'gunrunner', legendary: true },
+    // Assassin
+    { id: 'dirk', name: 'Thin Dirk', d: '+7% attack power and 8% armour piercing.', cost: 350, tier: 1, tags: ['attack', 'assassin'], ad: .07, pen: .08 },
+    { id: 'stiletto', name: 'Stiletto', d: '+14% attack power and 15% armour piercing.', cost: 550, tier: 2, tags: ['attack', 'assassin'], upgradesFrom: 'dirk', ad: .14, pen: .15 },
+    { id: 'nightedge', name: 'Night Edge', d: '+24% attack power, 22% armour piercing. Unique: your first hit on a champion after 6 quiet seconds deals 25% more.', cost: 850, tier: 3, tags: ['attack', 'assassin'], upgradesFrom: 'stiletto', ad: .24, pen: .22, u: 'ambush' },
+    { id: 'bonesaw', name: 'Bonesaw', d: '+20% attack power, 15% armour piercing and 15% shorter cooldowns.', cost: 850, tier: 3, tags: ['attack', 'assassin', 'ability'], upgradesFrom: 'stiletto', ad: .2, pen: .15, cdr: .15 },
+    { id: 'widowmaker', name: 'Widowmaker', d: '+34% attack power, 30% armour piercing. Unique: an opening hit deals 40% more, and a takedown bursts you with speed.', cost: 1250, tier: 4, tags: ['attack', 'assassin'], upgradesFrom: 'nightedge', ad: .34, pen: .3, u: ['ambush', 'widow'], legendary: true },
+    { id: 'eclipse', name: 'Eclipse', d: '+30% attack power, 20% armour piercing, 22% shorter cooldowns. Unique: three hits on a champion within 2 seconds burn for 7% of their max health.', cost: 1250, tier: 4, tags: ['attack', 'assassin', 'ability'], upgradesFrom: 'bonesaw', ad: .3, pen: .2, cdr: .22, u: 'eclipse', legendary: true },
+    // Bruiser
+    { id: 'cudgel', name: 'Cudgel', d: '+6% attack power and +100 health.', cost: 350, tier: 1, tags: ['attack', 'bruiser'], ad: .06, hp: 100 },
+    { id: 'warhammer', name: 'Warhammer', d: '+12% attack power, +220 health and 8 armour.', cost: 550, tier: 2, tags: ['attack', 'bruiser'], upgradesFrom: 'cudgel', ad: .12, hp: 220, armor: 8 },
+    { id: 'ironmaul', name: 'Iron Maul', d: '+20% attack power, +380 health and 16 armour.', cost: 850, tier: 3, tags: ['attack', 'bruiser', 'tank'], upgradesFrom: 'warhammer', ad: .2, hp: 380, armor: 16 },
+    { id: 'ragebrand', name: 'Ragebrand', d: '+22% attack power, +260 health, 10% lifesteal and 10% shorter cooldowns.', cost: 850, tier: 3, tags: ['attack', 'bruiser', 'sustain'], upgradesFrom: 'warhammer', ad: .22, hp: 260, lifesteal: .1, cdr: .1 },
+    { id: 'kingsmaul', name: 'Kingsmaul', d: '+28% attack power, +620 health, 26 armour, 14 magic resist. Unique: basic attacks splash 25% around the target.', cost: 1250, tier: 4, tags: ['attack', 'bruiser', 'tank'], upgradesFrom: 'ironmaul', ad: .28, hp: 620, armor: 26, mr: 14, u: 'cleave', legendary: true },
+    { id: 'warbringer', name: 'Warbringer', d: '+32% attack power, +400 health, 16% lifesteal, 15% shorter cooldowns. Unique: below 40% health you deal 18% more.', cost: 1250, tier: 4, tags: ['attack', 'bruiser', 'sustain'], upgradesFrom: 'ragebrand', ad: .32, hp: 400, lifesteal: .16, cdr: .15, u: 'warbringer', legendary: true },
+    // Magic
+    { id: 'lens', name: 'Focus Lens', d: '+6% ability power and 8% shorter cooldowns.', cost: 400, tier: 1, tags: ['magic', 'ability'], ap: .06, cdr: .08 },
+    { id: 'capacitor', name: 'Capacitor', d: '16% shorter cooldowns and +14% ability power.', cost: 550, tier: 2, tags: ['magic', 'ability'], upgradesFrom: 'lens', cdr: .16, ap: .14 },
+    { id: 'overclock', name: 'Overclock', d: '28% shorter cooldowns and +26% ability power.', cost: 850, tier: 3, tags: ['magic', 'ability'], upgradesFrom: 'capacitor', cdr: .28, ap: .26 },
+    { id: 'singularity', name: 'Singularity', d: '38% shorter cooldowns and +38% ability power.', cost: 1250, tier: 4, tags: ['magic', 'ability'], upgradesFrom: 'overclock', cdr: .38, ap: .38, legendary: true },
+    { id: 'ember', name: 'Ember Shard', d: '+11% ability power.', cost: 350, tier: 1, tags: ['magic'], ap: .11 },
+    { id: 'focuscrystal', name: 'Focus Crystal', d: '+22% ability power.', cost: 550, tier: 2, tags: ['magic'], upgradesFrom: 'ember', ap: .22 },
+    { id: 'stormglass', name: 'Stormglass', d: '+36% ability power and 20% magic piercing.', cost: 850, tier: 3, tags: ['magic'], upgradesFrom: 'focuscrystal', ap: .36, mpen: .2 },
+    { id: 'ashwand', name: 'Ash Wand', d: '+32% ability power and 12% ability lifesteal.', cost: 850, tier: 3, tags: ['magic', 'sustain'], upgradesFrom: 'focuscrystal', ap: .32, vamp: .12 },
+    { id: 'voidheart', name: 'Voidheart', d: '+52% ability power and 32% magic piercing. Unique: abilities hit targets over 60% health 12% harder.', cost: 1250, tier: 4, tags: ['magic'], upgradesFrom: 'stormglass', ap: .52, mpen: .32, u: 'voidheart', legendary: true },
+    { id: 'worldburn', name: 'Worldburn', d: '+46% ability power and 18% ability lifesteal. Unique: abilities that hit champions burn them for 3 seconds.', cost: 1250, tier: 4, tags: ['magic', 'sustain'], upgradesFrom: 'ashwand', ap: .46, vamp: .18, u: 'worldburn', legendary: true },
+    { id: 'hexband', name: 'Hexed Band', d: '+14% ability power, +180 health.', cost: 550, tier: 2, tags: ['magic', 'bruiser'], upgradesFrom: 'ember', ap: .14, hp: 180 },
+    { id: 'soulcage', name: 'Soul Cage', d: '+26% ability power, +340 health and 12 magic resist.', cost: 850, tier: 3, tags: ['magic', 'bruiser'], upgradesFrom: 'hexband', ap: .26, hp: 340, mr: 12 },
+    { id: 'archlich', name: 'Archlich Crown', d: '+38% ability power, +560 health, 24 magic resist. Unique: once every 45 seconds a killing blow leaves you at 15% health instead.', cost: 1250, tier: 4, tags: ['magic', 'bruiser', 'tank'], upgradesFrom: 'soulcage', ap: .38, hp: 560, mr: 24, u: 'archlich', legendary: true },
+    // Tank
     { id: 'vest', name: 'Padded Vest', d: '+150 health and 10 armour.', cost: 350, tier: 1, tags: ['tank'], hp: 150, armor: 10 },
-    { id: 'boots', name: 'Quick Boots', d: '+20 move speed.', cost: 300, tier: 1, tags: ['mobility'], ms: 20 },
-    { id: 'lens', name: 'Focus Lens', d: '8% shorter cooldowns.', cost: 400, tier: 1, tags: ['ability'], cdr: .08 },
-    { id: 'satchel', name: 'Field Satchel', d: '+15% healing and shields. Small health regeneration.', cost: 350, tier: 1, tags: ['support'], healPow: .15, regen: .002, hp: 40 },
-    { id: 'serrated', name: 'Serrated Edge', d: '+18% damage. Basic attacks on champions add a light bleed.', cost: 550, tier: 2, tags: ['attack'], upgradesFrom: 'whetstone', dmg: .18, u: 'bleed' },
-    { id: 'trigger', name: 'Hair Trigger', d: '+9% damage and 22% attack speed.', cost: 550, tier: 2, tags: ['attack', 'mobility'], upgradesFrom: 'whetstone', dmg: .09, as: .22 },
     { id: 'plate', name: 'Riot Plate', d: '+300 health and 22 armour.', cost: 550, tier: 2, tags: ['tank'], upgradesFrom: 'vest', hp: 300, armor: 22 },
-    { id: 'spurs', name: 'Chase Spurs', d: '+34 move speed.', cost: 450, tier: 2, tags: ['mobility'], upgradesFrom: 'boots', ms: 34 },
-    { id: 'capacitor', name: 'Capacitor', d: '16% shorter cooldowns and +10% ability damage.', cost: 550, tier: 2, tags: ['ability'], upgradesFrom: 'lens', cdr: .16, ap: .1 },
-    { id: 'medkit', name: 'Medkit', d: '+30% healing and shields, and more regeneration.', cost: 500, tier: 2, tags: ['support'], upgradesFrom: 'satchel', healPow: .3, regen: .004, hp: 100 },
-    { id: 'headsman', name: 'Headsman', d: '+30% damage. Targets under 35% health take 15% more.', cost: 800, tier: 3, tags: ['attack'], upgradesFrom: 'serrated', dmg: .3, u: 'headsman' },
-    { id: 'bloodfang', name: 'Bloodfang', d: '+20% damage and 15% lifesteal on basic attacks and abilities.', cost: 800, tier: 3, tags: ['attack', 'sustain'], upgradesFrom: 'serrated', dmg: .2, lifesteal: .15 },
-    { id: 'stormlash', name: 'Stormlash', d: '+15% damage and 40% attack speed. Every third attack arcs to one more enemy.', cost: 850, tier: 3, tags: ['attack'], upgradesFrom: 'trigger', dmg: .15, as: .4, u: 'storm' },
     { id: 'bastion', name: 'Bastion', d: '+550 health, 40 armour. Grants a shield when you fall below half health, once every 30 seconds.', cost: 850, tier: 3, tags: ['tank'], upgradesFrom: 'plate', hp: 550, armor: 40, u: 'bastion' },
     { id: 'spikeguard', name: 'Spikeguard', d: '+420 health, 50 armour. Melee attackers take 25% of the damage back.', cost: 800, tier: 3, tags: ['tank'], upgradesFrom: 'plate', hp: 420, armor: 50, u: 'thorns' },
-    { id: 'phase', name: 'Phase Treads', d: '+48 move speed and 8% shorter cooldowns. Speed burst after any ability.', cost: 750, tier: 3, tags: ['mobility', 'ability'], upgradesFrom: 'spurs', ms: 48, cdr: .08, u: 'phase' },
-    { id: 'overclock', name: 'Overclock', d: '28% shorter cooldowns and +22% ability damage.', cost: 850, tier: 3, tags: ['ability'], upgradesFrom: 'capacitor', cdr: .28, ap: .22 },
+    { id: 'citadel', name: 'Citadel', d: '+800 health, 60 armour, 20 magic resist. Unique: a bigger shield below half health, every 20 seconds.', cost: 1250, tier: 4, tags: ['tank'], upgradesFrom: 'bastion', hp: 800, armor: 60, mr: 20, u: ['bastion', 'citadel'], legendary: true },
+    { id: 'thornwall', name: 'Thornwall', d: '+620 health, 72 armour, 16 magic resist. Unique: melee attackers take 40% back.', cost: 1250, tier: 4, tags: ['tank'], upgradesFrom: 'spikeguard', hp: 620, armor: 72, mr: 16, u: ['thorns', 'thornwall'], legendary: true },
+    { id: 'cloak', name: 'Warded Cloak', d: '+80 health and 14 magic resist.', cost: 350, tier: 1, tags: ['tank', 'resist'], hp: 80, mr: 14 },
+    { id: 'nullweave', name: 'Nullweave', d: '+200 health and 28 magic resist.', cost: 550, tier: 2, tags: ['tank', 'resist'], upgradesFrom: 'cloak', hp: 200, mr: 28 },
+    { id: 'wardmail', name: 'Wardmail', d: '+420 health and 48 magic resist.', cost: 850, tier: 3, tags: ['tank', 'resist'], upgradesFrom: 'nullweave', hp: 420, mr: 48 },
+    { id: 'spellbreaker', name: 'Spellbreaker', d: '+300 health, 36 magic resist, +22 move speed.', cost: 800, tier: 3, tags: ['tank', 'resist', 'mobility'], upgradesFrom: 'nullweave', hp: 300, mr: 36, ms: 22 },
+    { id: 'aegisprime', name: 'Prime Aegis', d: '+700 health, 76 magic resist, 18 armour. Unique: the first ability that hits you every 20 seconds is halved.', cost: 1250, tier: 4, tags: ['tank', 'resist'], upgradesFrom: 'wardmail', hp: 700, mr: 76, armor: 18, u: 'aegisprime', legendary: true },
+    { id: 'girdle', name: 'Iron Girdle', d: '+220 health.', cost: 350, tier: 1, tags: ['tank'], hp: 220 },
+    { id: 'titanbelt', name: 'Titan Belt', d: '+460 health and a little regeneration.', cost: 550, tier: 2, tags: ['tank'], upgradesFrom: 'girdle', hp: 460, regen: .003 },
+    { id: 'titanheart', name: 'Titan Heart', d: '+800 health, 16 armour, 16 magic resist, more regeneration.', cost: 850, tier: 3, tags: ['tank'], upgradesFrom: 'titanbelt', hp: 800, armor: 16, mr: 16, regen: .006 },
+    { id: 'worldtree', name: 'Worldtree', d: '+1250 health, 30 armour, 30 magic resist. Unique: out of combat for 5 seconds you heal 4% a second.', cost: 1250, tier: 4, tags: ['tank'], upgradesFrom: 'titanheart', hp: 1250, armor: 30, mr: 30, regen: .008, u: 'worldtree', legendary: true },
+    // Support
+    { id: 'satchel', name: 'Field Satchel', d: '+15% healing and shields. Small health regeneration.', cost: 350, tier: 1, tags: ['support'], healPow: .15, regen: .002, hp: 40 },
+    { id: 'medkit', name: 'Medkit', d: '+30% healing and shields, and more regeneration.', cost: 500, tier: 2, tags: ['support'], upgradesFrom: 'satchel', healPow: .3, regen: .004, hp: 100 },
     { id: 'sanctum', name: 'Sanctum', d: '+55% healing and shields, regeneration, and allies near you take 8% less damage.', cost: 800, tier: 3, tags: ['support'], upgradesFrom: 'medkit', healPow: .55, regen: .006, hp: 220, u: 'sanctum' },
-    // Legendary: the top tier. Unique effects stack onto the tier below.
-    { id: 'guillotine', name: 'Guillotine', d: '+44% damage. Targets under 35% health take 28% more.', cost: 1250, tier: 4, tags: ['attack'], upgradesFrom: 'headsman', dmg: .44, u: 'guillotine', legendary: true },
-    { id: 'gorefang', name: 'Sanguine Fang', d: '+32% damage and 24% lifesteal.', cost: 1250, tier: 4, tags: ['attack', 'sustain'], upgradesFrom: 'bloodfang', dmg: .32, lifesteal: .24, legendary: true },
-    { id: 'tempest', name: 'Tempest', d: '+26% damage and 60% attack speed. Every third attack arcs on; attacks mark targets.', cost: 1250, tier: 4, tags: ['attack'], upgradesFrom: 'stormlash', dmg: .26, as: .6, u: ['storm', 'tempest'], legendary: true },
-    { id: 'citadel', name: 'Citadel', d: '+800 health, 60 armour. A bigger shield below half health, every 20 seconds.', cost: 1250, tier: 4, tags: ['tank'], upgradesFrom: 'bastion', hp: 800, armor: 60, u: ['bastion', 'citadel'], legendary: true },
-    { id: 'thornwall', name: 'Thornwall', d: '+620 health, 72 armour. Melee attackers take 40% back.', cost: 1250, tier: 4, tags: ['tank'], upgradesFrom: 'spikeguard', hp: 620, armor: 72, u: ['thorns', 'thornwall'], legendary: true },
-    { id: 'ghoststep', name: 'Ghoststep', d: '+64 move speed, 12% shorter cooldowns, and a bigger burst after any ability.', cost: 1200, tier: 4, tags: ['mobility', 'ability'], upgradesFrom: 'phase', ms: 64, cdr: .12, u: 'phase', legendary: true },
-    { id: 'singularity', name: 'Singularity', d: '38% shorter cooldowns and +34% ability damage.', cost: 1250, tier: 4, tags: ['ability'], upgradesFrom: 'overclock', cdr: .38, ap: .34, legendary: true },
-    { id: 'sanctuary', name: 'Sanctuary', d: '+85% healing and shields, more regeneration, and allies near you take 15% less damage.', cost: 1200, tier: 4, tags: ['support'], upgradesFrom: 'sanctum', healPow: .85, regen: .009, hp: 360, u: ['sanctum', 'sanctuary'], legendary: true },
+    { id: 'sanctuary', name: 'Sanctuary', d: '+85% healing and shields, more regeneration. Unique: allies near you take 15% less damage.', cost: 1200, tier: 4, tags: ['support'], upgradesFrom: 'sanctum', healPow: .85, regen: .009, hp: 360, u: ['sanctum', 'sanctuary'], legendary: true },
+    { id: 'censer', name: 'Censer', d: '+24% healing and shields, +8% ability power.', cost: 500, tier: 2, tags: ['support', 'magic'], upgradesFrom: 'satchel', healPow: .24, ap: .08, hp: 60 },
+    { id: 'lifewarden', name: 'Lifewarden', d: '+42% healing and shields, +16% ability power, 12% shorter cooldowns.', cost: 800, tier: 3, tags: ['support', 'magic', 'ability'], upgradesFrom: 'censer', healPow: .42, ap: .16, cdr: .12, hp: 140 },
+    { id: 'saintsbell', name: "Saint's Bell", d: '+66% healing and shields, +26% ability power, 20% shorter cooldowns. Unique: your heals also grant 8% damage for 3 seconds.', cost: 1200, tier: 4, tags: ['support', 'magic', 'ability'], upgradesFrom: 'lifewarden', healPow: .66, ap: .26, cdr: .2, hp: 240, u: 'saintsbell', legendary: true },
+    { id: 'banner', name: 'Field Banner', d: '+100 health, +8 move speed.', cost: 350, tier: 1, tags: ['support', 'mobility'], hp: 100, ms: 8 },
+    { id: 'warbanner', name: 'War Banner', d: '+240 health, +14 move speed, 10 armour, 10 magic resist.', cost: 550, tier: 2, tags: ['support', 'tank'], upgradesFrom: 'banner', hp: 240, ms: 14, armor: 10, mr: 10 },
+    { id: 'rallystandard', name: 'Rally Standard', d: '+400 health, 18 armour, 18 magic resist. Unique: allies near you deal 6% more.', cost: 850, tier: 3, tags: ['support', 'tank'], upgradesFrom: 'warbanner', hp: 400, armor: 18, mr: 18, u: 'rally' },
+    { id: 'highbanner', name: 'High Banner', d: '+620 health, 30 armour, 30 magic resist. Unique: allies near you deal 12% more.', cost: 1200, tier: 4, tags: ['support', 'tank'], upgradesFrom: 'rallystandard', hp: 620, armor: 30, mr: 30, u: ['rally', 'highbanner'], legendary: true },
+    // Mobility
+    { id: 'boots', name: 'Quick Boots', d: '+20 move speed.', cost: 300, tier: 1, tags: ['mobility'], ms: 20 },
+    { id: 'spurs', name: 'Chase Spurs', d: '+34 move speed.', cost: 450, tier: 2, tags: ['mobility'], upgradesFrom: 'boots', ms: 34 },
+    { id: 'phase', name: 'Phase Treads', d: '+48 move speed and 8% shorter cooldowns. Speed burst after any ability.', cost: 750, tier: 3, tags: ['mobility', 'ability'], upgradesFrom: 'spurs', ms: 48, cdr: .08, u: 'phase' },
+    { id: 'ghoststep', name: 'Ghoststep', d: '+64 move speed, 12% shorter cooldowns. Unique: a bigger burst after any ability.', cost: 1200, tier: 4, tags: ['mobility', 'ability'], upgradesFrom: 'phase', ms: 64, cdr: .12, u: ['phase', 'ghoststep'], legendary: true },
+    { id: 'stridegreaves', name: 'Stride Greaves', d: '+44 move speed, 14 armour and 14 magic resist.', cost: 750, tier: 3, tags: ['mobility', 'tank'], upgradesFrom: 'spurs', ms: 44, armor: 14, mr: 14 },
+    { id: 'stormgreaves', name: 'Storm Greaves', d: '+60 move speed, 24 armour and 24 magic resist. Unique: being stunned or rooted grants a burst of speed when it ends.', cost: 1200, tier: 4, tags: ['mobility', 'tank'], upgradesFrom: 'stridegreaves', ms: 60, armor: 24, mr: 24, u: 'stormgreaves', legendary: true },
+    // Jungle
+    { id: 'machete', name: 'Machete', d: '+25% damage to monsters, +5% attack power.', cost: 350, tier: 1, tags: ['jungle', 'attack'], mon: .25, ad: .05 },
+    { id: 'trailblade', name: 'Trail Blade', d: '+40% damage to monsters, +12% attack power. Monster kills heal you.', cost: 550, tier: 2, tags: ['jungle', 'attack'], upgradesFrom: 'machete', mon: .4, ad: .12, u: 'forager' },
+    { id: 'apexfang', name: 'Apex Fang', d: '+55% damage to monsters, +24% attack power, 8% lifesteal. Monster kills heal you.', cost: 850, tier: 3, tags: ['jungle', 'attack', 'sustain'], upgradesFrom: 'trailblade', mon: .55, ad: .24, lifesteal: .08, u: 'forager' },
+    { id: 'sovereign', name: 'Jungle Sovereign', d: '+70% damage to monsters, +34% attack power, 12% lifesteal. Unique: +25% damage to bosses.', cost: 1250, tier: 4, tags: ['jungle', 'attack', 'sustain'], upgradesFrom: 'apexfang', mon: .7, ad: .34, lifesteal: .12, u: ['forager', 'sovereign'], legendary: true },
+    { id: 'spiritmoss', name: 'Spirit Moss', d: '+25% damage to monsters, +7% ability power.', cost: 350, tier: 1, tags: ['jungle', 'magic'], mon: .25, ap: .07 },
+    { id: 'wildbloom', name: 'Wild Bloom', d: '+42% damage to monsters, +18% ability power. Monster kills heal you.', cost: 550, tier: 2, tags: ['jungle', 'magic'], upgradesFrom: 'spiritmoss', mon: .42, ap: .18, u: 'forager' },
+    { id: 'stormroot', name: 'Stormroot', d: '+58% damage to monsters, +32% ability power, +20 move speed. Monster kills heal you.', cost: 850, tier: 3, tags: ['jungle', 'magic', 'mobility'], upgradesFrom: 'wildbloom', mon: .58, ap: .32, ms: 20, u: 'forager' },
+    { id: 'skyrender', name: 'Skyrender', d: '+72% damage to monsters, +46% ability power, +34 move speed. Unique: +25% damage to bosses.', cost: 1250, tier: 4, tags: ['jungle', 'magic', 'mobility'], upgradesFrom: 'stormroot', mon: .72, ap: .46, ms: 34, u: ['forager', 'sovereign'], legendary: true },
     // Consumables: bought and used in one tap, no slot.
     { id: 'potion', name: 'Health Potion', d: 'Restores 40% of max health over 8 seconds.', cost: 110, tier: 1, tags: ['consumable'], consumable: true },
     { id: 'cleanse', name: 'Cleanse', d: 'Clears stuns, roots, slows, poison and curses at once. 25 second cooldown.', cost: 170, tier: 1, tags: ['consumable'], consumable: true },
@@ -778,15 +1109,37 @@ const Sim = (() => {
     cutthroat: ['headsman', 'phase', 'bloodfang'], nightblade: ['headsman', 'bloodfang', 'phase'], butcher: ['bloodfang', 'headsman', 'phase'], venomous: ['stormlash', 'bloodfang', 'phase'],
     brawler: ['bloodfang', 'bastion', 'phase'], wrecker: ['overclock', 'bastion', 'phase'], bouncer: ['bastion', 'phase', 'spikeguard'], fortress: ['bastion', 'spikeguard', 'sanctum'],
   };
+  REC.stormchaser = ['apexfang', 'phase', 'ragebrand']; REC.surge = ['stormroot', 'phase', 'stormglass']; REC.conductor = ['stormroot', 'overclock', 'phase']; REC.thunderhead = ['stormglass', 'phase', 'soulcage'];
+  REC.wellspring = ['sanctum', 'overclock', 'phase']; REC.undertow = ['lifewarden', 'overclock', 'phase']; REC.deluge = ['lifewarden', 'sanctum', 'phase']; REC.abyss = ['overclock', 'stridegreaves', 'sanctum'];
+  REC.skyknight = ['ragebrand', 'phase', 'ironmaul']; REC.sunstriker = ['headsman', 'phase', 'ironmaul']; REC.titanwing = ['ragebrand', 'phase', 'bastion']; REC.aegisborn = ['ironmaul', 'wardmail', 'phase'];
+  REC.twinshot = ['stormlash', 'railpiece', 'phase']; REC.shade = ['railpiece', 'phase', 'headsman']; REC.kaleidoscope = ['headsman', 'railpiece', 'phase']; REC.hollow = ['quickdraw', 'headsman', 'phase'];
+  REC.pyre = ['stormglass', 'overclock', 'phase']; REC.ashwalker = ['ashwand', 'phase', 'overclock']; REC.wildfire = ['stormglass', 'ashwand', 'phase']; REC.firestorm = ['overclock', 'stormglass', 'phase'];
+  REC.alpha = ['apexfang', 'phase', 'ragebrand']; REC.savage = ['ragebrand', 'ironmaul', 'phase']; REC.packleader = ['ragebrand', 'rallystandard', 'phase']; REC.hemorrhage = ['nightedge', 'bloodfang', 'phase'];
+  REC.bastille = ['bastion', 'wardmail', 'phase']; REC.artillery = ['ironmaul', 'overclock', 'phase']; REC.wreckingcrew = ['ironmaul', 'stormlash', 'phase']; REC.moonquake = ['ironmaul', 'bastion', 'phase'];
+  REC.marionettist = ['lifewarden', 'overclock', 'phase']; REC.troupe = ['overclock', 'lifewarden', 'phase']; REC.maestro = ['overclock', 'sanctum', 'phase']; REC.ventriloquist = ['sanctum', 'lifewarden', 'phase'];
+  // Other genuine routes per archetype, on top of each build's signature route (path 0).
+  const ARCH_PATHS = {
+    marksman: [['Rapid', ['quickdraw', 'stormlash', 'railpiece', 'phase', 'bloodfang']], ['Heavy', ['railpiece', 'headsman', 'bloodfang', 'phase', 'spellbreaker']]],
+    mage: [['Burst', ['stormglass', 'overclock', 'phase', 'ashwand', 'soulcage']], ['Battle', ['soulcage', 'ashwand', 'overclock', 'phase', 'wardmail']]],
+    support: [['Devoted', ['sanctum', 'lifewarden', 'phase', 'rallystandard', 'wardmail']], ['Warmaster', ['rallystandard', 'lifewarden', 'stridegreaves', 'bastion', 'wardmail']]],
+    assassin: [['Night', ['nightedge', 'phase', 'bonesaw', 'bloodfang', 'wardmail']], ['Ambush', ['bonesaw', 'nightedge', 'headsman', 'phase', 'spellbreaker']]],
+    bruiser: [['Unkillable', ['ironmaul', 'ragebrand', 'stridegreaves', 'wardmail', 'bastion']], ['Reaver', ['ragebrand', 'bloodfang', 'phase', 'ironmaul', 'wardmail']]],
+    tank: [['Wall', ['bastion', 'wardmail', 'titanheart', 'stridegreaves', 'spikeguard']], ['Crusher', ['ironmaul', 'wardmail', 'stridegreaves', 'bastion', 'titanheart']]],
+  };
+  const MAGIC_SWAP = { headsman: 'stormglass', bloodfang: 'ashwand', stormlash: 'soulcage', spikeguard: 'wardmail', ironmaul: 'soulcage', ragebrand: 'soulcage', nightedge: 'stormglass', bonesaw: 'overclock', apexfang: 'stormroot', railpiece: 'stormglass', quickdraw: 'ashwand' }, PHYS_SWAP = { overclock: 'bonesaw', stormglass: 'headsman', ashwand: 'bloodfang', soulcage: 'ironmaul', stormroot: 'apexfang' };
   // Filler for the last two slots per kit class, after the build's three core items.
-  const REC_FILL = { back: ['bloodfang', 'bastion'], front: ['spikeguard', 'bastion'], flank: ['bloodfang', 'bastion'], peel: ['bastion', 'overclock'] };
-  const LEGEND = { headsman: 'guillotine', bloodfang: 'gorefang', stormlash: 'tempest', bastion: 'citadel', spikeguard: 'thornwall', phase: 'ghoststep', overclock: 'singularity', sanctum: 'sanctuary' };
-  // Five final items in buying order: the build's three cores, then two fillers from different chains.
-  function recommended(champ, build) {
-    const k = KITS[champ]; if (!k) return []; const b = build || k.builds[0].id, core = (REC[b] || REC[k.builds[0].id]).slice();
-    for (const f of [...REC_FILL[CLASS[champ] || 'front'], 'bastion', 'overclock', 'bloodfang', 'phase', 'sanctum', 'spikeguard', 'headsman']) if (core.length < 5 && !core.includes(f)) core.push(f);
-    return core;
+  const REC_FILL = { back: ['bloodfang', 'wardmail'], front: ['wardmail', 'bastion'], flank: ['bloodfang', 'wardmail'], peel: ['wardmail', 'overclock'] };
+  const LEGEND = { headsman: 'guillotine', bloodfang: 'gorefang', stormlash: 'tempest', bastion: 'citadel', spikeguard: 'thornwall', phase: 'ghoststep', overclock: 'singularity', sanctum: 'sanctuary', railpiece: 'deadshot', quickdraw: 'gunrunner', nightedge: 'widowmaker', bonesaw: 'eclipse', ironmaul: 'kingsmaul', ragebrand: 'warbringer', stormglass: 'voidheart', ashwand: 'worldburn', soulcage: 'archlich', wardmail: 'aegisprime', titanheart: 'worldtree', lifewarden: 'saintsbell', rallystandard: 'highbanner', stridegreaves: 'stormgreaves', apexfang: 'sovereign', stormroot: 'skyrender' };
+  const swapFor = (k, id) => k.dtype === 'magic' ? (MAGIC_SWAP[id] || id) : (PHYS_SWAP[id] || id);
+  // Every genuine item route for a build: [{name, items}]. Path 0 is the build's signature route.
+  function itemPaths(champ, build) {
+    const k = KITS[champ]; if (!k) return []; const b = build || k.builds[0].id, core = [...new Set((REC[b] || REC[k.builds[0].id]).map(i => swapFor(k, i)))];
+    for (const f of [...REC_FILL[CLASS[champ] || 'front'], 'wardmail', 'bastion', 'phase', 'stridegreaves', k.dtype === 'magic' ? 'overclock' : 'bloodfang', 'titanheart']) { const g = swapFor(k, f); if (core.length < 5 && !core.includes(g)) core.push(g); }
+    const out = [{ name: 'Signature', items: core }];
+    for (const [name, items] of ARCH_PATHS[k.arch] || []) { const u = [...new Set(items.map(i => swapFor(k, i)))]; for (const f of ['wardmail', 'bastion', 'phase', 'stridegreaves', 'titanheart', 'lifewarden', k.dtype === 'magic' ? 'overclock' : 'bloodfang']) { const g = swapFor(k, f); if (u.length < 5 && !u.includes(g)) u.push(g); } out.push({ name, items: u }); }
+    return out;
   }
+  function recommended(champ, build, path) { const p = itemPaths(champ, build); return p.length ? (p[path || 0] || p[0]).items : []; }
   // Default build per kit and role, for bots and for a seat with none chosen.
   function defaultBuild(champ, role, roll) {
     const k = KITS[champ], ids = k.builds.map(x => x.id), avoid = BOT_BUILD_AVOID[champ] || {}, pool = ids.filter(b => !(avoid[b] || []).includes(role));
@@ -794,11 +1147,37 @@ const Sim = (() => {
   }
   // Build fits: which build does not suit a given role (bot defaults only; players are free).
   const BOT_BUILD_AVOID = {
+    tidecaller: { undertow: ['bottom'] }, puppeteer: { ventriloquist: ['bottom'] }, voltaic: { stormchaser: ['top'] }, ravager: { alpha: ['top'] }, cataclysm: { bastille: [] },
     solenne: { sunlance: ['support'], lifebringer: ['bottom', 'top'], protector: ['bottom', 'top'], radiant: ['bottom', 'top'] },
     plague: { apothecary: ['top', 'bottom'], bloodletter: ['support', 'bottom'], ward: ['top'] },
     ione: { stellar: ['top', 'bottom'] }, hex: { jinx: ['top', 'bottom'] },
     kade: { vanguard: ['jungle'], breaker: ['jungle'] }, gravel: { warden: ['top', 'jungle'] }, ironjaw: { bouncer: ['jungle'] },
   };
+
+  // Lane proficiencies: picked per seat before the match (seat.prof), independent of the champion.
+  const PROFS = {
+    top: [
+      { id: 'challenger', name: 'Challenger', d: '+10% damage to champions while no ally is near you.' },
+      { id: 'ironclad', name: 'Ironclad', d: 'Take 18% less damage under your own towers.' },
+      { id: 'demolisher', name: 'Demolisher', d: 'Your attacks and abilities hit structures 35% harder.' },
+    ],
+    jungle: [
+      { id: 'predator', name: 'Predator', d: '+25% damage to monsters and +15% to bosses.' },
+      { id: 'killstrike', name: 'Kill Strike', d: 'A monster that falls under 10% health is finished instantly and heals you 8%. 10 seconds to recharge, 30 after a boss.' },
+      { id: 'tracker', name: 'Tracker', d: '+12% move speed in the jungle and +25% gold from camps.' },
+    ],
+    bottom: [
+      { id: 'harvester', name: 'Harvester', d: '+30% gold from minion last hits.' },
+      { id: 'tempo', name: 'Tempo', d: 'Basic attacks on champions build attack speed: up to five stacks of 6% that fade after 3 seconds.' },
+      { id: 'longsight', name: 'Long Sight', d: '+120 sight. Your first hit on a champion after 4 quiet seconds deals 25% more.' },
+    ],
+    support: [
+      { id: 'guardian', name: 'Guardian', d: '+20% healing and shields.' },
+      { id: 'pathfinder', name: 'Pathfinder', d: 'Hold a third beacon, recharge beacons twice as fast and see farther from them.' },
+      { id: 'patron', name: 'Patron', d: 'Assists pay 40% more, and you earn passive gold 60% faster.' },
+    ],
+  };
+  const PROF_IDS = {}; for (const r in PROFS) for (const p of PROFS[r]) PROF_IDS[p.id] = r;
 
   // Marks earned at the end of a match.
   function marksEarned(won, st) { st = st || {}; return Math.round(30 + (won ? 45 : 0) + Math.min(30, (st.kills || 0) * 3 + (st.assists || 0) * 1.5) + Math.min(10, (st.skillHits || 0) * .1)); }
@@ -843,7 +1222,7 @@ const Sim = (() => {
     if (!src || src.kind !== 'champ') return;
     for (const c of s.champs) {
       if (c === src || c.team !== src.team || !c.alive || c.role !== 'support' || Math.hypot(c.x - x, c.y - y) > 850) continue;
-      const k = roleK(c, 'support') * .5; if (k) { c.gold += gold * k; giveXp(s, c, xp * k); }
+      const k = roleK(c, 'support') * .5; if (k) { c.gold += gold * k; c.stats.gold += gold * k; giveXp(s, c, xp * k); }
     }
   }
 
@@ -869,17 +1248,17 @@ const Sim = (() => {
         const hp = kind === 'core' ? CORE_HP : tier === 0 ? TOWER_HP[0] : TOWER_HP[1];
         s.towers.push({ id: s.nid++, kind: 'tower', sub: kind, team, x: mir(x, team), y, px: mir(x, team), py: y, r: kind === 'core' ? 54 : 36, hp, maxHp: hp, armor: 30, range: kind === 'core' ? CORE_RANGE : TOWER_RANGE, sight: 750, alive: true, cd: 0, lane, tier, stack: 0, last: null, vx: 0, vy: 0 });
       };
-      for (const lane of [0, 1]) { const f = y => lane ? H - y : y; mk(S(1480), f(S(402)), 'tower', lane, 0); mk(S(800), f(S(640)), 'tower', lane, 1); }
+      for (const lane of [0, 1]) { const f = y => lane ? H - y : y; mk(S(1500), f(S(345)), 'tower', lane, 0); mk(S(800), f(S(640)), 'tower', lane, 1); }
       mk(S(340), H / 2, 'core', -1, 2);
     });
     // Jungle: four quadrants, each with a small trio and one heavy
     for (const [mx, my] of [[0, 0], [1, 0], [0, 1], [1, 1]]) {
       const px = x => mx ? W - x : x, py = y => my ? H - y : y;
-      s.camps.push({ id: s.camps.length, x: px(S(1130)), y: py(S(810)), big: false, at: 30, alive: false, side: mx });
-      s.camps.push({ id: s.camps.length, x: px(S(1640)), y: py(S(810)), big: true, at: 45, alive: false, side: mx });
+      s.camps.push({ id: s.camps.length, x: px(S(1130)), y: py(S(790)), big: false, at: 30, alive: false, side: mx });
+      s.camps.push({ id: s.camps.length, x: px(S(1610)), y: py(S(830)), big: true, at: 45, alive: false, side: mx });
     }
     // Civilian sites: two per quadrant, nudged onto open ground if a position is walled.
-    for (const [mx, my] of [[0, 0], [1, 0], [0, 1], [1, 1]]) for (const [x, y] of [[S(1400), S(810)], [S(1880), S(810)]]) {
+    for (const [mx, my] of [[0, 0], [1, 0], [0, 1], [1, 1]]) for (const [x, y] of [[S(1440), S(690)], [S(1960), S(800)]]) {
       const f = nearestFree(s.map, mx ? W - x : x, my ? H - y : y);
       s.sites.push({ id: s.sites.length, x: f.x, y: f.y, alive: true, at: 0, prog: [0, 0], need: 2.5, con: {} });
     }
@@ -890,12 +1269,13 @@ const Sim = (() => {
       const fixed = list.map(p => Object.assign({}, p, { champ: sideKit(team, p.champ) })), roles = teamRoles(fixed);
       fixed.forEach((p, i) => {
       const champ = p.champ, k = KITS[champ], role = roles[i];
+      const prof = (PROFS[role] || []).some(x => x.id === p.prof) ? p.prof : !p.human ? (PROFS[role] || [])[(hash01((cfg.seed || 7) + team * 17, i + 301) * 3 | 0)].id : PROFS[role][0].id;
       const build = k.builds.some(b => b.id === p.build) ? p.build : defaultBuild(champ, role, hash01((cfg.seed || 7) + team * 13, i + 101));
       const c = {
         id: s.nid++, kind: 'champ', team, slot: i, role, solo: false, atkPref: 0, champ, pname: p.name, tier: p.tier || 0, human: !!p.human, remote: !!p.remote, skill: p.skill, build, buildDef: k.builds.find(b => b.id === build),
-        finish: p.finish, trail: p.trail, recall: p.recall,
-        x: mir(S(180), team), y: H / 2 + (i - 1.5) * 46, r: 26, sight: k.sight, lvl: 1, xp: 0, gold: 300, up: { edge: 0, guard: 0, haste: 0 },
-        hp: k.hp, maxHp: k.hp, armor: k.armor, dmgBase: k.dmg, range: k.range, msBase: k.ms, as: k.as, kit: k.kit, f: { [build]: 1 }, evolved: [-1, -1], items: Array(ITEM_SLOTS).fill(null), atkMode: 'champ', beacons: 2, beaconT: 0, st: blankStats(),
+        finish: p.finish, trail: p.trail, recall: p.recall, prof, targetPref: p.targetPref === 'pct' ? 'pct' : 'hp',
+        x: mir(S(180), team), y: H / 2 + (i - 1.5) * 46, r: 26, sight: k.sight + (prof === 'longsight' ? 120 : 0), lvl: 1, xp: 0, gold: 300, up: { edge: 0, guard: 0, haste: 0 },
+        hp: k.hp, maxHp: k.hp, armor: k.armor, mr: k.mr, dmgBase: k.dmg, range: k.range, msBase: k.ms, as: k.as, kit: k.kit, f: { [build]: 1 }, evolved: [-1, -1], items: Array(ITEM_SLOTS).fill(null), atkMode: 'champ', beacons: prof === 'pathfinder' ? 3 : 2, beaconT: 0, st: blankStats(),
         alive: true, respawn: 0, atkCd: 0, lock: 0, fx: team ? -1 : 1, fy: 0, cd: [0, 0, 0], recast: [0, 0, 0], q: [], mv: { x: 0, y: 0 }, atk: false,
         stunT: 0, slowT: 0, slowA: 0, markT: 0, parryT: 0, drT: 0, air: 0, buffT: 0, empowerT: 0, revealT: 0, rootT: 0, polyT: 0, knockT: 0, knockMax: 0, stealthT: 0, noHealT: 0, hasteT: 0, hasteA: 0, shieldHp: 0, shieldT: 0, vulnT: 0, dmarkT: 0, opener: 0, ripT: 0, curseN: 0, curseT: 0, poisonT: 0, poisonDps: 0, bleedT: 0, bleedDps: 0, pstack: 0, pready: 0, rage: 0, streak: 0, bounty: 0, potT: 0, elixT: 0, tonicT: 0, sentT: 0, dropT: 0, buybackCd: 0, fundCd: 0, cleanseCd: 0, dlog: [],
         vx: 0, vy: 0, assist: {}, charge: null, chan: null, dash: null, leap: null, cuts: null, duelZ: null, inBrush: -1, recentHit: 0,
@@ -927,7 +1307,7 @@ const Sim = (() => {
   }
   // Practice: dummies stand still along the middle road. side: -1 near the human's base, +1 further out.
   function placeDummy(s, c, side) { const off = 760 + c.slot * 90 + (side > 0 ? 500 : 0); c.hx = s.practiceSide ? W - off : off; c.hy = H / 2 + (c.slot - 1.5) * 150; c.x = c.px = c.hx; c.y = c.py = c.hy; }
-  const blankStats = () => ({ dmg: 0, ad: 0, ap: 0, hp: 0, armor: 0, as: 0, ms: 0, cdr: 0, lifesteal: 0, healPow: 0, regen: 0, u: {} });
+  const blankStats = () => ({ dmg: 0, ad: 0, ap: 0, hp: 0, armor: 0, mr: 0, pen: 0, mpen: 0, vamp: 0, mon: 0, as: 0, ms: 0, cdr: 0, lifesteal: 0, healPow: 0, regen: 0, u: {} });
   function itemStats(c) { const st = blankStats(); for (const id of c.items) { if (!id) continue; const it = ITEM_BY[id]; for (const k in st) if (k !== 'u' && it[k]) st[k] += it[k]; if (it.u) for (const u of [].concat(it.u)) st.u[u] = 1; } st.cdr = Math.min(.45, st.cdr); return st; }
   const cdOf = (c, i) => { const a = c.kit[i]; return a.noCdr ? a.cd : a.cd * (1 - c.st.cdr); };
 
@@ -958,7 +1338,7 @@ const Sim = (() => {
     return false;
   }
 
-  function heal(s, src, t, amt) { if (t.noHealT > 0) return; amt *= (1 + .15 * roleK(src, 'support')) * (1 + (src.st ? src.st.healPow : 0)); const a = Math.min(amt, t.maxHp - t.hp); t.hp += a; if (src.stats) src.stats.healing += a; if (a > 1) s.ev.push({ e: 'heal', u: t.id, a: Math.round(amt) }); }
+  function heal(s, src, t, amt) { if (t.noHealT > 0) return; amt *= (1 + .15 * roleK(src, 'support')) * (1 + (src.st ? src.st.healPow : 0)) * (src.prof === 'guardian' ? 1.2 : 1); if (src.st && src.st.u.saintsbell && t !== src) t.bellT = 3; const a = Math.min(amt, t.maxHp - t.hp); t.hp += a; if (src.stats) src.stats.healing += a; if (a > 1) s.ev.push({ e: 'heal', u: t.id, a: Math.round(amt) }); }
 
   function hurt(s, src, t, amt, o = {}) {
     if (!t.alive || t.air) return 0;
@@ -970,8 +1350,10 @@ const Sim = (() => {
       if (t.f.vanguard) for (const a of alliesIn(s, t.team, t.x, t.y, 300)) if (a !== t) shield(s, a, 100 * hpow(t), 3);
       return 0;
     }
-    let a = amt * 100 / (100 + (t.armor || 0));
-    const champSrc = src && src.kind === 'champ';
+    const champSrc = src && src.kind === 'champ', magic = champSrc && !o.basic && isMag(src);
+    let res = magic ? (t.mr !== undefined ? t.mr : t.armor || 0) : (t.armor || 0);
+    if (champSrc) res *= 1 - (magic ? src.st.mpen : src.st.pen);
+    let a = amt * 100 / (100 + res);
     if (champSrc) {
       if (src.opener > 0 && t.kind === 'champ' && !o.dot) { a *= 1.6; o.crit = 1; src.opener = 0; }
       if (t.hp < t.maxHp * .35) { if (src.st.u.guillotine) a *= 1.28; else if (src.st.u.headsman) a *= 1.15; }
@@ -980,8 +1362,15 @@ const Sim = (() => {
       if (t.vulnT > 0) a *= 1.25;
       if (src.team === s.hopeTeam) a *= 1.08;
       if (s.boons[src.team].warlord > 0) a *= o.basic ? 1.22 : 1.08;
+      if (t.stringT > 0 && t.stringBy === src.team) a *= t.stringK || 1.08;
+      if (src.bellT > 0) a *= 1.08;
+      a *= uniqueOut(s, src, t, a, o);
     }
     if (t.drT > 0) a *= .7;
+    if (t.kind === 'champ') {
+      if (t.prof === 'ironclad' && s.towers.some(o2 => o2.alive && o2.team === t.team && dist(o2, t) < o2.range)) a *= .82;
+      if (t.st.u.aegisprime && !o.basic && !o.dot && champSrc && !(t.aegAt > s.t)) { a *= .5; t.aegAt = s.t + 20; }
+    }
     if (t.shellT > 0) a *= .55;
     for (const z of s.zones) if (z.kind === 'dome' && z.team === t.team && Math.hypot(z.x - t.x, z.y - t.y) < z.r) { a *= 1 - .25 * (1 + .15 * roleK(z.owner, 'support')); break; }
     if (t.kind === 'champ') for (const al of s.champs) if (al.team === t.team && al.alive && al.st.u.sanctum && al !== t && dist(al, t) < 350) { a *= al.st.u.sanctuary ? .85 : .92; break; }
@@ -989,9 +1378,15 @@ const Sim = (() => {
     if (t.kind === 'tower') a *= structureK(s);
     if (t.kind === 'tower' && src && src.kind === 'minion') a *= src.towerK || 1;
     if (s.practice && t.kind === 'tower') { s.ev.push({ e: 'hit', u: t.id, a: Math.round(a), sk: o.skill ? 1 : 0, crit: 0, by: src ? src.id : 0 }); return a; }
-    if (t.kind === 'monster' && champSrc) { t.hitAt = s.t; if (!t.tgt) t.tgt = src; a *= 1 + .35 * roleK(src, 'jungle'); }
+    if (t.kind === 'monster' && champSrc) {
+      t.hitAt = s.t; if (!t.tgt) t.tgt = src; a *= (1 + .35 * roleK(src, 'jungle')) * (1 + src.st.mon) * (src.prof === 'predator' ? (t.boss ? 1.15 : 1.25) : 1) * (t.boss && src.st.u.sovereign ? 1.25 : 1);
+      // Kill Strike: a monster dropping under 10% is finished on the spot.
+      if (src.prof === 'killstrike' && !(src.strikeAt > s.t) && t.hp - a < t.maxHp * .1) { a = Math.max(a, t.hp + 1); src.strikeAt = s.t + (t.boss ? 30 : 10); heal(s, src, src, src.maxHp * .08); s.ev.push({ e: 'strike', u: src.id, x: t.x, y: t.y }); }
+    }
+    if (t.kind === 'tower' && champSrc && src.prof === 'demolisher') a *= 1.35;
     if (t.shieldHp > 0) { const ab = Math.min(t.shieldHp, a); t.shieldHp -= ab; a -= ab; }
-    t.hp -= a;
+    if (t.kind === 'champ' && t.st.u.archlich && a >= t.hp && !(t.lichAt > s.t)) { a = Math.max(0, t.hp - t.maxHp * .15); t.lichAt = s.t + 45; s.ev.push({ e: 'shield', u: t.id, a: Math.round(t.maxHp * .15) }); }
+    t.hp -= a; if (t.kind === 'champ') t.lastHurt = s.t;
     if (t.kind === 'champ' && a > 0) { t.stats.taken += a; logDamage(s, src, t, a, o); }
     if (t.chan && t.chan.recall) t.chan = null;
     if (t.kind === 'champ') {
@@ -1005,13 +1400,35 @@ const Sim = (() => {
       src.stats.dmg += a; if (t.kind === 'champ') src.stats.dealt += a;
       if (!o.dot) { src.revealT = 1.2; if (t.kind === 'champ') { t.assist[src.id] = s.t; src.recentHit = s.t; } }
       if (o.basic && t.alive && t.kind === 'champ' && src.st.u.tempest) t.markT = Math.max(t.markT || 0, 1.5);
-      if (src.st.lifesteal && !o.dot && (t.kind === 'champ' || t.kind === 'monster' || t.kind === 'minion')) heal(s, src, src, a * src.st.lifesteal * (t.kind === 'champ' ? 1 : .4));
+      if (src.st.lifesteal && !o.dot && (o.basic || !magic) && t.kind !== 'tower') heal(s, src, src, a * src.st.lifesteal * (t.kind === 'champ' ? 1 : .4));
+      if (src.st.vamp && !o.dot && magic && t.kind !== 'tower') heal(s, src, src, a * src.st.vamp * (t.kind === 'champ' ? 1 : .4));
+      if (src.lsBonus && o.basic && t.kind !== 'tower') heal(s, src, src, a * src.lsBonus);
+      if (o.basic && src.st.u.cleave && !o.dot) for (const e of enemiesIn(s, src, t.x, t.y, 140)) if (e !== t) hurt(s, src, e, a * .25, { dot: 1 });
+      if (o.basic && src.st.u.gunrunner && t.kind === 'champ') haste(src, .18, 1);
+      if (!o.basic && !o.dot && src.st.u.worldburn && t.kind === 'champ' && t.alive) bleed(s, src, t, a * .12, 3);
+      if (o.basic && src.prof === 'tempo' && t.kind === 'champ') { src.tempoN = Math.min(5, (src.tempoT > 0 ? src.tempoN || 0 : 0) + 1); src.tempoT = 3; }
       if (o.basic && src.st.u.bleed && t.kind === 'champ' && t.alive) bleed(s, src, t, 10 * pow(src), 2);
       if (t.kind === 'champ' && t.curseN > 0 && t.curseT > 0 && !o.dot && t.curseBy && t.curseBy.team === src.team && t.curseBy.f.jinx) heal(s, t.curseBy, src, a * .08);
     }
     s.ev.push({ e: 'hit', u: t.id, a: Math.round(a), sk: o.skill ? 1 : 0, crit: o.crit ? 1 : 0, by: src ? src.id : 0 });
     if (t.hp <= 0) kill(s, src, t);
     return a;
+  }
+
+  // Damage multipliers from legendary uniques and proficiencies, on hits by a champion.
+  function uniqueOut(s, src, t, a, o) {
+    const U = src.st.u; let k = 1, champ = t.kind === 'champ';
+    if (U.deadshot && o.basic && t.hp > t.maxHp * .7) k *= 1.22;
+    if (U.voidheart && !o.basic && t.hp > t.maxHp * .6) k *= 1.12;
+    if (U.warbringer && src.hp < src.maxHp * .4) k *= 1.18;
+    for (const al of s.champs) if (al.alive && al.team === src.team && al !== src && al.st.u.rally && dist(al, src) < 350) { k *= al.st.u.highbanner ? 1.12 : 1.06; break; }
+    if (champ && !o.dot) {
+      if (U.ambush) { if (s.t - (src.ambAt === undefined ? -99 : src.ambAt) > 6) k *= U.widow ? 1.4 : 1.25; src.ambAt = s.t; }
+      if (src.prof === 'longsight') { if (s.t - (src.quietAt === undefined ? -99 : src.quietAt) > 4) k *= 1.25; src.quietAt = s.t; }
+      if (src.prof === 'challenger' && src.solo) k *= 1.1;
+      if (U.eclipse) { if (src.eclTgt !== t.id || s.t - src.eclAt > 2) { src.eclTgt = t.id; src.eclN = 0; } src.eclAt = s.t; if (++src.eclN >= 3) { src.eclN = 0; t.hp -= Math.min(t.hp - 1, t.maxHp * .07 * 100 / (100 + (t.mr || 0))); s.ev.push({ e: 'boom', x: t.x, y: t.y, r: 70, fx: 'break' }); } }
+    }
+    return k;
   }
 
   // Death recap: a rolling 15 second record of what hurt a champion, by source and ability.
@@ -1035,23 +1452,23 @@ const Sim = (() => {
   }
 
   function giveXp(s, c, xp) {
-    if (c.lvl >= 10) return; if (c.solo) xp *= 1 + .2 * roleK(c, 'top'); xp *= 1 + .12 * (s.catchup ? s.catchup[c.team] : 0); c.xp += xp;
-    while (c.lvl < 10 && c.xp >= xpNeed(c.lvl)) { c.xp -= xpNeed(c.lvl); c.lvl++; applyStats(c, true); s.ev.push({ e: 'level', u: c.id }); }
+    if (c.lvl >= MAX_LEVEL) return; if (c.solo) xp *= 1 + .2 * roleK(c, 'top'); xp *= 1 + .22 * (s.catchup ? s.catchup[c.team] : 0); c.xp += xp;
+    while (c.lvl < MAX_LEVEL && c.xp >= xpNeed(c.lvl)) { c.xp -= xpNeed(c.lvl); c.lvl++; applyStats(c, true); s.ev.push({ e: 'level', u: c.id }); }
   }
-  const xpNeed = l => 180 + 110 * (l - 1);
+  const xpNeed = l => 150 + 55 * (l - 1);
   function applyStats(c, keepFrac) {
     const k = KITS[c.champ], f = c.hp / c.maxHp, st = itemStats(c), b = (c.buildDef && c.buildDef.stats) || {};
     c.st = st;
-    c.maxHp = (k.hp + k.hpG * (c.lvl - 1) + st.hp) * (b.hp || 1) * (c.solo ? 1 + .08 * roleK(c, 'top') : 1) * (c.sentT > 0 ? 1.1 : 1);
-    c.armor = k.armor + k.armG * (c.lvl - 1) + st.armor + (b.armor || 0);
-    c.dmgBase = (k.dmg + k.dmgG * (c.lvl - 1)) * (1 + st.dmg + st.ad) * (b.dmg || 1) * (c.elixT > 0 ? 1.15 : 1);
+    const lg = (c.lvl - 1) * LVL_G; c.maxHp = (k.hp + k.hpG * lg + st.hp) * (b.hp || 1) * (c.solo ? 1 + .08 * roleK(c, 'top') : 1) * (c.sentT > 0 ? 1.1 : 1);
+    c.armor = k.armor + k.armG * lg + st.armor + (b.armor || 0); c.mr = k.mr + k.mrG * lg + st.mr + (b.mr || 0);
+    c.dmgBase = (k.dmg + k.dmgG * lg) * (1 + st.dmg + st.ad) * (b.dmg || 1) * (c.elixT > 0 ? 1.15 : 1);
     c.msBase = k.ms + st.ms + (b.ms || 0);
     c.as = k.as * (1 + st.as) * (b.as || 1);
     c.range = Math.min(k.range + (b.range || 0), MAX_ATTACK_RANGE);
     if (keepFrac) c.hp = Math.max(1, c.maxHp * f);
   }
   // Catch-up pay for the side that has fallen behind.
-  const earn = (s, c, g) => { g *= (1 + .22 * (s.catchup ? s.catchup[c.team] : 0)) * (s.boons[c.team].heist > 0 ? 1.25 : 1); c.gold += g; c.stats.gold += g; };
+  const earn = (s, c, g) => { g *= (1 + .34 * (s.catchup ? s.catchup[c.team] : 0)) * (s.boons[c.team].heist > 0 ? 1.25 : 1); c.gold += g; c.stats.gold += g; };
   // Paying a champion without catch-up multipliers: objectives, bounties and refunds already carry their own numbers.
   const pay = (s, c, g) => { c.gold += g; c.stats.gold += g; };
   const teamNear = (s, team, x, y, r) => s.champs.filter(c => c.team === team && c.alive && Math.hypot(c.x - x, c.y - y) < r);
@@ -1067,28 +1484,29 @@ const Sim = (() => {
     const et = 1 - t.team;
     if (t.kind === 'champ') {
       sendRecap(s, t);
-      t.deaths = (t.deaths || 0) + 1; t.stats.deaths++; if (t.bot) t.bot.deaths.push(s.t); t.respawn = 5 + t.lvl * 1.6 + s.t / 120 + Math.max(0, s.t - 780) / 22; t.chan = t.dash = t.charge = t.leap = null; t.air = 0; t.stealthT = 0; t.duelZ = null; t.shieldHp = 0;
+      t.deaths = (t.deaths || 0) + 1; t.stats.deaths++; if (t.bot) t.bot.deaths.push(s.t); t.respawn = 5 + t.lvl * 1.1 + s.t / 120 + Math.max(0, s.t - 780) / 22; t.respawn *= 1 - .22 * s.catchup[t.team]; t.chan = t.dash = t.charge = t.leap = null; t.air = 0; t.stealthT = 0; t.duelZ = null; t.shieldHp = 0;
       const bounty = t.bounty || 0; t.streak = 0; t.bounty = 0;
       if (s.practice) t.respawn = .6;
       s.kills[et]++;
       let multi = 1;
       if (src && src.kind === 'champ') { multi = s.t - (src.lastKill || -99) < 10 ? (src.multi || 1) + 1 : 1; src.multi = multi; src.lastKill = s.t; }
       const first = !s.firstBlood; s.firstBlood = true;
+      if (src && src.kind === 'champ' && src.st.u.widow) haste(src, .35, 2.5);
       if (src && src.kind === 'champ') { src.streak = (src.streak || 0) + 1; src.bounty = bountyFor(src.streak); earn(s, src, KILL_GOLD + bounty); src.stats.kills++; giveXp(s, src, 120 + 16 * t.lvl); s.ev.push({ e: 'gold', u: src.id, a: KILL_GOLD + bounty }); }
-      for (const id in t.assist) if (s.t - t.assist[id] < 9 && (!src || +id !== src.id)) { const a = s.champs.find(c => c.id === +id); if (a) { earn(s, a, ASSIST_GOLD); a.stats.assists++; giveXp(s, a, 70); } }
+      for (const id in t.assist) if (s.t - t.assist[id] < 9 && (!src || +id !== src.id)) { const a = s.champs.find(c => c.id === +id); if (a) { earn(s, a, ASSIST_GOLD * (a.prof === 'patron' ? 1.4 : 1)); a.stats.assists++; giveXp(s, a, 70); } }
       supportShare(s, src, t.x, t.y, ASSIST_GOLD, 70);
       t.assist = {};
       s.ev.push({ e: 'feed', a: src ? src.id : 0, b: t.id, multi, first, bounty });
     } else if (t.kind === 'minion') {
       const near = teamNear(s, et, t.x, t.y, 850);
       near.forEach(c => { giveXp(s, c, 42 / Math.max(1, near.length * .7)); if (c !== src) earn(s, c, 7); });
-      if (src && src.kind === 'champ') { const g = Math.round((t.heavy ? 48 : t.type === 'ranged' ? 18 : 22) * (1 + .25 * roleK(src, 'bottom'))); earn(s, src, g); s.ev.push({ e: 'gold', u: src.id, a: g }); supportShare(s, src, t.x, t.y, 22, 28); }
+      if (src && src.kind === 'champ') { const g = Math.round((t.heavy ? 48 : t.type === 'ranged' ? 18 : 22) * (1 + .25 * roleK(src, 'bottom')) * (src.prof === 'harvester' ? 1.3 : 1)); earn(s, src, g); s.ev.push({ e: 'gold', u: src.id, a: g }); supportShare(s, src, t.x, t.y, 22, 28); }
     } else if (t.kind === 'monster') {
       if (t.boss) {
         bossDown(s, t, src);
       } else {
         const near = teamNear(s, src ? src.team : 0, t.x, t.y, 700);
-        near.forEach(c => { giveXp(s, c, (t.big ? 130 : 44)); earn(s, c, (t.big ? 95 : 32) * (1 + .3 * roleK(c, 'jungle'))); });
+        near.forEach(c => { giveXp(s, c, (t.big ? 130 : 44)); earn(s, c, (t.big ? 95 : 32) * (1 + .3 * roleK(c, 'jungle')) * (c.prof === 'tracker' ? 1.25 : 1)); if (c === src && c.st.u.forager) heal(s, c, c, c.maxHp * (t.big ? .1 : .04)); });
         supportShare(s, src, t.x, t.y, t.big ? 95 : 32, t.big ? 130 : 44);
         const camp = s.camps[t.camp]; camp.left--; if (camp.left <= 0) { camp.alive = false; camp.at = s.t + 70; }
       }
@@ -1114,9 +1532,9 @@ const Sim = (() => {
       }
     }
   }
-  const CAMP_LEASH = 280, BOSS_LEASH = 450;
-  const KILL_GOLD = 320, ASSIST_GOLD = 170, bountyFor = streak => streak >= 2 ? Math.min(800, 150 * (streak - 1)) : 0;
-  const TOWER_HP = [1800, 2300], CORE_HP = 3800;
+  const CAMP_LEASH = 280, BOSS_LEASH = 450, MINION_LEASH = 210;
+  const KILL_GOLD = 320, ASSIST_GOLD = 170, bountyFor = streak => streak >= 2 ? Math.min(560, 110 * (streak - 1)) : 0;
+  const TOWER_HP = [2050, 2600], CORE_HP = 4700;
   const MINION_TYPES = {
     melee: { hp: 400, dmg: 22, range: 88, ms: 215, as: .9, armor: 10, r: 17, towerK: 1.1 },
     ranged: { hp: 270, dmg: 28, range: 250, ms: 215, as: .9, armor: 10, r: 14, towerK: 1.1 },
@@ -1188,7 +1606,7 @@ const Sim = (() => {
   const EVENT_FIRST = 180, EVENT_EVERY = 120, EVENT_WARN = 10;
   const EVENT_INFO = {
     heist: { name: 'Bank Heist', d: 'Villains rob the vault while Heroes guard it. Hold it uncontested to fill your bar first.', boon: 'heist', live: 42, need: 1, gold: 130, hope: 6 },
-    convoy: { name: 'Rescue Convoy', d: 'Heroes walk the civilians along the river road. Villains stop them.', boon: 'convoy', live: 65, gold: 150, hope: 8 },
+    convoy: { name: 'Rescue Convoy', d: 'Heroes walk the civilians along the river road. Villains stop them.', boon: 'convoy', live: 72, gold: 150, hope: 8 },
     blackout: { name: 'Blackout', d: 'The lights fail. Whoever restarts the generator keeps their sight.', boon: 'blackout', live: 45, need: 1, gold: 100, hope: 4 },
     drop: { name: 'Supply Drop', d: 'A crate is falling. It pays whoever claims it.', boon: 'drop', live: 50, need: 1, gold: 180, hope: 3 },
   };
@@ -1234,13 +1652,13 @@ const Sim = (() => {
       if (E.prog[0] >= 1) return eventWon(s, 0);
       if (E.t <= 0) return eventWon(s, E.prog[0] > E.prog[1] ? 0 : E.prog[1] > E.prog[0] ? 1 : -1);
     } else if (E.kind === 'convoy') {
-      const path = s.map.convoyPath, wp = path[E.i], n = norm(wp[0] - E.x, wp[1] - E.y), sp = (n0 && !n1 ? 58 : !n1 ? 28 : n1 && !n0 ? 0 : 20) * DT;
+      const path = s.map.convoyPath, wp = path[E.i], n = norm(wp[0] - E.x, wp[1] - E.y), sp = (n0 && !n1 ? 62 : !n1 ? 30 : n1 && !n0 ? 0 : 24) * DT;
       if (n.l <= sp) { E.i++; if (E.i >= path.length) return eventWon(s, 0); } else { E.x += n.x * sp; E.y += n.y * sp; }
       if (n1 && !n0) E.hp = Math.max(0, E.hp - (100 / 16) * (1 + (n1 - 1) * .35) * DT);
       if (E.hp <= 0) return eventWon(s, 1);
-      if (E.t <= 0) return eventWon(s, 1);
+      if (E.t <= 0) return eventWon(s, E.i >= 3 ? 0 : 1); // past the midpoint, the people made it far enough
     } else {
-      const base = E.kind === 'drop' ? 1 / 5 : 1 / 7;
+      const base = E.kind === 'drop' ? 1 / 5 : 1 / 5.5;
       if (n0 && !n1) E.prog[0] += rate(n0, base); else if (n1 && !n0) E.prog[1] += rate(n1, base);
       if (!n0 && E.prog[0] > 0) E.prog[0] = Math.max(0, E.prog[0] - DT * .2);
       if (!n1 && E.prog[1] > 0) E.prog[1] = Math.max(0, E.prog[1] - DT * .2);
@@ -1373,17 +1791,28 @@ const Sim = (() => {
       for (const m of [...s.minions, ...s.monsters]) { if (!m.alive || m.air || m.team === c.team || m.delay > 0 || dist(c, m) - m.r >= r || !hasLOS(c.x, c.y, m.x, m.y)) continue; const v = m.hp * 100 / (100 + (m.armor || 0)); if (v < bh) { bh = v; b = m; } }
       return b;
     }
-    const champ = nearestFoe(s, c, r, { champsOnly: true, los: true }); if (champ) return champ;
+    const champ = quickTarget(s, c, r); if (champ) return champ;
     if (c.preferTower) { const t = structure(); if (t) return t; }
-    const unit = nearestFoe(s, c, r, { noChamps: true, los: true }); if (unit) return unit;
-    let b = null, bd = r; for (const x of s.beacons) if (x.alive && x.team !== c.team && canSee(s, c.team, x)) { const d = dist(c, x) - x.r; if (d < bd && hasLOS(c.x, c.y, x.x, x.y)) { bd = d; b = x; } }
-    return b || structure();
+    // Then the surroundings: lane minions and towers in a lane, monsters in the jungle.
+    const lowest = list => { let b = null, bh = 1e9; for (const m of list) { if (!m.alive || m.air || m.team === c.team || m.delay > 0 || dist(c, m) - m.r >= r || !hasLOS(c.x, c.y, m.x, m.y)) continue; const v = m.hp * 100 / (100 + (m.armor || 0)); if (v < bh) { bh = v; b = m; } } return b; };
+    const beacon = () => { let b = null, bd = r; for (const x of s.beacons) if (x.alive && x.team !== c.team && canSee(s, c.team, x)) { const d = dist(c, x) - x.r; if (d < bd && hasLOS(c.x, c.y, x.x, x.y)) { bd = d; b = x; } } return b; };
+    if (inJungle(s, c)) return lowest(s.monsters) || lowest(s.minions) || beacon() || structure();
+    return lowest(s.minions) || beacon() || structure() || lowest(s.monsters);
+  }
+  // Which ground a unit stands on, for targeting: within reach of a lane road is lane, otherwise jungle. Bases count as lane.
+  const inJungle = (s, u) => laneDist(s, 0, u.x, u.y) > 300 && laneDist(s, 1, u.x, u.y) > 300 && dist(u, s.fountains[0]) > 700 && dist(u, s.fountains[1]) > 700;
+  // The enemy champion a tap should go to: lowest health in reach, by value or by share, per c.targetPref.
+  function quickTarget(s, c, r) {
+    let best = null, bv = 1e12; const pct = c.targetPref === 'pct';
+    for (const e of s.champs) { if (!e.alive || e.air || e.team === c.team || !canSee(s, c.team, e) || dist(c, e) - e.r >= r || !hasLOS(c.x, c.y, e.x, e.y)) continue; const v = pct ? e.hp / e.maxHp : e.hp; if (v < bv) { bv = v; best = e; } }
+    return best;
   }
 
   function tryCast(s, c, q) {
-    const a = c.kit[q.slot]; if (!a || c.stunT > 0 || c.air || c.chan) return;
-    if (c.dash && !c.dash.forced && !a.recast) return;
-    if (c.dash && c.dash.forced) return;
+    const a = c.kit[q.slot]; if (!a) return;
+    // A press landing during a short lockout is held a moment and fires when it clears, so inputs never feel eaten.
+    const busy = c.stunT > 0 || c.air || c.chan || (c.dash && (c.dash.forced || !a.recast));
+    if (busy) { if (!c.bot && !(c.chan && c.chan.recall)) c.qHold = { q, until: s.t + .22 }; return; }
     if (q.slot === 2 && c.lvl < 3) return;
     if (c.rootT > 0 && a.pd) return;
     const n = norm(q.tx - c.x, q.ty - c.y);
@@ -1399,7 +1828,7 @@ const Sim = (() => {
     curAbil = a.name;
     if (c.recast[q.slot] > 0 && a.recast) { c.recast[q.slot] = 0; a.recast(s, c, aim, a); curAbil = null; if (!a.keepStealth) breakStealth(s, c); c.fx = dx; c.fy = dy; says(); return; }
     // A remote player's press can land a hair before the host's cooldown ends. Hold it for that moment rather than drop it.
-    if (c.cd[q.slot] > 0) { curAbil = null; if (c.cd[q.slot] < .18 && c.remote && !c.bot) c.qHold = { q, until: s.t + .3 }; return; }
+    if (c.cd[q.slot] > 0) { curAbil = null; if (c.cd[q.slot] < .22 && !c.bot) c.qHold = { q, until: s.t + .3 }; return; }
     if (a.cast(s, c, aim, a) === false) { curAbil = null; return; }
     if (c.leap && !c.leap.abil) c.leap.abil = a.name;
     if (c.cuts && !c.cuts.abil) c.cuts.abil = a.name;
@@ -1408,7 +1837,7 @@ const Sim = (() => {
     c.cd[q.slot] = Math.max(c.cd[q.slot], cdOf(c, q.slot));
     c.stats.casts++; c.fx = dx; c.fy = dy; c.spin = 1;
     if (c.chan && c.chan.recall) c.chan = null;
-    if (c.st.u.phase) haste(c, .15, 1.5);
+    if (c.st.u.phase) haste(c, c.st.u.ghoststep ? .28 : .15, c.st.u.ghoststep ? 2 : 1.5);
     says();
   }
 
@@ -1417,7 +1846,7 @@ const Sim = (() => {
     const m = Math.min(1, Math.hypot(c.mv.x, c.mv.y));
     if (m > .05) {
       const n = norm(c.mv.x, c.mv.y); let sp = c.msBase * (c.slowT > 0 ? 1 - c.slowA : 1) * (c.hasteT > 0 ? 1 + c.hasteA : 1);
-      if (c.charge) sp *= .6; if (c.buffT > 0) sp *= 1.05; if (s.boons[c.team].convoy > 0) sp *= 1.1;
+      if (c.charge) sp *= .6; if (c.buffT > 0) sp *= 1.05; if (c.prof === 'tracker' && inJungle(s, c)) sp *= 1.12; if (s.boons[c.team].convoy > 0) sp *= 1.1;
       c.x += n.x * sp * m * DT; c.y += n.y * sp * m * DT;
       if (!c.charge) { c.fx = n.x; c.fy = n.y; }
     }
@@ -1430,9 +1859,13 @@ const Sim = (() => {
     if (!c.alive) {
       // A dead champion can still shop, evolve, ping and practise.
       while (c.q.length) { const q = c.q.shift(); runShared(s, c, q); }
-      c.respawn -= DT; if (c.buybackCd > 0) c.buybackCd -= DT; if (c.fundCd > 0) c.fundCd -= DT;
+      c.respawn -= DT; if (c.buybackCd > 0) c.buybackCd -= DT; if (c.fundCd > 0) c.fundCd -= DT; if (c.cleanseCd > 0) c.cleanseCd -= DT;
+      // Team boosts and elixirs run on real time, matching s.boons.
+      if (c.buffT > 0) c.buffT -= DT; if (c.dropT > 0) c.dropT -= DT;
+      if (c.sentT > 0) { c.sentT -= DT; if (c.sentT <= 0) applyStats(c, false); }
+      if (c.elixT > 0) { c.elixT -= DT; if (c.elixT <= 0) applyStats(c, false); }
       if (c.respawn <= 0) {
-        c.alive = true; c.hp = c.maxHp; c.spawnT = s.t; const f = s.fountains[c.team]; c.x = c.px = f.x + (c.team ? -50 : 50); c.y = c.py = f.y + (c.slot - 1.5) * 40; c.q.length = 0; c.stunT = c.slowT = c.markT = c.rootT = c.polyT = c.curseT = c.curseN = c.poisonT = c.bleedT = 0; c.potT = 0; c.cd[0] = c.cd[1] = c.cd[2] = 0; c.recast[0] = c.recast[1] = c.recast[2] = 0; c.echo = null;
+        c.alive = true; c.hp = c.maxHp; c.spawnT = s.t; const f = s.fountains[c.team]; c.x = c.px = f.x + (c.team ? -50 : 50); c.y = c.py = f.y + (c.slot - 1.5) * 40; c.q.length = 0; c.stunT = c.slowT = c.markT = c.rootT = c.polyT = c.curseT = c.curseN = c.poisonT = c.bleedT = 0; c.potT = 0; c.overT = c.frenzyT = c.altN = c.tempoT = c.stringT = c.kindleT = 0; c.cd[0] = c.cd[1] = c.cd[2] = 0; c.recast[0] = c.recast[1] = c.recast[2] = 0; c.echo = null;
         if (c.dummy) { c.x = c.px = c.hx; c.y = c.py = c.hy; }
         s.ev.push({ e: 'spawn', u: c.id });
       }
@@ -1450,9 +1883,9 @@ const Sim = (() => {
     if (c.atkCd > 0) c.atkCd -= DT;
     if (c.reap) { c.reap.t -= DT; if (c.reap.t <= 0) c.reap = null; }
     if (c.charge) { c.charge.t += DT * (c.stunT > 0 ? 0 : 1); if (c.charge.t > 4 || c.stunT > 0) c.charge = null; }
-    if (c.beacons < 2) { c.beaconT -= DT; if (c.beaconT <= 0) { c.beacons++; c.beaconT = c.beacons < 2 ? BEACON_CD : 0; } }
+    { const bm = c.prof === 'pathfinder' ? 3 : 2; if (c.beacons < bm) { c.beaconT -= c.prof === 'pathfinder' ? DT * 2 : DT; if (c.beaconT <= 0) { c.beacons++; c.beaconT = c.beacons < bm ? BEACON_CD : 0; } } }
     const K = KITS[c.champ]; if (K.tick) K.tick(s, c);
-    if (c.qHold) { const h = c.qHold; if (s.t > h.until) c.qHold = null; else if (c.cd[h.q.slot] <= 0) { c.qHold = null; tryCast(s, c, h.q); } }
+    if (c.qHold) { const h = c.qHold; if (s.t > h.until) c.qHold = null; else if (c.cd[h.q.slot] <= 0 && !(c.stunT > 0 || c.air || c.chan || c.dash)) { c.qHold = null; tryCast(s, c, h.q); } }
 
     while (c.q.length) {
       const q = c.q.shift();
@@ -1507,8 +1940,8 @@ const Sim = (() => {
     if (c.atk && !(c.polyT > 0) && c.stunT <= 0 && !c.air && !c.dash && !c.chan && !c.charge && c.atkCd <= 0) {
       const t = autoTarget(s, c);
       if (t) {
-        c.atkCd = 1 / (c.as * (1 + (c.asBonus || 0))); c.lock = .13; const n = norm(t.x - c.x, t.y - c.y); c.fx = n.x; c.fy = n.y; c.revealT = 1;
-        const o = { dmg: c.dmgBase * (c.buffT > 0 ? 1.2 : 1), crit: false, empowered: c.empowerT > 0 };
+        c.atkCd = 1 / (c.as * (1 + (c.asBonus || 0) + (c.tempoT > 0 ? (c.tempoN || 0) * .06 : 0))); c.lock = .08; const n = norm(t.x - c.x, t.y - c.y); c.fx = n.x; c.fy = n.y; c.revealT = 1;
+        const o = { dmg: c.dmgBase * (c.buffT > 0 ? 1.2 : 1) * (c.dropT > 0 ? 1.1 : 1), crit: false, empowered: c.empowerT > 0 };
         if (c.empowerT > 0) { o.dmg *= 1.6; c.empowerT = 0; o.crit = true; }
         if (c.stealthT > 0) breakStealth(s, c);
         if (K.onBasic) K.onBasic(s, c, t, o);
@@ -1529,11 +1962,13 @@ const Sim = (() => {
     // brush
     c.inBrush = -1; s.map.brush.forEach((b, i) => { if (Math.hypot(c.x - b.x, c.y - b.y) < b.r) c.inBrush = i; });
     c.vx = (c.x - c.px) / DT; c.vy = (c.y - c.py) / DT;
-    earn(s, c, 2.6 * DT);
+    earn(s, c, 2.6 * DT * (c.prof === 'patron' ? 1.6 : 1));
+    if (c.st.u.worldtree && s.t - (c.lastHurt === undefined ? -9 : c.lastHurt) > 5 && !(c.noHealT > 0)) c.hp = Math.min(c.maxHp, c.hp + c.maxHp * .04 * DT);
+    if (c.st.u.stormgreaves) { const cc = c.stunT > 0 || c.rootT > 0; if (c.wasCC && !cc) haste(c, .3, 1.5); c.wasCC = cc; }
   }
 
   // Commands available alive or dead. Bots use exactly the same ones.
-  const STATUS_T = ['stunT', 'slowT', 'markT', 'parryT', 'drT', 'buffT', 'empowerT', 'revealT', 'lock', 'rootT', 'polyT', 'knockT', 'stealthT', 'noHealT', 'hasteT', 'shieldT', 'vulnT', 'dmarkT', 'opener', 'ripT', 'curseT', 'poisonT', 'bleedT', 'pingT'];
+  const STATUS_T = ['stunT', 'slowT', 'markT', 'parryT', 'drT', 'buffT', 'empowerT', 'revealT', 'lock', 'rootT', 'polyT', 'knockT', 'stealthT', 'noHealT', 'hasteT', 'shieldT', 'vulnT', 'dmarkT', 'opener', 'ripT', 'curseT', 'poisonT', 'bleedT', 'pingT', 'dropT', 'stringT', 'kindleT', 'bellT', 'tempoT'];
   const BEACON_CD = 50, BEACON_RANGE = 350, BEACON_SIGHT = 560, BEACON_LIFE = 60;
   function runShared(s, c, q) {
     if (q.t === 'buy') buyItem(s, c, q.id);
@@ -1546,6 +1981,7 @@ const Sim = (() => {
     else if (q.t === 'reinforce') reinforce(s, c, q.lane);
     else if (q.t === 'fund') fund(s, c);
     else if (q.t === 'surrender') surrenderVote(s, c, q.vote !== false);
+    else if (q.t === 'pref') c.targetPref = q.v === 'pct' ? 'pct' : 'hp';
   }
   function buyItem(s, c, id) {
     const it = ITEM_BY[id]; if (!it) return false;
@@ -1572,7 +2008,7 @@ const Sim = (() => {
     else if (it.id === 'potion') { c.potT = 8; c.potHps = c.maxHp * .4 / 8; }
     else if (it.id === 'elixir') { c.elixT = 90; applyStats(c, true); }
     else if (it.id === 'tonic') { c.tonicT = 8; }
-    else if (it.id === 'beaconkit') { if (c.beacons >= 2) return false; c.beacons++; }
+    else if (it.id === 'beaconkit') { if (c.beacons >= (c.prof === 'pathfinder' ? 3 : 2)) return false; c.beacons++; }
     else return false;
     c.gold -= it.cost; s.ev.push({ e: 'consume', u: c.id, id: it.id }); return true;
   }
@@ -1585,7 +2021,7 @@ const Sim = (() => {
     if (!c.alive || c.beacons <= 0 || !isFinite(tx + ty)) return false;
     const n = norm(tx - c.x, ty - c.y), l = Math.min(n.l, BEACON_RANGE), d = rayWall(c.x, c.y, n.x, n.y, l), f = nearestFree(s.map, c.x + n.x * d, c.y + n.y * d);
     let br = -1; s.map.brush.forEach((b, i) => { if (Math.hypot(f.x - b.x, f.y - b.y) < b.r) br = i; });
-    const b = { id: s.nid++, kind: 'beacon', team: c.team, x: f.x, y: f.y, px: f.x, py: f.y, r: 16, hp: 3, maxHp: 3, alive: true, t: BEACON_LIFE, sight: BEACON_SIGHT, inBrush: br, owner: c };
+    const b = { id: s.nid++, kind: 'beacon', team: c.team, x: f.x, y: f.y, px: f.x, py: f.y, r: 16, hp: 3, maxHp: 3, alive: true, t: BEACON_LIFE, sight: BEACON_SIGHT * (c.prof === 'pathfinder' ? 1.3 : 1), inBrush: br, owner: c };
     s.beacons.push(b); c.beacons--; if (c.beaconT <= 0) c.beaconT = BEACON_CD;
     s.ev.push({ e: 'beacon', u: c.id, x: b.x, y: b.y, team: c.team });
     return true;
@@ -1604,14 +2040,14 @@ const Sim = (() => {
   function practiceOp(s, c, op) {
     if (!s.practice) return;
     if (op === 'gold') { c.gold += 5000; s.ev.push({ e: 'gold', u: c.id, a: 5000 }); }
-    else if (op === 'level') { for (let i = 0; i < 12 && c.lvl < 10; i++) giveXp(s, c, xpNeed(c.lvl) - c.xp + 1); }
+    else if (op === 'level') { for (let i = 0; i < 16 && c.lvl < MAX_LEVEL; i++) giveXp(s, c, xpNeed(c.lvl) - c.xp + 1); }
     else if (op === 'reset') { c.cd = [0, 0, 0]; c.recast = [0, 0, 0]; c.hp = c.maxHp; c.beacons = 2; c.beaconT = 0; }
   }
   // Called every couple of seconds: how far behind a side has fallen, 0..1.
   function updateCatchup(s) {
     const worth = [0, 0];
     for (const c of s.champs) { worth[c.team] += c.gold + c.xp * .4; for (const id of c.items) if (id) worth[c.team] += itemPath(id).reduce((v, p) => v + ITEM_BY[p].cost, 0); }
-    const gap = worth[1] - worth[0], k = clamp(Math.abs(gap) / 2400, 0, 1);
+    const gap = worth[1] - worth[0], k = clamp(Math.abs(gap) / 1900, 0, 1);
     s.catchup[0] = gap > 0 ? k : 0; s.catchup[1] = gap < 0 ? k : 0;
   }
   // Poison and bleed, ticking twice a second. Damage over time never reveals or interrupts.
@@ -1619,7 +2055,7 @@ const Sim = (() => {
     const all = [s.champs, s.minions, s.monsters];
     for (const list of all) for (const u of list) {
       if (!u.alive) continue;
-      if (u.kind !== 'champ') { if (u.curseT > 0) { u.curseT -= DT; if (u.curseT <= 0) u.curseN = 0; } if (u.poisonT > 0) u.poisonT -= DT; if (u.bleedT > 0) u.bleedT -= DT; }
+      if (u.kind !== 'champ') { if (u.curseT > 0) { u.curseT -= DT; if (u.curseT <= 0) u.curseN = 0; } if (u.poisonT > 0) u.poisonT -= DT; if (u.bleedT > 0) u.bleedT -= DT; if (u.kindleT > 0) u.kindleT -= DT; if (u.stringT > 0) u.stringT -= DT; }
       if (s.tick % 15 === 0) {
         if (u.poisonT > 0 && u.poisonBy) { curAbil = u.poisonAbil; hurt(s, u.poisonBy, u, u.poisonDps * .5, { skill: 1, dot: 1 }); }
         if (u.alive && u.bleedT > 0 && u.bleedBy) { curAbil = u.bleedAbil; hurt(s, u.bleedBy, u, u.bleedDps * .5, { skill: 1, dot: 1 }); } curAbil = null;
@@ -1638,6 +2074,7 @@ const Sim = (() => {
     if (!t) for (const e of s.minions) if (e.alive && e.team !== m.team && e.delay <= 0) { const d = dist(m, e) - e.r; if (d < bd && hasLOS(m.x, m.y, e.x, e.y)) { bd = d; t = e; } }
     if (!t) for (const e of s.towers) if (e.alive && e.team !== m.team && towerOpen(s, e)) { const d = dist(m, e) - e.r; if (d < bd + 40 && hasLOS(m.x, m.y, e.x, e.y)) { bd = d; t = e; } }
     if (!t && !s.practice) for (const e of s.champs) if (e.alive && !e.air && e.team !== m.team && canSee(s, m.team, e)) { const d = dist(m, e) - e.r; if (d < bd * .7 && hasLOS(m.x, m.y, e.x, e.y)) { bd = d; t = e; } }
+    if (t && laneDist(s, m.lane, t.x, t.y) > MINION_LEASH + m.range + t.r) t = null; // never chase off the lane
     const sp = m.ms * (m.slowT > 0 ? 1 - m.slowA : 1);
     if (t) {
       const d = dist(m, t) - t.r;
@@ -1648,6 +2085,7 @@ const Sim = (() => {
       if (n.l < 40) m.wp++; else { m.x += n.x * sp * DT; m.y += n.y * sp * DT; m.fx = n.x; m.fy = n.y; }
     }
     pushOut(s.map, m);
+    if (t) { const L = laneNearest(s, m.lane, m.x, m.y); if (L.d > MINION_LEASH) { const n = norm(m.x - L.x, m.y - L.y); m.x = L.x + n.x * MINION_LEASH; m.y = L.y + n.y * MINION_LEASH; } }
     m.vx = (m.x - m.px) / DT; m.vy = (m.y - m.py) / DT;
   }
 
@@ -1690,7 +2128,7 @@ const Sim = (() => {
 
   const TOWER_BASE = 160, TOWER_RAMP = .24;
   // Structures: very resistant early so the base can't fall in a blink, then steadily softer so a match ends by about 18 minutes.
-  const structureK = s => s.t < 640 ? .5 : s.t < 860 ? .5 + (s.t - 640) / 220 * .7 : Math.min(14, 1.2 + (s.t - 860) / 58);
+  const structureK = s => s.t < 760 ? .42 : s.t < 980 ? .42 + (s.t - 760) / 220 * .78 : Math.min(14, 1.2 + (s.t - 980) / 58);
   function stepTower(s, t) {
     if (s.practice) return;
     if (t.cd > 0) t.cd -= DT; if (t.cd > 0) return;
@@ -1718,7 +2156,7 @@ const Sim = (() => {
           p.dead = true;
           const src = p.owner;
           if (src.kind === 'tower' && t.kind === 'champ') { t.revealT = 1; }
-          hurt(s, src, t, p.dmg, { crit: p.crit, basic: p.basic, skill: p.skill });
+          curAbil = p.abil || null; hurt(s, src, t, p.dmg, { crit: p.crit, basic: p.basic, skill: p.skill }); curAbil = null;
           continue;
         }
         p.x += n.x * st; p.y += n.y * st;
@@ -1791,16 +2229,17 @@ const Sim = (() => {
     };
   }
 
-  const CLASS = { vesper: 'back', ione: 'back', solenne: 'peel', kade: 'front', gravel: 'front', sable: 'flank', deadbolt: 'back', hex: 'back', plague: 'peel', duelist: 'front', ironjaw: 'front', shiv: 'flank' };
+  const CLASS = { vesper: 'back', ione: 'back', solenne: 'peel', kade: 'front', gravel: 'front', sable: 'flank', deadbolt: 'back', hex: 'back', plague: 'peel', duelist: 'front', ironjaw: 'front', shiv: 'flank', voltaic: 'flank', tidecaller: 'peel', paragon: 'front', mirage: 'back', cinder: 'back', ravager: 'flank', cataclysm: 'front', puppeteer: 'peel' };
   function makeBot(s, c, skill) {
     const i = c.slot, b = {
       skill: 0, sk: null, lane: c.role === 'top' ? 0 : 1, cls: CLASS[c.champ] || 'front', mask: navMask(c.team), next: i * .05 + .02, foes: [], tid: 0, closest: 1e9, ratio: 1, noise: 0, noiseAt: 0, strafe: i % 2 ? 1 : -1,
       gx: c.x, gy: c.y, ga: 20, hasGoal: false, vx: 0, vy: 0, vecT: 0, ex: 0, ey: 0, evadeT: 0, dodgeAt: 0, dodgeSeen: 0, path: null, pi: 0, pgx: 0, pgy: 0, needPath: false, sx: c.x, sy: c.y, stuck: 0, still: false, diveOk: false,
       et: null, etTanks: 0, castAt: 0, chargeHold: 1.12, threatT: 9, parry: false, low: false, fighting: false, lhSoon: false, lastHome: 0, gank: null, gankCd: 0, deaths: [], siegeT: 0,
-      route: null, routeI: 0, cycles: 0, gankReady: false, chase: 0, noChase: 0, tradeT: 0, task: 'spawn', safeUntil: 0,
+      buyPath: 0, potAt: 0, route: null, routeI: 0, cycles: 0, gankReady: false, chase: 0, noChase: 0, tradeT: 0, task: 'spawn', safeUntil: 0,
       setSkill(x) { b.skill = clamp(x, 0, 1); b.sk = skillProfile(b.skill); },
     };
     b.setSkill(skill !== undefined ? skill : c.skill !== undefined ? c.skill : .5);
+    b.buyPath = hash01((s.seed || 7) + c.team * 31, c.slot + 77) * itemPaths(c.champ, c.build).length | 0;
     return b;
   }
 
@@ -2094,7 +2533,7 @@ const Sim = (() => {
 
   // Effective health times damage, square-rooted so a team's power adds up the Lanchester way.
   // A team knows its own cooldowns; enemy cooldowns are assumed up.
-  const BURST = { vesper: [190, 0, 260], kade: [124, 0, 185], ione: [82, 165, 345], solenne: [72, 0, 90], sable: [138, 0, 180], gravel: [64, 62, 165], deadbolt: [62, 160, 240], duelist: [220, 0, 150], hex: [100, 0, 240], plague: [120, 170, 0], shiv: [150, 0, 252], ironjaw: [130, 70, 165] };
+  const BURST = { vesper: [190, 0, 260], kade: [124, 0, 185], ione: [82, 165, 345], solenne: [72, 0, 90], sable: [138, 0, 180], gravel: [64, 62, 165], deadbolt: [62, 160, 240], duelist: [220, 0, 150], hex: [100, 0, 240], plague: [120, 170, 0], shiv: [150, 0, 252], ironjaw: [130, 70, 165], voltaic: [120, 90, 190], tidecaller: [80, 60, 170], paragon: [95, 95, 230], mirage: [150, 0, 170], cinder: [110, 80, 280], ravager: [130, 90, 160], cataclysm: [140, 90, 190], puppeteer: [75, 80, 140] };
   function power(u, foe) {
     const B = BURST[u.champ], pw = pow(u); let burst = 0;
     for (let i = 0; i < 3; i++) if (i < 2 || u.lvl >= 3) burst += (foe || u.cd[i] <= 1.5 ? 1 : .15) * B[i] * pw / (u.kit[i].cd || 6);
@@ -2113,7 +2552,7 @@ const Sim = (() => {
     if (ai.phase === 'lane') return bot || null;
     return s.champs.find(a => a.team === c.team && a !== c && !a.bot && a.alive && a.role !== 'support') || bot || s.champs.find(a => a.team === c.team && a !== c && a.alive) || null;
   }
-  const CARRY = { vesper: 1, ione: .9, sable: .7, kade: .4, solenne: .3, gravel: 0, deadbolt: 1, hex: .9, shiv: .7, duelist: .4, plague: .3, ironjaw: 0 };
+  const CARRY = { vesper: 1, ione: .9, sable: .7, kade: .4, solenne: .3, gravel: 0, deadbolt: 1, hex: .9, shiv: .7, duelist: .4, plague: .3, ironjaw: 0, voltaic: .7, tidecaller: .3, paragon: .4, mirage: 1, cinder: .9, ravager: .4, cataclysm: 0, puppeteer: .3 };
 
   // Rough tower damage for the next shots at the current time, with compounding.
   const towerShot = (s, stack) => (160 + s.t * .24) * Math.min(4, Math.pow(1.45, stack));
@@ -2131,27 +2570,12 @@ const Sim = (() => {
     return n;
   }
 
-  // Next purchase: walk the recommended chains, finishing one before starting the next.
+  // Next purchase: three core items, then a legendary, weaving the remaining chains with more legendaries.
   function nextBuy(s, c) {
-    const rec = recommended(c.champ, c.build);
-    for (const id of rec) {
-      const path = itemPath(id); let step = null, top = -1;
-      for (let i = path.length - 1; i >= 0; i--) if (c.items.includes(path[i])) { top = i; break; }
-      if (top === path.length - 1) continue;
-      step = path[top + 1];
-      const price = itemPrice(c, step);
-      if (price === null) continue;
-      return { id: step, cost: price };
-    }
-    // Then upgrade to legendaries, in the same order.
-    for (const id of rec) {
-      const up = LEGEND[id]; if (!up) continue;
-      if (c.items.includes(up)) continue;
-      if (!c.items.includes(id)) continue;
-      const price = itemPrice(c, up);
-      if (price === null) continue;
-      return { id: up, cost: price };
-    }
+    const rec = recommended(c.champ, c.build, c.bot ? c.bot.buyPath : 0);
+    const chain = id => { const path = itemPath(id); let top = -1; for (let i = path.length - 1; i >= 0; i--) if (c.items.includes(path[i])) { top = i; break; } if (top === path.length - 1) return null; const step = path[top + 1], cost = itemPrice(c, step); return cost === null ? null : { id: step, cost }; };
+    const legend = id => { const up = LEGEND[id]; if (!up || c.items.includes(up) || !c.items.includes(id)) return null; const cost = itemPrice(c, up); return cost === null ? null : { id: up, cost }; };
+    for (const [fn, i] of [[chain, 0], [chain, 1], [chain, 2], [legend, 0], [chain, 3], [legend, 1], [chain, 4], [legend, 2], [legend, 3], [legend, 4]]) { const n = rec[i] && fn(rec[i]); if (n) return n; }
     return null;
   }
 
@@ -2515,12 +2939,81 @@ const Sim = (() => {
       if (mode === 'fight' && rdy(c, 2) && d < c.kit[2].range - 40 && b.ratio >= .9 && losClear(s, c.x, c.y, t.x, t.y) && ultWorth(s, c, b, t)) { const p = lead(s, c, b, t, 1000); cast(c, 2, p.tx, p.ty); return true; }
       return false;
     },
+    voltaic(s, c, b, t, d, mode) {
+      if (!t) return false;
+      const A0 = c.kit[0], A2 = c.kit[2];
+      if (mode === 'retreat') { if (rdy(c, 0) && c.rootT <= 0) { const a = awayPoint(s, c, t, A0.range); cast(c, 0, a.x, a.y); return true; } return false; }
+      if (mode === 'fight' && rdy(c, 2) && d < A2.range - 40 && losClear(s, c.x, c.y, t.x, t.y) && (ultWorth(s, c, b, t) || t.stunT > 0)) { const p = lead(s, c, b, t, 1900, A2.delay); cast(c, 2, p.tx, p.ty); return true; }
+      if (mode === 'fight' && rdy(c, 1) && d < 280) { cast(c, 1, c.x, c.y); return true; }
+      if (rdy(c, 0) && d < A0.range + 20 && c.rootT <= 0 && losClear(s, c.x, c.y, t.x, t.y) && (mode === 'fight' || b.ratio >= 1)) { const n = norm(t.x - c.x, t.y - c.y); cast(c, 0, t.x + n.x * 60, t.y + n.y * 60); return true; }
+      return false;
+    },
+    tidecaller(s, c, b, t, d, mode) {
+      const A0 = c.kit[0], A1 = c.kit[1], A2 = c.kit[2];
+      if (rdy(c, 1)) { const a = threatenedAlly(s, c, b); if (a && dist(a, c) < A1.range && (b.sk.iq > .4 || s.rand() < .3)) { cast(c, 1, a.x, a.y); return true; } }
+      if (rdy(c, 2)) { let n = 0; for (const a of s.champs) if (a.alive && a.team === c.team && dist(a, c) < 420 && frac(a) < .6) n++; if ((n >= 1 && b.closest < 620) || (t && mode === 'fight' && ultWorth(s, c, b, t) && d < A2.range - 80)) { const x = t || c; cast(c, 2, x.x, x.y); return true; } }
+      if (rdy(c, 0)) { let ally = null, low = .85; for (const a of s.champs) if (a !== c && a.alive && a.team === c.team && dist(a, c) < A0.range - 20 && frac(a) < low && losClear(s, c.x, c.y, a.x, a.y)) { low = frac(a); ally = a; } if (ally) { const p = lead(s, c, b, ally, 1050); cast(c, 0, p.tx, p.ty); return true; } if (t && mode !== 'retreat' && d < A0.range - 20 && losClear(s, c.x, c.y, t.x, t.y)) { const p = lead(s, c, b, t, 1050); cast(c, 0, p.tx, p.ty); return true; } }
+      if (t && rdy(c, 1) && d < A1.range && losClear(s, c.x, c.y, t.x, t.y) && (mode === 'fight' || (mode === 'retreat' && d < 260))) { cast(c, 1, t.x, t.y); return true; }
+      return false;
+    },
+    paragon(s, c, b, t, d, mode) {
+      if (!t) return false;
+      const A0 = c.kit[0], A1 = c.kit[1], A2 = c.kit[2];
+      if (mode === 'retreat') { if (rdy(c, 0)) { const a = awayPoint(s, c, t, A0.range); cast(c, 0, a.x, a.y); return true; } return false; }
+      if (mode === 'fight' && rdy(c, 2) && d < A2.range - 60 && b.ratio >= .9 && (ultWorth(s, c, b, t) || t.stunT > 0)) { const p = lead(s, c, b, t, 0, 1.05); cast(c, 2, p.tx, p.ty); return true; }
+      if (mode === 'fight' && rdy(c, 0) && d > 150 && d < A0.range + 30) { const p = lead(s, c, b, t, 0, .4); cast(c, 0, p.tx, p.ty); return true; }
+      if (rdy(c, 1) && d < A1.range && losClear(s, c.x, c.y, t.x, t.y) && (mode === 'fight' || b.ratio >= 1)) { cast(c, 1, t.x, t.y); return true; }
+      return false;
+    },
+    mirage(s, c, b, t, d, mode) {
+      if (!t) return false;
+      const A0 = c.kit[0], A1 = c.kit[1], A2 = c.kit[2];
+      if (rdy(c, 1) && (mode === 'retreat' || d < 200)) { const a = awayPoint(s, c, t, A1.range); cast(c, 1, a.x, a.y); return true; }
+      if (mode === 'fight' && rdy(c, 2) && d < A2.range - 30 && losClear(s, c.x, c.y, t.x, t.y) && (ultWorth(s, c, b, t) || t.slowT > 0 || t.stunT > 0)) { cast(c, 2, t.x + t.vx * .3, t.y + t.vy * .3); return true; }
+      if (mode !== 'retreat' && rdy(c, 0) && d < A0.range - 20 && !lineBlocked(s, c, b, t.x, t.y, 34)) { const p = lead(s, c, b, t, 1500); cast(c, 0, p.tx, p.ty); return true; }
+      return false;
+    },
+    cinder(s, c, b, t, d, mode) {
+      if (!t) return false;
+      const A0 = c.kit[0], A1 = c.kit[1], A2 = c.kit[2];
+      if (mode === 'retreat') { if (rdy(c, 1) && d < 340) { cast(c, 1, c.x, c.y); return true; } return false; }
+      if (mode === 'fight' && rdy(c, 2) && d < A2.range + 60 && losClear(s, c.x, c.y, t.x, t.y)) { let near = 0; for (const e of b.foes) if (dist(e, t) < A2.r) near++; if (near >= 2 || ultWorth(s, c, b, t) || t.stunT > 0 || t.rootT > 0) { const p = lead(s, c, b, t, 0, A2.delay); cast(c, 2, p.tx, p.ty); return true; } }
+      if (rdy(c, 0) && d < A0.range - 30 && !lineBlocked(s, c, b, t.x, t.y, 40)) { const p = lead(s, c, b, t, 1150); cast(c, 0, p.tx, p.ty); return true; }
+      if (rdy(c, 1) && d < A1.range + 40 && losClear(s, c.x, c.y, t.x, t.y) && (mode === 'fight' || b.ratio >= 1)) { const p = lead(s, c, b, t, 0, .5); cast(c, 1, p.tx, p.ty); return true; }
+      return false;
+    },
+    ravager(s, c, b, t, d, mode) {
+      if (!t) return false;
+      const A0 = c.kit[0], A1 = c.kit[1];
+      if (mode === 'retreat') { if (rdy(c, 1)) { const a = awayPoint(s, c, t, A1.range); cast(c, 1, a.x, a.y); return true; } return false; }
+      if (mode === 'fight' && rdy(c, 2) && d < 320 && (b.ratio >= 1 || ultWorth(s, c, b, t))) { cast(c, 2, c.x, c.y); return true; }
+      if (mode === 'fight' && rdy(c, 1) && d > 150 && d < A1.range + 30) { cast(c, 1, t.x, t.y); return true; }
+      if (rdy(c, 0) && d < A0.range && losClear(s, c.x, c.y, t.x, t.y) && (mode === 'fight' || b.ratio >= 1)) { cast(c, 0, t.x, t.y); return true; }
+      return false;
+    },
+    cataclysm(s, c, b, t, d, mode) {
+      if (!t) return false;
+      const A0 = c.kit[0], A2 = c.kit[2];
+      if (rdy(c, 1) && b.closest < 260 && (mode === 'retreat' || mode === 'fight')) { cast(c, 1, c.x, c.y); return true; }
+      if (mode === 'retreat') return false;
+      if (mode === 'fight' && rdy(c, 2) && d < A2.range - 40 && b.ratio >= .9 && losClear(s, c.x, c.y, t.x, t.y)) { const n = norm(t.x - c.x, t.y - c.y); let line = 0; for (const e of b.foes) if (segDist(e.x, e.y, c.x, c.y, c.x + n.x * A2.range, c.y + n.y * A2.range) < 95) line++; if (line >= 2 || ultWorth(s, c, b, t) || t.stunT > 0) { const p = lead(s, c, b, t, 0, A2.delay); cast(c, 2, p.tx, p.ty); return true; } }
+      if (rdy(c, 0) && d < A0.range && losClear(s, c.x, c.y, t.x, t.y) && (mode === 'fight' || b.ratio >= 1)) { const p = lead(s, c, b, t, 0, A0.delay); cast(c, 0, p.tx, p.ty); return true; }
+      return false;
+    },
+    puppeteer(s, c, b, t, d, mode) {
+      if (!t) return false;
+      const A0 = c.kit[0], A1 = c.kit[1], A2 = c.kit[2];
+      if (rdy(c, 2) && d < A2.range + 20 && losClear(s, c.x, c.y, t.x, t.y) && (mode === 'retreat' ? d < 300 : mode === 'fight' && (ultWorth(s, c, b, t) || frac(t) < .55))) { cast(c, 2, t.x, t.y); return true; }
+      if (rdy(c, 0) && d < A0.range - 20 && !lineBlocked(s, c, b, t.x, t.y, 40) && (mode !== 'poke' || b.ratio >= 1)) { const p = lead(s, c, b, t, 1250); cast(c, 0, p.tx, p.ty); return true; }
+      if (rdy(c, 1) && d < A1.range + 180 && mode !== 'retreat') { const n = norm(t.x - c.x, t.y - c.y), l = Math.min(A1.range - 20, Math.max(60, d - 120)); cast(c, 1, c.x + n.x * l, c.y + n.y * l); return true; }
+      return false;
+    },
   };
   function useCombo(s, c, b, t, mode) {
     if (c.charge || c.chan || (s.t < b.castAt && !b.parry && !(c.recast[0] > 0 || c.recast[1] > 0))) return;
     if (COMBO[c.champ](s, c, b, t, t ? dist(c, t) : 1e9, mode)) b.castAt = s.t + b.sk.gap * (.7 + s.rand() * .6);
   }
-  const PVE = { vesper: [0], kade: [0], ione: [1, 0], solenne: [], sable: [0], gravel: [1], deadbolt: [1], duelist: [0], hex: [0], plague: [0], shiv: [0], ironjaw: [0, 1] };
+  const PVE = { vesper: [0], kade: [0], ione: [1, 0], solenne: [], sable: [0], gravel: [1], deadbolt: [1], duelist: [0], hex: [0], plague: [0], shiv: [0], ironjaw: [0, 1], voltaic: [0], tidecaller: [], paragon: [1], mirage: [0], cinder: [0, 1], ravager: [0], cataclysm: [0], puppeteer: [1] };
   function castPve(s, c, b, m, d) {
     if (c.charge || c.chan || s.t < b.castAt) return;
     for (const i of PVE[c.champ]) {
@@ -2812,7 +3305,7 @@ const Sim = (() => {
 
     if (homeD < 360) { b.lastHome = s.t; if (f > .92) b.low = false; }
     // Forge the moment it's affordable: anyone can press the button from anywhere.
-    const nb = nextBuy(s, c); if (nb && c.gold >= nb.cost) c.q.push({ t: 'buy', id: nb.id });
+    const nb = nextBuy(s, c), keep = s.t > 720 && sk.iq > .35 ? buybackCost(s, c) * (.5 + .5 * sk.macro) : 0; if (nb && c.gold >= nb.cost + keep) c.q.push({ t: 'buy', id: nb.id });
     botSpend(s, c, b, ai, nb);
     if (c.lvl >= 4 && c.evolved[0] < 0) c.q.push({ t: 'evolve', tier: 0, choice: botEvolve(c, 0) });
     if (c.lvl >= 8 && c.evolved[1] < 0) c.q.push({ t: 'evolve', tier: 1, choice: botEvolve(c, 1) });
@@ -2914,7 +3407,7 @@ const Sim = (() => {
 
     // Poke with whatever is free when standing somewhere safe.
     const safeSpot = !towerOver(s, c.team, c.x, c.y) && b.ratio >= .7 && f > .4;
-    if (t ? safeSpot && !(laning && s.t < b.tradeT) : c.champ === 'solenne') useCombo(s, c, b, t, 'poke');
+    if (t ? safeSpot && !(laning && s.t < b.tradeT) : c.champ === 'solenne' || c.champ === 'tidecaller') useCombo(s, c, b, t, 'poke');
   }
 
   // Build-aware evolve choice, tier 0 and tier 1. Bots can read their own build.
@@ -2931,40 +3424,45 @@ const Sim = (() => {
     apothecary: [1, 0], pestilence: [0, 1], bloodletter: [1, 1], ward: [0, 0],
     cutthroat: [1, 0], nightblade: [0, 1], butcher: [1, 1], venomous: [0, 0],
     brawler: [1, 1], wrecker: [0, 1], bouncer: [1, 0], fortress: [0, 0],
+    stormchaser: [0, 0], surge: [0, 1], conductor: [1, 1], thunderhead: [1, 1], wellspring: [0, 1], undertow: [1, 0], deluge: [0, 1], abyss: [1, 0],
+    skyknight: [0, 1], sunstriker: [1, 0], titanwing: [0, 0], aegisborn: [1, 1], twinshot: [0, 1], shade: [1, 0], kaleidoscope: [1, 1], hollow: [1, 0],
+    pyre: [0, 1], ashwalker: [1, 1], wildfire: [0, 0], firestorm: [0, 1], alpha: [1, 0], savage: [0, 0], packleader: [1, 0], hemorrhage: [0, 1],
+    bastille: [1, 1], artillery: [0, 0], wreckingcrew: [0, 0], moonquake: [1, 0], marionettist: [0, 1], troupe: [1, 0], maestro: [0, 1], ventriloquist: [1, 0],
   };
   const botEvolve = (c, tier) => { const v = BOT_EVOLVE[c.build]; return v ? v[tier] : 0; };
 
   // Consumables as reactions: heal in a fight, shrug off a disable, spare gold becomes a war elixir.
   function botConsumables(s, c, b, ai, t, d) {
     const iq = b.sk.iq, f = frac(c), gold = c.gold, buy = id => c.q.push({ t: 'buy', id });
-    if (iq > .35 && !(c.potT > 0) && f < .5 && gold >= 110 && (b.fighting || b.closest < 600 || s.t - (b.hurtAt || -9) < 2.5 || b.low) && dist(c, s.fountains[c.team]) > 700 && hash01(c.id, s.t | 0) < .35 + .6 * iq) { buy('potion'); return; }
+    if (iq > .35 && !(c.potT > 0) && f < .4 && s.t >= b.potAt && gold >= 220 && (b.potAt = s.t + 30 - 12 * iq, true) && (b.fighting || b.closest < 600 || s.t - (b.hurtAt || -9) < 2.5 || b.low) && dist(c, s.fountains[c.team]) > 700 && hash01(c.id, s.t | 0) < .35 + .6 * iq) { buy('potion'); return; }
     if (iq > .5 && (c.stunT > .5 || c.rootT > .5 || c.polyT > .4) && !(c.cleanseCd > 0) && gold >= 170 && b.closest < 700) { buy('cleanse'); return; }
     if (iq > .55 && !(c.elixT > 0) && !(c.tonicT > 0) && b.low && gold >= 120 && dist(c, s.fountains[c.team]) > 1300 && b.closest < 500) { buy('tonic'); return; }
   }
-  // When the items are done or gold piles up: elixir before fights, then reinforcements and the city.
+  // Gold beyond the next item: an elixir before an objective, reinforcements for a push, then the people bar.
   function botSpend(s, c, b, ai, nb) {
     if ((s.tick + c.id * 3) % 30 !== 0) return;
-    const late = s.t > 600, reserve = (late ? buybackCost(s, c) : 0) + (nb ? nb.cost : 0), spare = c.gold - reserve - 80;
-    if (spare < 100) return;
-    if (late && !(c.elixT > 0) && spare > 280 && (ai.hoard || ai.push !== null || b.fighting)) { c.q.push({ t: 'buy', id: 'elixir' }); return; }
-    if (s.t > 400 && spare > reinforceCost(s, c) + 120 && s.t >= s.reinforceAt[c.team]) {
-      const lane = ai.push !== null ? ai.push : ([0, 1].map(l => s.towers.filter(t => t.alive && t.team !== c.team && t.lane === l).length).reduce((a, x, i, arr) => x < arr[a] ? i : a, 0));
+    const late = s.t > 720, keep = late ? buybackCost(s, c) * (.5 + .5 * b.sk.macro) : 0, spare = c.gold - keep - (nb && nb.cost < 700 ? nb.cost : 0) - 60;
+    if (spare < 100 || hash01(c.id, s.t / 5 | 0) > .3 + .7 * b.sk.macro) return;
+    const fightDue = ai.hoard && ai.hoard.ids.includes(c.id) || ai.push !== null || b.fighting;
+    if (s.t > 480 && !(c.elixT > 0) && spare > 300 && fightDue) { c.q.push({ t: 'buy', id: 'elixir' }); return; }
+    if (s.t > 420 && spare > reinforceCost(s, c) + 60 && s.t >= s.reinforceAt[c.team] && (ai.push !== null || s.t > 660)) {
+      const left = [0, 1].map(l => s.towers.filter(t => t.alive && t.team !== c.team && t.lane === l).length), lane = ai.push !== null ? ai.push : (left[0] < left[1] ? 0 : left[1] < left[0] ? 1 : s.laneInfo[c.team][0].n > s.laneInfo[c.team][1].n ? 0 : 1);
       c.q.push({ t: 'reinforce', lane }); return;
     }
-    const noBonus = c.team ? s.hope > 30 : s.hope < 70;
-    if (s.t > 360 && noBonus && spare > fundCost(s, c.team) + 200 && !(c.fundCd > 0) && hash01(c.id, s.t / 6 | 0) < .5) { c.q.push({ t: 'fund' }); return; }
+    const noBonus = c.team ? s.hope > 34 : s.hope < 66;
+    if (s.t > 420 && noBonus && spare > fundCost(s, c.team) + 80 && !(c.fundCd > 0)) { c.q.push({ t: 'fund' }); return; }
     if (c.beacons === 0 && spare > 150 && (c.role === 'support' || c.role === 'jungle')) c.q.push({ t: 'buy', id: 'beaconkit' });
   }
   // Dead bots still shop and decide on buyback.
   function botDead(s, c, b) {
     if ((s.tick + c.id * 7) % 20 !== 0) return;
-    const nb = nextBuy(s, c); if (nb && c.gold >= nb.cost) c.q.push({ t: 'buy', id: nb.id });
-    if (s.practice || c.buybackCd > 0 || c.respawn < 12) return;
+    const nb = nextBuy(s, c), keep = s.t > 720 && b.sk.iq > .35 ? buybackCost(s, c) : 0; if (nb && c.gold >= nb.cost + keep) c.q.push({ t: 'buy', id: nb.id });
+    if (s.practice || c.buybackCd > 0 || c.respawn < 9) return;
     const cost = buybackCost(s, c); if (c.gold < cost) return;
     const core = s.towers.find(t => t.team === c.team && t.sub === 'core'), coreOpen = !core.alive ? false : towerOpen(s, core);
     let danger = 0; if (coreOpen) { for (const e of s.champs) if (e.team !== c.team && e.alive && dist(e, core) < 900) danger++; for (const m of s.minions) if (m.team !== c.team && m.alive && dist(m, core) < 500) danger += .35; }
     const late = s.t > 780, rich = c.gold > cost * 2.2;
-    if ((danger >= 1.5 && hash01(c.id, s.t / 5 | 0) < .35 + .6 * b.sk.macro) || (late && rich && hash01(c.id, s.t / 8 | 0) < .3 + .3 * b.sk.iq)) c.q.push({ t: 'buyback' });
+    if ((danger >= 1.5 && hash01(c.id, s.t / 5 | 0) < .35 + .6 * b.sk.macro) || (late && (rich || c.respawn > 18) && hash01(c.id, s.t / 8 | 0) < .25 + .35 * b.sk.iq)) c.q.push({ t: 'buyback' });
   }
 
   // Beacons, by role: supports and junglers light the map; laners watch their own brush.
@@ -2974,7 +3472,7 @@ const Sim = (() => {
     if (c.beacons <= keep && s.t < LATE_AT) return;
     const has = (x, y) => s.beacons.some(z => z.alive && z.team === c.team && Math.hypot(z.x - x, z.y - y) < 400);
     let best = null, bv = 0;
-    const consider = (x, y, v) => { const d = Math.hypot(x - c.x, y - c.y); if (d > 460 || has(x, y)) return; if (v / (1 + d / 900) > bv) { bv = v / (1 + d / 900); best = { x, y }; } };
+    const consider = (x, y, v) => { const d = Math.hypot(x - c.x, y - c.y); if (d > BEACON_RANGE + 30 || has(x, y)) return; if (v / (1 + d / 900) > bv) { bv = v / (1 + d / 900); best = { x, y }; } };
     for (const br of s.map.brush) consider(br.x, br.y, c.role === 'support' || c.role === 'jungle' ? 3 : (Math.abs(br.y - (b.lane ? H - 330 : 330)) < 500 ? 2 : .6));
     for (const B of s.bosses) if (!B.up && B.at - s.t < 40) { const n = norm(B.x - c.x, B.y - c.y); consider(B.x - n.x * 280, B.y - n.y * 280, B.kind === 'colossus' ? 4 : 2.5); }
     if (s.event && (s.event.phase === 'warn' || s.event.t > 8)) consider(s.event.x, s.event.y, 3);
@@ -3034,8 +3532,8 @@ const Sim = (() => {
   // ---------- networking: compact state for host-authoritative play ----------
   // Fast state is binary and goes out unreliably about 20 times a second. Slow state is a
   // sparse delta of whole numbers on the reliable channel, so a lost packet can't desync it.
-  const FX_CODE = ['snipe', 'snipeFull', 'deadeye', 'orb', 'ray', 'chain', 'bolt', 'mbolt', 'tower', 'rupture', 'crash', 'heal', 'stomp', 'dome', 'break', 'dash', 'parry', 'slash', 'tripwire', 'ricochet', 'lockdown', 'flourish', 'feint', 'salute', 'hexbolt', 'polymorph', 'coven', 'miasma', 'leech', 'quarantine', 'shank', 'vanish', 'cuts', 'wrecking', 'grab', 'demolish', 'smoke', 'blink', 'tether', 'orbit', 'decoy', 'ring', 'fissure', 'tripline'];
-  const ZONE_KINDS = ['blast', 'dome', 'tripline', 'lockdown', 'coven', 'miasma', 'quarantine', 'ring', 'tether', 'orbit', 'fissure', 'decoy'];
+  const FX_CODE = ['snipe', 'snipeFull', 'deadeye', 'orb', 'ray', 'chain', 'bolt', 'mbolt', 'tower', 'rupture', 'crash', 'heal', 'stomp', 'dome', 'break', 'dash', 'parry', 'slash', 'tripwire', 'ricochet', 'lockdown', 'flourish', 'feint', 'salute', 'hexbolt', 'polymorph', 'coven', 'miasma', 'leech', 'quarantine', 'shank', 'vanish', 'cuts', 'wrecking', 'grab', 'demolish', 'smoke', 'blink', 'tether', 'orbit', 'decoy', 'ring', 'fissure', 'tripline', 'arcdash','overload','thunder','riptide','bubble','tsunami','skyward','solarfist','meteordrop','splitshot','phantom','mirrors','firebolt','scorch','inferno','ignite','maul','pounce','frenzy','bombard','entrench','earthbreak','thread','puppet','dance'];
+  const ZONE_KINDS = ['blast', 'dome', 'tripline', 'lockdown', 'coven', 'miasma', 'quarantine', 'ring', 'tether', 'orbit', 'fissure', 'decoy', 'tidewave', 'mirrors', 'puppet'];
   const FX_NUM = {}; FX_CODE.forEach((f, i) => { FX_NUM[f] = i; });
   const POS = 12, SNAP_MAGIC = 0xF3, INTEREST = 280; // POS: 16 bits must span the 5184-wide map
   const wb = new DataView(new ArrayBuffer(32768)); let wp = 0;
@@ -3258,7 +3756,7 @@ const Sim = (() => {
   }
 
   // Events, as short arrays. Position fields are rounded; everything else is passed as is.
-  const EV_KEYS = { hit: ['u', 'a', 'sk', 'crit', 'by'], heal: ['u', 'a'], die: ['u', 'kind', 'x', 'y', 'by'], gold: ['u', 'a'], boom: ['x', 'y', 'r', 'fx', 'x2', 'y2'], phit: ['x', 'y', 'fx'], blink: ['x', 'y'], parry: ['u'], cast: ['u', 'fx', 'dx', 'dy', 'slot', 'charge'], fire: ['u', 'fx', 'dx', 'dy'], root: ['u'], knock: ['u'], poly: ['u'], curse: ['u', 'n'], shield: ['u', 'a'], stealth: ['u', 'on'], ping: ['u', 'kind', 'x', 'y', 'team'], evolve: ['u', 'tier', 'choice'], buy: ['u', 'id'], sell: ['u', 'id'], beacon: ['u', 'x', 'y', 'team'], bhit: ['x', 'y', 'team'], level: ['u'], tower: ['team', 'sub'], bossup: ['kind'], boss: ['team', 'kind'], feed: ['a', 'b', 'multi', 'first', 'bounty'], spawn: ['u'], tshot: ['u', 't', 'n'], cancelled: ['u'], stun: ['u'], mark: ['u'], forge: ['u', 'track'], atk: ['u', 't'], matk: ['u'], civ: ['team', 'x', 'y', 'id', 'n'], hope: ['team', 'on'], recap: ['u', 'list', 'total'], mapevent: ['kind', 'phase', 'team', 'x', 'y'], fund: ['u', 'team', 'a'], reinforce: ['u', 'team', 'lane'], buyback: ['u'], surrender: ['team', 'phase', 'yes', 'no', 'need'], consume: ['u', 'id'], boon: ['team', 'kind', 'on'] };
+  const EV_KEYS = { strike: ['u', 'x', 'y'], hit: ['u', 'a', 'sk', 'crit', 'by'], heal: ['u', 'a'], die: ['u', 'kind', 'x', 'y', 'by'], gold: ['u', 'a'], boom: ['x', 'y', 'r', 'fx', 'x2', 'y2'], phit: ['x', 'y', 'fx'], blink: ['x', 'y'], parry: ['u'], cast: ['u', 'fx', 'dx', 'dy', 'slot', 'charge'], fire: ['u', 'fx', 'dx', 'dy'], root: ['u'], knock: ['u'], poly: ['u'], curse: ['u', 'n'], shield: ['u', 'a'], stealth: ['u', 'on'], ping: ['u', 'kind', 'x', 'y', 'team'], evolve: ['u', 'tier', 'choice'], buy: ['u', 'id'], sell: ['u', 'id'], beacon: ['u', 'x', 'y', 'team'], bhit: ['x', 'y', 'team'], level: ['u'], tower: ['team', 'sub'], bossup: ['kind'], boss: ['team', 'kind'], feed: ['a', 'b', 'multi', 'first', 'bounty'], spawn: ['u'], tshot: ['u', 't', 'n'], cancelled: ['u'], stun: ['u'], mark: ['u'], forge: ['u', 'track'], atk: ['u', 't'], matk: ['u'], civ: ['team', 'x', 'y', 'id', 'n'], hope: ['team', 'on'], recap: ['u', 'list', 'total'], mapevent: ['kind', 'phase', 'team', 'x', 'y'], fund: ['u', 'team', 'a'], reinforce: ['u', 'team', 'lane'], buyback: ['u'], surrender: ['team', 'phase', 'yes', 'no', 'need'], consume: ['u', 'id'], boon: ['team', 'kind', 'on'] };
   const EV_NAMES = Object.keys(EV_KEYS), EV_IDX = {}; EV_NAMES.forEach((n, i) => { EV_IDX[n] = i; });
   const EV_ROUND = { x: 1, y: 1, x2: 1, y2: 1, dx: 100, dy: 100 };
   function packEvent(e) {
@@ -3334,7 +3832,7 @@ const Sim = (() => {
   }
   function tierOf(p) { let t = 0; TIERS.forEach((x, i) => { if (p >= x.at) t = i; }); return t; }
 
-  return { ITEM_SLOTS, CONSUMABLES, buybackCost, reinforceCost, fundCost, sellValue, BOSS_INFO, EVENT_INFO, BOON_INFO, SURRENDER_AT, BEACON_RANGE, ROSTER, ITEMS, ITEM_BY, itemPath, itemPrice, recommended, marksEarned, cdOf, defaultBuild, TOWER_RANGE, MAX_ATTACK_RANGE, refreshChamp, W, H, TICK, DT, KITS, buildMap, rayWall, visionSources, hasLOS, TIERS, TEAM_NAMES, FORGE_COST, createMatch, step, canSee, autoTarget, masteryGain, tierOf, towerOpen, xpNeed, ROLES, ROLE_INFO, autoRoles, CHARS, charOf,
+  return { MAX_LEVEL, PROFS, itemPaths, quickTarget, ITEM_SLOTS, CONSUMABLES, buybackCost, reinforceCost, fundCost, sellValue, BOSS_INFO, EVENT_INFO, BOON_INFO, SURRENDER_AT, BEACON_RANGE, ROSTER, ITEMS, ITEM_BY, itemPath, itemPrice, recommended, marksEarned, cdOf, defaultBuild, TOWER_RANGE, MAX_ATTACK_RANGE, refreshChamp, W, H, TICK, DT, KITS, buildMap, rayWall, visionSources, hasLOS, TIERS, TEAM_NAMES, FORGE_COST, createMatch, step, canSee, autoTarget, masteryGain, tierOf, towerOpen, xpNeed, ROLES, ROLE_INFO, autoRoles, CHARS, charOf,
     RANKS, rankOf, rankDelta, botSkills, skillProfile, setBot, snapshot, decodeSnapshot, applySnapshot, applyFrame, applyChampState, slowFlat, slowDiff, applySlow, packEvent, unpackEvent, predict };
 })();
 if (typeof module !== 'undefined') module.exports = Sim;
