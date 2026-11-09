@@ -184,6 +184,27 @@
     return out;
   }
 
+  // The nearest open point to a goal on the line back to the bot; the goal itself when it is open.
+  function openAim(m, mask, ax, ay, gx, gy) {
+    const fits = (x, y) => { if (!navOpen(m, mask, x, y)) return false; const g = wallNear(m, x, y, BODY_GAP); return !g; };
+    if (fits(gx, gy)) return { x: gx, y: gy };
+    const dx = ax - gx, dy = ay - gy, l = Math.hypot(dx, dy), n = Math.ceil(l / 20);
+    for (let k = 1; k < n; k++) { const x = gx + dx * k / n, y = gy + dy * k / n; if (fits(x, y)) return { x, y }; }
+    return { x: gx, y: gy };
+  }
+  // The closest wall within reach of a point: its distance and the unit vector from the wall to the point. Null when clear.
+  const BODY_GAP = 36;
+  function wallNear(m, x, y, reach) {
+    const wi = x / 200 | 0, wj = y / 200 | 0, list = wi >= 0 && wj >= 0 && wi < m.wcols ? m.wbucket[wj * m.wcols + wi] : null;
+    if (!list) return null;
+    let best = null, bd = reach;
+    for (const w of list) {
+      const cx = clamp(x, w.x, w.x + w.w), cy = clamp(y, w.y, w.y + w.h), dx = x - cx, dy = y - cy, d = Math.hypot(dx, dy);
+      if (d < bd && d > .01) { bd = d; best = { d, nx: dx / d, ny: dy / d }; }
+    }
+    return best;
+  }
+
   const moveTo = (b, x, y, arrive = 20) => { b.gx = x; b.gy = y; b.ga = arrive; b.hasGoal = true; b.vecT = 0; };
   const moveDir = (b, x, y) => { b.hasGoal = false; b.vx = x; b.vy = y; b.vecT = .3; };
   const noMove = b => { b.hasGoal = false; b.vecT = 0; };
@@ -211,16 +232,18 @@
     if (b.vecT > 0) { b.vecT -= DT; const f = freeDir(s, c, b, b.vx, b.vy); if (f) { vx = f.x; vy = f.y; } }
     else if (b.hasGoal && Math.hypot(b.gx - c.x, b.gy - c.y) > b.ga) {
       onPath = true;
+      // A goal inside a wall or tower is aimed at from its open near edge. Arrival still measures from the real goal.
+      const aim = openAim(m, b.mask, c.x, c.y, b.gx, b.gy), gx = aim.x, gy = aim.y;
       if (every3) {
-        if (clearLine(m, b.mask, c.x, c.y, b.gx, b.gy)) { b.path = null; b.needPath = false; }
+        if (clearLine(m, b.mask, c.x, c.y, gx, gy)) { b.path = null; b.needPath = false; }
         else if (!b.path) b.needPath = true;
       }
-      if (b.path && Math.hypot(b.pgx - b.gx, b.pgy - b.gy) > 130) b.needPath = true;
+      if (b.path && Math.hypot(b.pgx - gx, b.pgy - gy) > 130) b.needPath = true;
       if (b.needPath && s.navLeft > 0) {
-        s.navLeft--; b.needPath = false; b.pgx = b.gx; b.pgy = b.gy; b.pi = 0;
-        b.path = navPath(m, c.team, c.x, c.y, b.gx, b.gy);
+        s.navLeft--; b.needPath = false; b.pgx = gx; b.pgy = gy; b.pi = 0;
+        b.path = navPath(m, c.team, c.x, c.y, gx, gy);
       }
-      let tx = b.gx, ty = b.gy;
+      let tx = gx, ty = gy;
       if (b.path) {
         const p = b.path;
         while (b.pi < p.length - 1) {
@@ -228,8 +251,10 @@
           if (Math.hypot(w.x - c.x, w.y - c.y) < 34 || (every3 && clearLine(m, b.mask, c.x, c.y, nx.x, nx.y))) b.pi++; else break;
         }
         const w = p[b.pi]; tx = w.x; ty = w.y;
-        if (b.pi === p.length - 1 && Math.hypot(w.x - c.x, w.y - c.y) < 34) { b.path = null; tx = b.gx; ty = b.gy; }
+        if (b.pi === p.length - 1 && Math.hypot(w.x - c.x, w.y - c.y) < 34) { b.path = null; tx = gx; ty = gy; }
       }
+      // Pushed into a wall's margin with no route yet: step back onto open ground first rather than leaning on the wall.
+      if (!b.path && !navOpen(m, b.mask, c.x, c.y)) { const k = navCell(m, b.mask, c.x, c.y); if (k >= 0) { tx = k % m.cols * 40 + 20; ty = (k / m.cols | 0) * 40 + 20; } }
       const n = norm(tx - c.x, ty - c.y); vx = n.x; vy = n.y;
     }
     // Keep out of enemy tower range unless two or more of our minions are tanking, or the dive is a sure kill.
@@ -264,6 +289,17 @@
       const n = norm(vx + sx * .8, vy + sy * .8);
       if (navOpen(m, b.mask, c.x + n.x * 46, c.y + n.y * 46)) {
         if (vx || vy) { vx = n.x; vy = n.y; } else if (sx * sx + sy * sy > .09) { vx = n.x * .5; vy = n.y * .5; }
+      }
+    }
+    // Last word on the heading: never lean on a wall. Slide along it, easing off when touching; a heading with nothing left asks for a route.
+    if (vx || vy) {
+      const g = wallNear(m, c.x, c.y, c.r + 12), mag = Math.hypot(vx, vy);
+      if (g && vx * g.nx + vy * g.ny < 0) {
+        const inw = vx * g.nx + vy * g.ny; vx -= g.nx * inw; vy -= g.ny * inw;
+        if (g.d < c.r + 4) { vx += g.nx * .3 * mag; vy += g.ny * .3 * mag; }
+        const l = Math.hypot(vx, vy);
+        if (l > .05) { vx *= mag / l; vy *= mag / l; }
+        if (l < .3 && onPath) b.needPath = true;
       }
     }
     c.mv.x = vx; c.mv.y = vy;
@@ -468,7 +504,7 @@
     for (const e of foes) {
       let n = 0; for (const a of mine) if (dist(a, e) < a.range + 300) n++;
       if (!n) continue;
-      const v = n * .9 + (1 - frac(e)) * 1.5 + (e.stunT > 0 ? .5 : 0) + CARRY[e.champ] * .25 - (towerOver(s, team, e.x, e.y) ? 1.5 : 0);
+      const v = n * .9 + (s.champs.some(a => a.team === team && a.alive && a.nem === e.id) ? .2 : 0) + (1 - frac(e)) * 1.5 + (e.stunT > 0 ? .5 : 0) + CARRY[e.champ] * .25 - (towerOver(s, team, e.x, e.y) ? 1.5 : 0);
       if (v > fv) { fv = v; focus = e; }
     }
     ai.focus = focus ? focus.id : 0;
@@ -497,19 +533,49 @@
       for (const c of free) if (!ai.sites[c.id] && dist(c, z) < bd) { bd = dist(c, z); best = c; }
       if (best) { ai.sites[best.id] = z; taken.add(z.id); }
     }
-    const routeBusy = c => { const b = c.bot; if (!b.route) return true; const k = b.route[b.routeI]; return k && (k.alive || k.at - s.t < 8); };
-    for (const role of ['jungle', 'support', 'top', 'bottom']) for (const c of free) {
+    for (const role of ['support', 'top', 'bottom']) for (const c of free) {
       if (c.role !== role || ai.sites[c.id]) continue;
-      if (laning && role === 'jungle' && routeBusy(c)) continue;
       const laner = role === 'top' || role === 'bottom';
       if (laner && foes.some(e => dist(e, c) < 700)) continue;
       if (role === 'support') { const carry = carryOf(s, c, ai); if (carry && foes.some(e => dist(e, carry) < 650)) continue; }
-      let reach = role === 'jungle' ? (laning ? 900 : 1500) : role === 'support' ? 750 : 420;
+      let reach = role === 'support' ? 750 : 420;
       if (ai.push !== null) reach = Math.min(reach, 600);
       let best = null, bd = reach;
       for (const z of open) if (!taken.has(z.id) && dist(c, z) < bd && count(foes, z) <= count(mine, z)) { bd = dist(c, z); best = z; }
       if (best) { ai.sites[c.id] = best; taken.add(best.id); }
     }
+    // Districts: answer an attack on ours first, then take what is open by worth over distance.
+    // While laning only the jungler plays for them, so the lanes keep their seats.
+    ai.dist = {};
+    const ds = s.districts.filter(d => !d.home);
+    if (ds.length) {
+      const WORTH = { bank: 1.2, power: 1.1, hospital: 1, armory: 1, subway: 1, comms: .8 };
+      const pool = mine.filter(c => c.bot && !c.bot.low && frac(c) > .45 && !ai.help[c.id] && !(ai.defend && ai.defend.ids.includes(c.id)) && (!laning || c.role === 'jungle'));
+      const near = (list, d) => { let n = 0; for (const u of list) if (dist(u, d) < d.r + 200) n++; return n; };
+      for (const d of ds) {
+        if (d.owner !== team || !(d.by === 1 - team && d.prog > 0 || foes.some(e => dist(e, d) < d.r))) continue;
+        let best = null, bd = 1800;
+        for (const c of pool) if (!ai.dist[c.id] && dist(c, d) < bd) { bd = dist(c, d); best = c; }
+        if (best) ai.dist[best.id] = { d, def: true };
+      }
+      for (const role of ['jungle', 'support', 'top', 'bottom']) for (const c of pool) {
+        if (c.role !== role || ai.dist[c.id]) continue;
+        const reach = role === 'jungle' ? 3000 : ai.push !== null ? 500 : 1000;
+        if (role !== 'jungle' && foes.some(e => dist(e, c) < 800)) continue;
+        let best = null, bv = 0;
+        for (const d of ds) {
+          if (d.owner === team || d.contested && role !== 'jungle' || dist(c, d) > reach || towerOver(s, team, d.x, d.y, 0)) continue;
+          if (Object.values(ai.dist).some(x => x.d === d) && role !== 'jungle') continue;
+          if (near(foes, d) > near(mine, d)) continue;
+          const v = (WORTH[d.kind] || 1) * (dist(c, d) < d.r ? 1.6 : 1) * (d.owner === 1 - team ? 1.15 : 1) / (1 + dist(c, d) / 1100);
+          if (v > bv) { bv = v; best = d; }
+        }
+        if (best) ai.dist[c.id] = { d: best, def: false };
+      }
+      // Blackout: spend it when it covers a boss, a push or a fight in the open.
+      if (!laning && blackoutReady(s, team) && (ai.hoardGo || ai.push !== null || foes.some(e => mine.some(c => dist(c, e) < 900)))) { const u = mine.find(c => c.bot); if (u) u.q.push({ t: 'blackout' }); }
+    }
+
     // Map events: a squad contests the spot; laning sends only the roamers.
     ai.ev = {};
     const E = s.event;
@@ -890,6 +956,7 @@
       if (e.id === b.tid) v += .35;
       if (e.bounty > 0) v += sk.iq * Math.min(.5, e.bounty / 1200); // a shutdown pays
       if (e.id === ai.focus) v += .3 + sk.iq * .3;
+      if (e.id === c.nem) v += .2 + sk.iq * .25; // the rivalry pays Marks, and the kits answer each other
       if (carry && sk.iq > .4 && dist(e, carry) < 380) v += .8;
       if (sk.iq > .4 && !kill) { const tw = towerOver(s, c.team, e.x, e.y); if (tw && alliesTanking(s, c.team, tw) < 2) v -= 1.2; }
       if (sk.iq > .3 && !losClear(s, c.x, c.y, e.x, e.y)) v -= .4;
@@ -1018,21 +1085,21 @@
       b.gank = null; b.gankCd = s.t + 8;
     }
     if (!b.gankReady || s.t < b.gankCd || frac(c) < .6 || c.lvl < 2) return null;
-    let best = null, bv = .72;
+    let best = null, bv = .4;
     for (const e of b.foes) {
-      if (dist(e, c) > 2100 || towerOver(s, c.team, e.x, e.y)) continue;
+      if ((dist(e, c) > 2100 && !rideFor(s, c, e.x, e.y)) || towerOver(s, c.team, e.x, e.y)) continue;
       const deep = c.team ? e.x > W * .52 : e.x < W * .48, hurt = frac(e), mate = s.champs.some(a => a !== c && a.alive && a.team === c.team && dist(a, e) < 700);
-      let v = (deep ? .9 : 0) + (hurt < .7 ? .5 : 0) + (hurt < .4 ? .6 : 0) + (mate ? .55 : 0);
+      let v = (deep ? .9 : 0) + (hurt < .7 ? .5 : 0) + (hurt < .4 ? .6 : 0) + (mate ? .55 : 0) + (e.id === c.nem ? .25 : 0);
       if (!deep && hurt > .55 && !mate) v -= .8;
-      if (memThreat(s, c, b, ai, e.x, e.y, 700) > 1) v -= .5;
+      if (memThreat(s, c, b, ai, e.x, e.y, 700) > 1.6) v -= .5;
       v *= .55 + b.sk.iq * .45;
       if (v > bv) { bv = v; best = e; }
     }
-    if (best) { b.gank = { id: best.id, until: s.t + 14 }; b.gankReady = false; }
+    if (best) { b.gank = { id: best.id, until: s.t + 14 }; b.gankReady = false; b.gankCamps = 0; b.gankN = (b.gankN || 0) + 1; }
     return best;
   }
 
-  // Own camps in order: one half of the map, then the other. A full circuit earns a gank.
+  // Own camps in order: one half of the map, then the other.
   function jungleRoute(s, c, b) {
     const own = s.camps.filter(k => k.side === c.team);
     const upper = own.filter(k => k.y < H / 2), lower = own.filter(k => k.y >= H / 2), firstUp = hash01(c.id + (c.team * 37), 11) < .5;
@@ -1041,39 +1108,86 @@
     b.route = route; b.routeI = 0;
   }
 
+  // The jungler's standing priorities: gank a vulnerable lane, take or defend a district, clear camps, invade.
+  // There is always a next thing to do, so it never stands waiting; two or three camps earn a gank.
   function jungleTask(s, c, b, ai) {
     b.task = 'jungle';
+    if (b.onCamp !== undefined && b.onCamp >= 0 && !s.camps[b.onCamp].alive) {
+      b.onCamp = -1; b.campsDone = (b.campsDone || 0) + 1; b.campsTotal = (b.campsTotal || 0) + 1; b.gankCamps = (b.gankCamps || 0) + 1;
+      if (b.gankCamps >= 2 + (hash01(c.id, (b.gankN || 0) + 5) < .5 ? 0 : 1)) b.gankReady = true;
+    }
     const g = pickGank(s, c, b, ai);
     if (g) { b.task = 'gank'; moveTo(b, g.x, g.y, 60); c.atk = true; return; }
     if (!b.route) jungleRoute(s, c, b);
-    // Walk the route: the current camp if it is up or nearly up, otherwise the next live one.
-    // A camp cleared and not back soon moves the route on; finishing a circuit earns a gank.
+    const ownUp = b.route.some(k => k.alive || k.at - s.t < 5), dd = ai.dist && ai.dist[c.id];
+    // The rhythm: a few camps, a gank if one is on, then a district. Camps never starve while a district is open.
+    if (b.distOn !== undefined && b.distOn >= 0) { const k = s.districts.find(d => d.id === b.distOn); if (!k || k.owner === c.team) { b.campsDone = 0; b.distOn = -1; } }
+    if (dd && (dd.def || (b.campsDone || 0) >= 2 || !ownUp)) { if (!dd.def) b.distOn = dd.d.id; districtTask(s, c, b, dd.d); return; }
+    // Camps: the current one on the route, or the nearest of ours that is up.
     let camp = null;
     for (let i = 0; i < b.route.length; i++) {
       const k = b.route[b.routeI];
-      if (k.alive || k.at - s.t < 12) { camp = k; break; }
-      b.routeI++; if (b.routeI >= b.route.length) { b.routeI = 0; b.cycles++; b.gankReady = true; }
+      if (k.alive || k.at - s.t < 5) { camp = k; break; }
+      b.routeI++; if (b.routeI >= b.route.length) { b.routeI = 0; b.cycles++; }
     }
     if (!camp) {
-      // Everything of ours is down. Stand at the camp due back soonest, unless an enemy-side camp is free after laning.
-      let soon = b.route[0], st = soon.at;
-      for (const k of b.route) if (k.at < st) { st = k.at; soon = k; }
+      // Nothing of ours is up. Invade a free enemy camp after the first clears, else take a district, else go work a lane.
       let enemy = null, bc = 1e9;
-      if (ai.phase !== 'lane') for (const k of s.camps) {
+      if ((b.campsTotal || 0) >= 2 || ai.phase !== 'lane') for (const k of s.camps) {
         if (!k.alive || k.side === c.team) continue;
-        if (memThreat(s, c, b, ai, k.x, k.y, 700) > .7 || b.foes.some(e => dist(e, k) < 900)) continue;
+        if (memThreat(s, c, b, ai, k.x, k.y, 700) > .7 || b.foes.some(e => dist(e, k) < 900) || towerOver(s, c.team, k.x, k.y, 40)) continue;
         const d = dist(c, k); if (d < bc) { bc = d; enemy = k; }
       }
-      camp = enemy || soon;
+      camp = enemy;
+    }
+    if (!camp) {
+      if (dd) { districtTask(s, c, b, dd.d); return; }
+      // A last resort that still does something: walk to the camp due back first, or push the closer lane.
+      let soon = b.route[0]; for (const k of b.route) if (k.at < soon.at) soon = k;
+      if (soon.at - s.t < 6) { camp = soon; }
+      else { b.task = 'roam'; laneTask(s, c, b, s.lanes.length > 1 && laneDist(s, 1, c.x, c.y) < laneDist(s, 0, c.x, c.y) ? 1 : 0, ai, false); return; }
     }
     let m = null, md = 1e9;
     if (camp.alive) for (const x of s.monsters) if (x.alive && x.camp === camp.id) { const d = dist(c, x); if (d < md) { md = d; m = x; } }
     if (!m) { moveTo(b, camp.x, camp.y, 40); return; }
+    b.onCamp = camp.id;
     const low = frac(c);
     if (low < (camp.big ? .42 : .34) && !s.monsters.some(x => x.alive && x.camp === camp.id && x.hp < x.maxHp * .35)) { b.low = true; return; }
     moveTo(b, m.x, m.y, KITS[c.champ].pref * .85);
     if (md - m.r <= c.range) { c.atk = true; c.atkPref = m.id; }
     castPve(s, c, b, m, md);
+  }
+
+  // Stand on the district's civilians when they are up (rescue or terrorize), else in the middle, hitting whatever comes.
+  function districtTask(s, c, b, d) {
+    b.task = 'district';
+    const z = d.site >= 0 ? s.sites[d.site] : null, p = z && z.alive ? z : d;
+    moveTo(b, p.x, p.y, z && z.alive ? 40 : d.r * .55); c.atk = true;
+  }
+
+  // A long trip starts at a friendly station when the ride saves real ground. Returns the stations to use, or null.
+  function rideFor(s, c, x, y) {
+    if (!s.districts.length || c.subCd > 0) return null;
+    const direct = Math.hypot(x - c.x, y - c.y); if (direct < 1200) return null;
+    let best = null, top = c.msBase * 1.9;
+    for (const a of s.districts) {
+      if (a.kind !== 'subway' || a.owner !== c.team) continue;
+      const toA = dist(c, a); if (toA > direct) continue;
+      for (const z of s.districts) {
+        if (z === a || z.kind !== 'subway' || z.owner !== c.team) continue;
+        const save = direct - toA - Math.hypot(x - z.x, y - z.y);
+        if (save > top) { top = save; best = { a, z, save }; }
+      }
+    }
+    return best;
+  }
+  function trySubway(s, c, b, ai) {
+    if (!b.hasGoal || b.low || b.fighting || c.chan || b.closest < 900) return;
+    // Lane discipline: while laning, a laner only rides on the way back from base.
+    if (ai.phase === 'lane' && c.role !== 'jungle' && laneDist(s, b.lane, c.x, c.y) < 900) return;
+    const r = rideFor(s, c, b.gx, b.gy); if (!r) return;
+    if (dist(c, r.a) < r.a.r + 6) { c.q.push({ t: 'subway', to: r.z.id }); b.still = true; noMove(b); b.task = 'subway'; return; }
+    moveTo(b, r.a.x, r.a.y, r.a.r * .55);
   }
 
   function hoardTask(s, c, b, ai) {
@@ -1110,7 +1224,6 @@
     botSpend(s, c, b, ai, nb);
     if (c.lvl >= 4 && c.evolved[0] < 0) c.q.push({ t: 'evolve', tier: 0, choice: botEvolve(c, 0) });
     if (c.lvl >= 8 && c.evolved[1] < 0) c.q.push({ t: 'evolve', tier: 1, choice: botEvolve(c, 1) });
-    botBeacon(s, c, b, ai);
     if (c.hp < (b.hpWas || c.hp) - .5) b.hurtAt = s.t;
     b.hpWas = c.hp;
     if (c.chan && c.chan.recall) {
@@ -1118,6 +1231,7 @@
       // moving is what cancels a recall, the same as for a player
     }
     b.ratio = t ? assess(s, c, b, ai) : 2;
+    if (t && t.id === c.nem) b.ratio *= 1 + .06 * sk.iq;
     // Just died, or keeps dying: come back carefully rather than feed the same fight.
     const recent = b.deaths.reduce((n, at) => n + (s.t - at < 120 ? 1 : 0), 0), fresh = c.spawnT !== undefined && s.t - c.spawnT < 16;
     if (recent >= 2) { const last = b.deaths[b.deaths.length - 1] || 0; b.safeUntil = Math.max(b.safeUntil, last + 22 + (recent - 1) * 14); }
@@ -1136,6 +1250,8 @@
       const hitLately = s.t - (b.hurtAt || -9) < 2.2 || s.monsters.some(m => m.alive && m.tgt === c);
       const quiet = b.closest >= 700 && homeD > 1050 && !hitLately && memThreat(s, c, b, ai, c.x, c.y, 650) < .5 + (1 - sk.iq);
       if (quiet) { if (!c.chan) c.q.push({ t: 'recall' }); b.still = true; noMove(b); return; }
+      const hosp = (laning && laner) ? null : s.districts.find(d => d.kind === 'hospital' && d.owner === c.team && dist(d, c) < homeD * .6 && !b.foes.some(e => dist(e, d) < 500));
+      if (hosp) { if (dist(c, hosp) < hosp.r * .7 && f > .7) { b.low = false; return; } moveTo(b, hosp.x, hosp.y, hosp.r * .5); c.atk = !towerOver(s, c.team, c.x, c.y, 0); if (t) useCombo(s, c, b, t, 'retreat'); return; }
       moveTo(b, home.x, home.y, 40); c.atk = !towerOver(s, c.team, c.x, c.y, 0); if (t) useCombo(s, c, b, t, 'retreat');
       return;
     }
@@ -1194,19 +1310,19 @@
     const pg = pingTask(s, c, b, ai);
     if (pg === 'retreat' && homeD > 700 && !t) { moveTo(b, home.x, home.y, 80); b.task = 'pinged'; c.atk = true; useCombo(s, c, b, null, 'poke'); return; }
     if (pg && pg.x !== undefined) { b.task = 'pinged'; moveTo(b, pg.x, pg.y, 110); c.atk = true; if (t) useCombo(s, c, b, t, 'poke'); return; }
-    // An enemy beacon in reach is worth a few swings.
-    if (b.sk.iq > .3 && !b.low) for (const x of s.beacons) if (x.alive && x.team !== c.team && canSee(s, c.team, x) && dist(c, x) < c.range + 220 && (!t || d > 560)) { moveTo(b, x.x, x.y, c.range * .6); c.atk = true; c.atkPref = x.id; c.atkMode = 'champ'; b.task = 'beacon'; return; }
     // Team plan first, then the role's normal job.
     if (called) { b.task = 'defend'; moveTo(b, ai.defend.x, ai.defend.y, 60); c.atk = true; }
     else if (ai.help[c.id] && ai.help[c.id].alive && heeds(ai.help[c.id].id + (s.t / 12 | 0))) { b.task = 'help'; const a = ai.help[c.id]; moveTo(b, a.x, a.y, 130); c.atk = true; }
     else if (ai.cover[c.id] !== undefined) { b.task = 'cover'; laneTask(s, c, b, ai.cover[c.id], ai, false); }
     else if (ai.ev && ai.ev[c.id] && s.event && heeds(99 + (s.t / 12 | 0))) { b.task = 'event'; const E = s.event; moveTo(b, E.x, E.y, E.r * .55); c.atk = true; }
     else if (ai.hoard && ai.hoard.ids.includes(c.id) && (hash01(1 + (s.t / 25 | 0), c.id + 7) < .65 + .35 * sk.macro) && hoardTask(s, c, b, ai)) { b.task = 'boss'; }
+    else if (ai.dist && ai.dist[c.id] && c.role !== 'jungle') districtTask(s, c, b, ai.dist[c.id].d);
     else if (ai.sites[c.id] && ai.sites[c.id].alive && heeds(ai.sites[c.id].id + 41 + (s.t / 25 | 0))) { b.task = 'site'; const z = ai.sites[c.id]; moveTo(b, z.x, z.y, 70); c.atk = true; }
     else if (ai.split === c.id && ai.push !== null) { b.task = 'split'; laneTask(s, c, b, ai.push === 0 ? 1 : 0, ai, true); }
     else if (ai.push !== null) { b.task = 'push'; laneTask(s, c, b, ai.push, ai, true); }
     else if (c.role === 'jungle') jungleTask(s, c, b, ai);
     else { b.task = 'lane'; laneTask(s, c, b, b.lane, ai, false); }
+    trySubway(s, c, b, ai);
 
     // Poke with whatever is free when standing somewhere safe.
     const safeSpot = !towerOver(s, c.team, c.x, c.y) && b.ratio >= .7 && f > .4;
@@ -1254,7 +1370,6 @@
     }
     const noBonus = c.team ? s.hope > 34 : s.hope < 66;
     if (s.t > 420 && noBonus && spare > fundCost(s, c.team) + 80 && !(c.fundCd > 0)) { c.q.push({ t: 'fund' }); return; }
-    if (c.beacons === 0 && spare > 150 && (c.role === 'support' || c.role === 'jungle')) c.q.push({ t: 'buy', id: 'beaconkit' });
   }
   // Dead bots still shop and decide on buyback.
   function botDead(s, c, b) {
@@ -1268,20 +1383,6 @@
     if ((danger >= 1.5 && hash01(c.id, s.t / 5 | 0) < .35 + .6 * b.sk.macro) || (late && (rich || c.respawn > 18) && hash01(c.id, s.t / 8 | 0) < .25 + .35 * b.sk.iq)) c.q.push({ t: 'buyback' });
   }
 
-  // Beacons, by role: supports and junglers light the map; laners watch their own brush.
-  function botBeacon(s, c, b, ai) {
-    if (c.beacons <= 0 || s.t < 45 || b.closest < 500 || (s.tick + c.id) % 20 !== 0 || hash01(c.id, s.t / 25 | 0) > .25 + .7 * b.sk.macro) return;
-    const keep = c.role === 'support' || c.role === 'jungle' ? 0 : 1;
-    if (c.beacons <= keep && s.t < LATE_AT) return;
-    const has = (x, y) => s.beacons.some(z => z.alive && z.team === c.team && Math.hypot(z.x - x, z.y - y) < 400);
-    let best = null, bv = 0;
-    const consider = (x, y, v) => { const d = Math.hypot(x - c.x, y - c.y); if (d > BEACON_RANGE + 30 || has(x, y)) return; if (v / (1 + d / 900) > bv) { bv = v / (1 + d / 900); best = { x, y }; } };
-    for (const br of s.map.brush) consider(br.x, br.y, c.role === 'support' || c.role === 'jungle' ? 3 : (Math.abs(br.y - (b.lane ? H - 330 : 330)) < 500 ? 2 : .6));
-    for (const B of s.bosses) if (!B.up && B.at - s.t < 40) { const n = norm(B.x - c.x, B.y - c.y); consider(B.x - n.x * 280, B.y - n.y * 280, B.kind === 'colossus' ? 4 : 2.5); }
-    if (s.event && (s.event.phase === 'warn' || s.event.t > 8)) consider(s.event.x, s.event.y, 3);
-    for (const z of s.sites) if (z.alive) consider(z.x, z.y, c.role === 'support' ? 2 : 1);
-    if (best) c.q.push({ t: 'beacon', tx: best.x, ty: best.y });
-  }
   // What an ally's ping asks of this bot right now: a point to go to, 'retreat', or nothing.
   function pingTask(s, c, b, ai) {
     if (!ai.pings.length) return null;
@@ -1299,6 +1400,23 @@
       }
     }
     return res;
+  }
+
+  // ---------- bans ----------
+  // Bot side bans from the other side's roster: strength first, then the kit that answers our best champion, then what they have shown.
+  const BAN_POWER = { vesper: .62, ione: .6, sable: .55, kade: .5, solenne: .55, gravel: .5, deadbolt: .62, hex: .6, shiv: .55, duelist: .5, plague: .55, ironjaw: .5, voltaic: .55, tidecaller: .52, paragon: .58, mirage: .55, cinder: .58, ravager: .52, cataclysm: .55, puppeteer: .52 };
+  function botBan(side, info) {
+    const o = info || {}, foe = 1 - side, banned = o.banned || [], picks = o.picks || [], rand = o.rand || Math.random;
+    const pool = ROSTER[foe].filter(k => !banned.includes(k)); if (!pool.length) return null;
+    const power = k => BAN_POWER[k] === undefined ? .5 : BAN_POWER[k];
+    let best = pool[0], bv = -1e9;
+    for (const k of pool) {
+      const n = nemesisOf(k);
+      // Removing the kit that counters a strong champion of ours frees that pick.
+      let v = power(k) + (n && ROSTER[side].includes(n) ? (power(n) - .5) * .8 : 0) + (picks.includes(k) ? .22 : 0) + rand() * .1;
+      if (v > bv) { bv = v; best = k; }
+    }
+    return best;
   }
 
   // ---------- rank contract ----------

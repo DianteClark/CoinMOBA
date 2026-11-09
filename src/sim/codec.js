@@ -67,7 +67,6 @@
       if (p.homing) wVar(p.target.id); else { wi16(p.vx / 8); wi16(p.vy / 8); }
     });
     wList(s.zones, 64, z => { const ext = (z.line ? 1 : 0) | (z.tgt ? 2 : 0); wPos(z.x); wPos(z.y); w16(z.r); wByte(z.t * 20); wByte(z.total * 20); w8(z.team | ZONE_KINDS.indexOf(z.kind) << 2); w8(FX_NUM[z.fx] === undefined ? 255 : FX_NUM[z.fx]); wVar(z.owner.id); w8(ext); if (z.line) { wPos(z.x1); wPos(z.y1); wPos(z.x2); wPos(z.y2); } if (z.tgt) wVar(z.tgt); });
-    wList(s.beacons, 40, b => { wPos(b.x); wPos(b.y); w8(b.team | (b.hp << 2) | ((b.inBrush + 1) << 4)); wByte(b.t); });
     let mask = 0; s.sites.forEach((z, i) => { if (z.prog[0] > 0 || z.prog[1] > 0) mask |= 1 << i; });
     w8(mask); s.sites.forEach((z, i) => { if (mask & 1 << i) { wByte(z.prog[0] * 40); wByte(z.prog[1] * 40); } });
   }
@@ -98,10 +97,9 @@
     const min = list(unitRow);
     const proj = list(id => { const o = { id, x: rPos(), y: rPos(), fl: r8(), fx: r8(), w: r8(), owner: rVar(), target: 0, vx: 0, vy: 0 }; if (o.fl & 4) o.target = rVar(); else { o.vx = ri16() * 8; o.vy = ri16() * 8; } return o; });
     const zones = list(id => { const o = { id, x: rPos(), y: rPos(), r: r16(), t: r8() / 20, total: r8() / 20, fl: r8(), fx: r8(), owner: rVar(), ext: r8() }; if (o.ext & 1) { o.x1 = rPos(); o.y1 = rPos(); o.x2 = rPos(); o.y2 = rPos(); } if (o.ext & 2) o.tgt = rVar(); return o; });
-    const beacons = list(id => ({ id, x: rPos(), y: rPos(), fl: r8(), t: r8() }));
     const mask = r8(); let prog = null;
     if (mask) { prog = {}; for (let i = 0; i < 8; i++) if (mask & 1 << i) prog[i] = [r8() / 40, r8() / 40]; }
-    return { mid, tick, ack, seat, champs, own, mon, min, proj, zones, beacons, prog, size: buf.byteLength };
+    return { mid, tick, ack, seat, champs, own, mon, min, proj, zones, prog, size: buf.byteLength };
   }
 
   // A renderer-shaped stand-in for a unit id the guest can't resolve (its owner already died, say).
@@ -147,7 +145,6 @@
       (u, a) => { u.age = s.t - u.seen; u.vx = a.vx; u.vy = a.vy; u.w = a.w; if (!u.owner || u.owner.id !== a.owner) u.owner = unitOf(s, a.owner) || ghostUnit(a.owner, a.x, a.y, a.fl & 3); if (u.homing && (!u.target || u.target.id !== a.target)) u.target = unitOf(s, a.target) || ghostUnit(a.target, a.x, a.y, 2); });
     sync(s.zones, A.zones, B && B.zones, rx.z, a => ({ id: a.id, x: a.x, y: a.y, kind: ZONE_KINDS[a.fl >> 2], fx: FX_CODE[a.fx], r: a.r, team: a.fl & 3, total: a.total, t: a.t, line: !!(a.ext & 1), tgt: a.tgt }),
       (u, a) => { u.t = Math.max(0, a.t - span * f * DT); u.total = a.total; u.r = a.r; if (a.ext & 1) { u.x1 = a.x1; u.y1 = a.y1; u.x2 = a.x2; u.y2 = a.y2; } if (!u.owner) u.owner = unitOf(s, a.owner) || ghostUnit(a.owner, a.x, a.y, a.fl & 3); });
-    sync(s.beacons, A.beacons, null, rx.b, a => ({ id: a.id, kind: 'beacon', team: a.fl & 3, x: a.x, y: a.y, px: a.x, py: a.y, r: 16, maxHp: 3, alive: true, sight: 560, inBrush: (a.fl >> 4) - 1 }), (u, a) => { u.hp = (a.fl >> 2) & 3; u.t = a.t; });
     const ev = s.event; if (ev && ev.tx !== undefined) { ev.x += (ev.tx - ev.x) * .12; ev.y += (ev.ty - ev.y) * .12; }
     for (const z of s.sites) { const p = A.prog && A.prog[z.id]; z.prog[0] = p ? p[0] : 0; z.prog[1] = p ? p[1] : 0; }
   }
@@ -186,11 +183,12 @@
   function slowFlat(s) {
     const fund = s.fund || [0, 0], rein = s.reinforceAt || [0, 0], fog = s.fog || [1, 1];
     return [
-      [[Math.round(s.hope * 10), s.hopeTeam, s.kills[0], s.kills[1], Math.round(s.bossAt), s.bossUp ? 1 : 0, s.buff[0], s.buff[1], s.wave, s.over ? s.over.winner + 1 : 0, s.over ? Math.round(s.over.t * 10) : 0, s.over && s.over.surrender ? 1 : 0, round(s.eventAt), num(fund[0]), num(fund[1]), Math.ceil(num(rein[0])), Math.ceil(num(rein[1])), Math.round(num(fog[0]) * 100), Math.round(num(fog[1]) * 100)]],
-      s.champs.map(c => [c.lvl, Math.round(c.xp), Math.floor(c.gold), Math.round(c.maxHp), Math.round(c.msBase), Math.ceil(c.respawn), itemCode(c.items[0]), itemCode(c.items[1]), itemCode(c.items[2]), itemCode(c.items[3]), itemCode(c.items[4]), c.evolved[0] + 1, c.evolved[1] + 1, c.beacons, Math.ceil(c.beaconT), c.streak, Math.round(c.armor), c.stats.kills, c.stats.deaths, c.stats.assists, c.stats.casts, c.stats.skillHits, c.stats.parries, Math.round(c.stats.dmg), c.as * 1000 | 0, round(c.bounty), ceil(c.buybackCd), ceil(c.potT), ceil(c.elixT), ceil(c.tonicT), ceil(c.sentT), ceil(c.wlT), round(c.stats.dealt), round(c.stats.taken), round(c.stats.healing), round(c.stats.gold), num(c.stats.towers), num(c.stats.objectives), num(c.stats.rescues), ...EXTRA_STATS.map(k => Math.round(c.stats[k] || 0))]),
+      [[Math.round(s.hope * 10), s.hopeTeam, s.kills[0], s.kills[1], Math.round(s.bossAt), s.bossUp ? 1 : 0, s.buff[0], s.buff[1], s.wave, s.over ? s.over.winner + 1 : 0, s.over ? Math.round(s.over.t * 10) : 0, s.over && s.over.surrender ? 1 : 0, round(s.eventAt), num(fund[0]), num(fund[1]), Math.ceil(num(rein[0])), Math.ceil(num(rein[1])), Math.round(num(fog[0]) * 100), Math.round(num(fog[1]) * 100), num(s.hunt[0]), num(s.hunt[1]), Math.ceil(num(s.blackAt[0])), Math.ceil(num(s.blackAt[1])), Math.ceil(num(s.blackT[0])), Math.ceil(num(s.blackT[1]))]],
+      s.champs.map(c => [c.lvl, Math.round(c.xp), Math.floor(c.gold), Math.round(c.maxHp), Math.round(c.msBase), Math.ceil(c.respawn), itemCode(c.items[0]), itemCode(c.items[1]), itemCode(c.items[2]), itemCode(c.items[3]), itemCode(c.items[4]), c.evolved[0] + 1, c.evolved[1] + 1, Math.ceil(num(c.subCd)), 0, c.streak, Math.round(c.armor), c.stats.kills, c.stats.deaths, c.stats.assists, c.stats.casts, c.stats.skillHits, c.stats.parries, Math.round(c.stats.dmg), c.as * 1000 | 0, round(c.bounty), ceil(c.buybackCd), ceil(c.potT), ceil(c.elixT), ceil(c.tonicT), ceil(c.sentT), ceil(c.wlT), round(c.stats.dealt), round(c.stats.taken), round(c.stats.healing), round(c.stats.gold), num(c.stats.towers), num(c.stats.objectives), num(c.stats.rescues), ...EXTRA_STATS.map(k => Math.round(c.stats[k] || 0))]),
       s.towers.map(t => [Math.ceil(t.hp), t.alive ? 1 : 0]),
       s.sites.map(z => [z.alive ? 1 : 0]),
       [JSON_KEYS.map(k => jsonPart(s, k))],
+      s.districts.map(d => [d.owner, d.by, Math.round(d.prog * 100), d.contested ? 1 : 0, Math.round(d.scar * 100), Math.ceil(d.boost[0]), Math.ceil(d.boost[1])]),
     ];
   }
   function slowDiff(prev, cur) {
@@ -199,9 +197,10 @@
     return out;
   }
   const itemCode = id => (id && ITEM_BY[id] ? ITEM_BY[id].i + 1 : 0), setItem = i => (c, v) => { c.items[i] = v ? ITEMS[v - 1].id : null; c.dirtyKit = 1; };
-  const G_FIELDS = [(s, v) => { s.hope = v / 10; }, (s, v) => { s.hopeTeam = v; }, (s, v) => { s.kills[0] = v; }, (s, v) => { s.kills[1] = v; }, (s, v) => { s.bossAt = v; }, (s, v) => { s.bossUp = !!v; }, (s, v) => { s.buff[0] = v; }, (s, v) => { s.buff[1] = v; }, (s, v) => { s.wave = v; }, (s, v) => { s.over = v ? Object.assign(s.over || { t: 0 }, { winner: v - 1 }) : null; }, (s, v) => { if (s.over) s.over.t = v / 10; }, (s, v) => { if (s.over) s.over.surrender = !!v; }, (s, v) => { s.eventAt = v; }, (s, v) => { (s.fund || (s.fund = [0, 0]))[0] = v; }, (s, v) => { (s.fund || (s.fund = [0, 0]))[1] = v; }, (s, v) => { (s.reinforceAt || (s.reinforceAt = [0, 0]))[0] = v; }, (s, v) => { (s.reinforceAt || (s.reinforceAt = [0, 0]))[1] = v; }, (s, v) => { (s.fog || (s.fog = [1, 1]))[0] = v / 100; }, (s, v) => { (s.fog || (s.fog = [1, 1]))[1] = v / 100; }];
+  const G_FIELDS = [(s, v) => { s.hope = v / 10; }, (s, v) => { s.hopeTeam = v; }, (s, v) => { s.kills[0] = v; }, (s, v) => { s.kills[1] = v; }, (s, v) => { s.bossAt = v; }, (s, v) => { s.bossUp = !!v; }, (s, v) => { s.buff[0] = v; }, (s, v) => { s.buff[1] = v; }, (s, v) => { s.wave = v; }, (s, v) => { s.over = v ? Object.assign(s.over || { t: 0 }, { winner: v - 1 }) : null; }, (s, v) => { if (s.over) s.over.t = v / 10; }, (s, v) => { if (s.over) s.over.surrender = !!v; }, (s, v) => { s.eventAt = v; }, (s, v) => { (s.fund || (s.fund = [0, 0]))[0] = v; }, (s, v) => { (s.fund || (s.fund = [0, 0]))[1] = v; }, (s, v) => { (s.reinforceAt || (s.reinforceAt = [0, 0]))[0] = v; }, (s, v) => { (s.reinforceAt || (s.reinforceAt = [0, 0]))[1] = v; }, (s, v) => { (s.fog || (s.fog = [1, 1]))[0] = v / 100; }, (s, v) => { (s.fog || (s.fog = [1, 1]))[1] = v / 100; }, (s, v) => { s.hunt[0] = v; }, (s, v) => { s.hunt[1] = v; }, (s, v) => { s.blackAt[0] = v; }, (s, v) => { s.blackAt[1] = v; }, (s, v) => { s.blackT[0] = v; }, (s, v) => { s.blackT[1] = v; }];
+  const D_FIELDS = [(d, v) => { d.owner = v; }, (d, v) => { d.by = v; }, (d, v) => { d.prog = v / 100; }, (d, v) => { d.contested = !!v; }, (d, v) => { d.scar = v / 100; }, (d, v) => { d.boost[0] = v; }, (d, v) => { d.boost[1] = v; }];
   const stat = k => (c, v) => { c.stats[k] = v; }, plain = k => (c, v) => { c[k] = v; };
-  const C_FIELDS = [plain('lvl'), plain('xp'), plain('gold'), plain('maxHp'), plain('msBase'), plain('respawn'), setItem(0), setItem(1), setItem(2), setItem(3), setItem(4), (c, v) => { c.evolved[0] = v - 1; c.dirtyKit = 1; }, (c, v) => { c.evolved[1] = v - 1; c.dirtyKit = 1; }, plain('beacons'), plain('beaconT'), plain('streak'), plain('armor'), stat('kills'), stat('deaths'), stat('assists'), stat('casts'), stat('skillHits'), stat('parries'), stat('dmg'), (c, v) => { c.as = v / 1000; }, plain('bounty'), plain('buybackCd'), plain('potT'), plain('elixT'), plain('tonicT'), plain('sentT'), plain('wlT'), stat('dealt'), stat('taken'), stat('healing'), stat('gold'), stat('towers'), stat('objectives'), stat('rescues'), ...EXTRA_STATS.map(stat)];
+  const C_FIELDS = [plain('lvl'), plain('xp'), plain('gold'), plain('maxHp'), plain('msBase'), plain('respawn'), setItem(0), setItem(1), setItem(2), setItem(3), setItem(4), (c, v) => { c.evolved[0] = v - 1; c.dirtyKit = 1; }, (c, v) => { c.evolved[1] = v - 1; c.dirtyKit = 1; }, plain('subCd'), () => {}, plain('streak'), plain('armor'), stat('kills'), stat('deaths'), stat('assists'), stat('casts'), stat('skillHits'), stat('parries'), stat('dmg'), (c, v) => { c.as = v / 1000; }, plain('bounty'), plain('buybackCd'), plain('potT'), plain('elixT'), plain('tonicT'), plain('sentT'), plain('wlT'), stat('dealt'), stat('taken'), stat('healing'), stat('gold'), stat('towers'), stat('objectives'), stat('rescues'), ...EXTRA_STATS.map(stat)];
   function applySlow(s, d) {
     for (let i = 0; i < d.length; i += 4) {
       const a = d[i], b = d[i + 1], c = d[i + 2], v = d[i + 3];
@@ -210,6 +209,7 @@
         else if (a === 1) C_FIELDS[c](s.champs[b], v);
         else if (a === 2) { if (c === 0) s.towers[b].hp = v; else s.towers[b].alive = !!v; }
         else if (a === 3) s.sites[b].alive = !!v;
+        else if (a === 5) D_FIELDS[c](s.districts[b], v);
         else if (a === 4) {
           const key = JSON_KEYS[c], val = JSON.parse(v);
           if (key === 'event') {
@@ -223,10 +223,11 @@
       } catch (e) { if (typeof console !== 'undefined') console.error('slow', a, b, c, e); }
     }
     for (const c of s.champs) if (c.dirtyKit) { c.dirtyKit = 0; refreshChamp(c); }
+    tallyDistricts(s);
   }
 
   // Events, as short arrays. Position fields are rounded; everything else is passed as is.
-  const EV_KEYS = { strike: ['u', 'x', 'y'], hit: ['u', 'a', 'sk', 'crit', 'by'], heal: ['u', 'a'], die: ['u', 'kind', 'x', 'y', 'by'], gold: ['u', 'a'], boom: ['x', 'y', 'r', 'fx', 'x2', 'y2'], phit: ['x', 'y', 'fx'], blink: ['x', 'y'], parry: ['u'], cast: ['u', 'fx', 'dx', 'dy', 'slot', 'charge'], fire: ['u', 'fx', 'dx', 'dy'], root: ['u'], knock: ['u'], poly: ['u'], curse: ['u', 'n'], shield: ['u', 'a'], stealth: ['u', 'on'], ping: ['u', 'kind', 'x', 'y', 'team'], evolve: ['u', 'tier', 'choice'], buy: ['u', 'id'], sell: ['u', 'id'], beacon: ['u', 'x', 'y', 'team'], bhit: ['x', 'y', 'team'], level: ['u'], tower: ['team', 'sub'], bossup: ['kind'], boss: ['team', 'kind'], feed: ['a', 'b', 'multi', 'first', 'bounty'], spawn: ['u'], tshot: ['u', 't', 'n'], cancelled: ['u'], stun: ['u'], mark: ['u'], forge: ['u', 'track'], atk: ['u', 't'], matk: ['u'], civ: ['team', 'x', 'y', 'id', 'n'], hope: ['team', 'on'], recap: ['u', 'list', 'total'], mapevent: ['kind', 'phase', 'team', 'x', 'y'], fund: ['u', 'team', 'a'], reinforce: ['u', 'team', 'lane'], buyback: ['u'], surrender: ['team', 'phase', 'yes', 'no', 'need'], consume: ['u', 'id'], boon: ['team', 'kind', 'on'], hl: ['kind', 'u', 'x', 'y', 'n', 'v', 'b'] };
+  const EV_KEYS = { strike: ['u', 'x', 'y'], hit: ['u', 'a', 'sk', 'crit', 'by'], heal: ['u', 'a'], die: ['u', 'kind', 'x', 'y', 'by'], gold: ['u', 'a'], boom: ['x', 'y', 'r', 'fx', 'x2', 'y2'], phit: ['x', 'y', 'fx'], blink: ['x', 'y'], parry: ['u'], cast: ['u', 'fx', 'dx', 'dy', 'slot', 'charge'], fire: ['u', 'fx', 'dx', 'dy'], root: ['u'], knock: ['u'], poly: ['u'], curse: ['u', 'n'], shield: ['u', 'a'], stealth: ['u', 'on'], ping: ['u', 'kind', 'x', 'y', 'team'], evolve: ['u', 'tier', 'choice'], buy: ['u', 'id'], sell: ['u', 'id'], beacon: ['u', 'x', 'y', 'team'], bhit: ['x', 'y', 'team'], level: ['u'], tower: ['team', 'sub'], bossup: ['kind'], boss: ['team', 'kind'], feed: ['a', 'b', 'multi', 'first', 'bounty'], spawn: ['u'], tshot: ['u', 't', 'n'], cancelled: ['u'], stun: ['u'], mark: ['u'], forge: ['u', 'track'], atk: ['u', 't'], matk: ['u'], civ: ['team', 'x', 'y', 'id', 'n'], hope: ['team', 'on'], recap: ['u', 'list', 'total'], mapevent: ['kind', 'phase', 'team', 'x', 'y'], fund: ['u', 'team', 'a'], reinforce: ['u', 'team', 'lane'], buyback: ['u'], surrender: ['team', 'phase', 'yes', 'no', 'need'], consume: ['u', 'id'], boon: ['team', 'kind', 'on'], hl: ['kind', 'u', 'x', 'y', 'n', 'v', 'b'], district: ['id', 'kind', 'team', 'from', 'phase'], subway: ['u', 'from', 'to', 'phase'], blackout: ['team', 'u'], city: ['kind', 'team'], hunt: ['team', 'n', 'need', 'paid'], rival: ['u', 'v', 'x', 'y'], raid: ['phase'] };
   const EV_NAMES = Object.keys(EV_KEYS), EV_IDX = {}; EV_NAMES.forEach((n, i) => { EV_IDX[n] = i; });
   const EV_ROUND = { x: 1, y: 1, x2: 1, y2: 1, dx: 100, dy: 100 };
   function packEvent(e) {

@@ -1,6 +1,6 @@
 // Bot audit: headless matches, measuring discipline, tower respect, feeding, farming, abilities, fights,
-// objectives, pacing and the skill gradient. node test_bots.js [games] [mode]
-// mode: all (default), even, ladder, role.
+// objectives, pacing and the skill gradient. node test_bots.js [games] [mode]. Mode nav: node test_bots.js [games] nav [skill] [seconds] audits obstacles, jungler idle, districts and subway.
+// mode: all (default), even, ladder, human, rank, balance, nav.
 const Sim = require('./src/sim.js');
 const N = +process.argv[2] || 12, MODE = process.argv[3] || 'all', LANE_SECS = 360;
 const ids = Object.keys(Sim.KITS);
@@ -211,8 +211,103 @@ function balance(games, base) {
   console.log('RESULT ' + JSON.stringify({ lens, side, kit, bld, slots }));
 }
 
+// ---------- 12.0: navigation and jungle audit. node test_bots.js [games] nav ----------
+// Per tick, per walking bot: how far it actually moved against how far its input should have carried it.
+// blocked = under 60% of the expected step while up against something solid (the world stopped it). A touch = pressing into a wall, tower or edge.
+// Jungler idle = alive, not walking, no damage dealt in 1.5s, not recalling, not healing at base, not capturing a district.
+// stuck = a full second of trying to walk that covered under 40 units. Rates are shares of walking ticks.
+function navTouch(s, c) {
+  const n = Math.hypot(c.mv.x, c.mv.y) || 1, ux = c.mv.x / n, uy = c.mv.y / n;
+  for (const w of s.map.walls) {
+    const cx = Math.max(w.x, Math.min(c.x, w.x + w.w)), cy = Math.max(w.y, Math.min(c.y, w.y + w.h)), dx = c.x - cx, dy = c.y - cy, d = Math.hypot(dx, dy);
+    if (d <= c.r + 1 && d > .01 && (ux * dx + uy * dy) / d < -.2) return 'wall';
+  }
+  for (const t of s.towers) if (t.alive) {
+    const dx = c.x - t.x, dy = c.y - t.y, d = Math.hypot(dx, dy);
+    if (d <= c.r + t.r - 7 && (ux * dx + uy * dy) / d < -.2) return t.sub === 'core' ? 'core' : 'tower';
+  }
+  if ((c.x <= 41 && ux < -.2) || (c.x >= s.map.W - 41 && ux > .2) || (c.y <= 111 && uy < -.2) || (c.y >= s.map.H - 111 && uy > .2)) return 'edge';
+  return null;
+}
+function navClear(s, c) {
+  let b = Math.min(c.x - 40 + c.r, s.map.W - 40 - c.x + c.r, c.y - 110 + c.r, s.map.H - 110 - c.y + c.r);
+  for (const w of s.map.walls) { const cx = Math.max(w.x, Math.min(c.x, w.x + w.w)), cy = Math.max(w.y, Math.min(c.y, w.y + w.h)); b = Math.min(b, Math.hypot(c.x - cx, c.y - cy)); }
+  for (const t of s.towers) if (t.alive) b = Math.min(b, Math.hypot(c.x - t.x, c.y - t.y) - t.r + 8);
+  return b;
+}
+function audit(games, skill, cap = 1200) {
+  const A = { games: 0, mins: 0, walk: 0, blocked: 0, touch: {}, stuck: 0, stuckWall: 0, stuckBy: {}, stuckSpots: {}, hug: 0, byTask: {}, spots: {}, jg: { alive: 0, idle: 0, busy: {}, ganks: 0, firstGank: [], readyAt: [], campsBefore: [], camps: 0, tasks: {} }, lane: { t: 0, ok: 0 }, dist: { n: 0, d: 0, sub: 0 }, nem: 0 };
+  for (let g = 0; g < games; g++) {
+    let sd = g * 131 + 4243, r = () => (sd = (sd * 16807) % 2147483647) / 2147483647;
+    const a = roster(r, 0), b = roster(r, 1); [...a, ...b].forEach(p => { p.skill = skill; });
+    const s = Sim.createMatch({ seed: g + 700, teams: [a, b] });
+    for (const c of s.champs) if (c.bot && c.bot.setSkill) c.bot.setSkill(skill);
+    const st = s.champs.map(() => ({ win: [], stuckUntil: 0, dmg: 0, dmgAt: -9, wasGank: false, camps: 0, gotGank: false }));
+    const campUp = s.camps.map(k => k.alive);
+    while (!s.over && s.t < cap) {
+      Sim.step(s);
+      for (const e of s.ev) if (e.e === 'subway' && e.phase === 'arrive') A.dist.sub++;
+      s.ev.length = 0;
+      s.camps.forEach((k, i) => {
+        if (campUp[i] && !k.alive) { const j = s.champs.findIndex(c => c.alive && c.role === 'jungle' && Math.hypot(c.x - k.x, c.y - k.y) < 700); if (j >= 0) { st[j].camps++; A.jg.camps++; } }
+        campUp[i] = k.alive;
+      });
+      s.champs.forEach((c, i) => {
+        if (!c.bot) return;
+        const S0 = st[i];
+        if ((c.stats.dmg || 0) > S0.dmg) { S0.dmg = c.stats.dmg; S0.dmgAt = s.t; }
+        if (!c.alive) { S0.win.length = 0; return; }
+        const m = Math.min(1, Math.hypot(c.mv.x, c.mv.y)), free = !c.chan && !(c.stunT > 0) && !(c.rootT > 0) && !(c.polyT > 0) && !(c.knockT > 0) && !c.air && !c.dash && !c.duelZ && !c.cuts && !c.leap && !(c.lock > 0);
+        const task = c.bot.task || '?';
+        if (m > .05 && free) {
+          const step = Math.hypot(c.x - c.px, c.y - c.py), want = c.msBase * (c.slowT > 0 ? 1 - c.slowA : 1) * (c.hasteT > 0 ? 1 + c.hasteA : 1) * (c.charge ? .6 : 1) * m / 30;
+          A.walk++;
+          if (step < want * .6 && navClear(s, c) < c.r + 3) {
+            A.blocked++; A.byTask[task] = (A.byTask[task] || 0) + 1;
+            const key = (c.x / 200 | 0) * 200 + ',' + (c.y / 200 | 0) * 200; A.spots[key] = (A.spots[key] || 0) + 1;
+          }
+          const hit = navTouch(s, c); if (hit) A.touch[hit] = (A.touch[hit] || 0) + 1;
+          S0.win.push(c.x, c.y); if (S0.win.length > 60) S0.win.splice(0, 2);
+          if (S0.win.length === 60 && Math.hypot(c.x - S0.win[0], c.y - S0.win[1]) < 40 && s.t > S0.stuckUntil) {
+            A.stuck++; S0.stuckUntil = s.t + 1; const w = navClear(s, c) < c.r + 30; if (w) { A.stuckWall++; const key = (c.x / 200 | 0) * 200 + ',' + (c.y / 200 | 0) * 200; A.stuckSpots[key] = (A.stuckSpots[key] || 0) + 1; A.stuckBy[task] = (A.stuckBy[task] || 0) + 1; }
+          }
+          if (navClear(s, c) < c.r + 6) A.hug++;
+        } else S0.win.length = 0;
+        if (c.role === 'jungle') {
+          const home = s.fountains[c.team], atHome = Math.hypot(c.x - home.x, c.y - home.y) < 360 && c.hp < c.maxHp * .99, moving = m > .05 && Math.hypot(c.x - c.px, c.y - c.py) > 1, fighting = s.t - S0.dmgAt < 1.5, recall = c.chan && c.chan.recall, capturing = (s.districts || []).some(z => z.owner !== c.team && Math.hypot(c.x - z.x, c.y - z.y) < z.r);
+          A.jg.alive++; A.jg.tasks[task] = (A.jg.tasks[task] || 0) + 1;
+          if (!moving && !fighting && !recall && !atHome && !capturing && !c.stunT) { A.jg.idle++; A.jg.busy[task] = (A.jg.busy[task] || 0) + 1; }
+          if (c.bot.gankReady && !S0.readyAt) S0.readyAt = s.t;
+          const gk = task === 'gank';
+          if (gk && !S0.wasGank) { if (!S0.gotGank) { S0.gotGank = true; A.jg.firstGank.push(s.t); A.jg.campsBefore.push(S0.camps); A.jg.readyAt.push(S0.readyAt || -1); } }
+          S0.wasGank = gk;
+        } else if (s.t > 28 && s.t < 360) {
+          const home = s.fountains[c.team]; if (Math.hypot(c.x - home.x, c.y - home.y) > 700) { A.lane.t++; if (laneD(s, ROLE_LANE[c.role], c.x, c.y) < 420) A.lane.ok++; }
+        }
+        if (s.districts && s.districts.some(z => Math.hypot(c.x - z.x, c.y - z.y) < z.r)) A.dist.n++;
+        A.dist.d++;
+      });
+    }
+    for (const c of s.champs) if (c.role === 'jungle') A.jg.ganks += c.bot.gankN || 0;
+    A.games++; A.mins += s.t / 60;
+  }
+  return A;
+}
+function auditReport(A, title) {
+  const J = A.jg, mn = l => l.length ? (l.reduce((x, y) => x + y, 0) / l.length).toFixed(1) : '-';
+  console.log(`\n=== nav audit ${title}: ${A.games} games, ${A.mins.toFixed(1)} min`);
+  console.log(`walking bot-ticks ${A.walk}; blocked ${pct(A.blocked, A.walk)}; pressing into ${Object.entries(A.touch).map(([k, v]) => k + ' ' + pct(v, A.walk)).join(', ') || 'nothing'}; hugging an obstacle (under 6 clear) ${pct(A.hug, A.walk)}; stalls (1s under 40 units) ${A.stuck}, of which next to an obstacle ${A.stuckWall} = ${(A.stuckWall / (A.mins * 8)).toFixed(3)}/bot-min`);
+  console.log('stalls next to obstacles by task:', Object.entries(A.stuckBy).sort((a, b) => b[1] - a[1]).slice(0, 8).map(([k, v]) => k + ' ' + v).join(', '), '| spots:', Object.entries(A.stuckSpots).sort((a, b) => b[1] - a[1]).slice(0, 6).map(([k, v]) => k + ' ' + v).join(' | '));
+  console.log('blocked by task:', Object.entries(A.byTask).sort((a, b) => b[1] - a[1]).slice(0, 8).map(([k, v]) => k + ' ' + pct(v, A.blocked)).join(', '));
+  console.log('blocked hot spots:', Object.entries(A.spots).sort((a, b) => b[1] - a[1]).slice(0, 6).map(([k, v]) => k + ' ' + pct(v, A.blocked)).join(' | '));
+  console.log(`jungler idle ${pct(J.idle, J.alive)} (idle by task: ${Object.entries(J.busy).sort((a, b) => b[1] - a[1]).slice(0, 5).map(([k, v]) => k + ' ' + pct(v, J.idle)).join(', ')}); ganks/jungler/game ${(J.ganks / (A.games * 2)).toFixed(1)}, first gank at ${mn(J.firstGank)}s after ${mn(J.campsBefore)} camps (first earned at ${mn(J.readyAt)}s), camps/jungler/game ${(J.camps / (A.games * 2)).toFixed(1)}`);
+  console.log('jungler time by task:', Object.entries(J.tasks).sort((a, b) => b[1] - a[1]).slice(0, 10).map(([k, v]) => k + ' ' + pct(v, J.alive)).join(', '));
+  console.log(`laners on their lane 0:28-6:00 ${pct(A.lane.ok, A.lane.t)}; bot time inside a district ${pct(A.dist.n, A.dist.d)}; subway rides/game ${(A.dist.sub / A.games).toFixed(1)}`);
+}
+
 async function main() {
   await Promise.resolve();
+  if (MODE === 'nav') { auditReport(audit(N, +process.argv[4] || .6, +process.argv[5] || 1200), 'skill ' + (+process.argv[4] || .6)); return; }
   if (MODE === 'balance') { balance(N, +process.argv[4] || 1); return; }
   console.log('Sim exports:', ['RANKS', 'rankOf', 'rankDelta', 'botSkills'].map(k => k + ':' + typeof Sim[k]).join(' '));
   if (MODE === 'all' || MODE === 'even') {

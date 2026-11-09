@@ -53,18 +53,25 @@ const { initWorld, render, introTick, outroStart, outroTick, drawCoin, visOf, wo
   function initWorld(g) {
     const s = g.s, map = s.map, GS = quality >= 2 ? 1.2 : 1;
     ZB = VW / CAM_SPAN; Z = ZB;
-    g.ground = Terrain.paint(map, s.towers, GS, s.sites || [], g.me.team === 1 ? 1 : 0, s.camps || []);
+    g.ground = Terrain.paint(map, s.towers, GS, s.sites || [], g.me.team === 1 ? 1 : 0, s.camps || [], s.districts || []);
     g.vis = new Map();
     g.text = []; g.punch = 0; g.punchS = 0; g.lead = { x: 0, y: 0 }; g.goldBump = 0; g.goldAnchor = g.goldAnchor || null;
     g.hopeS = s.hope === undefined ? 50 : s.hope;
     // The side you were dealt sets the mood: heroes under a cool pre-dawn, villains under a blood-red dusk.
     g.villain = g.me.team === 1;
     g.rain = g.villain ? .5 : 0; g.rainT = 0; g.rainNext = 95 + Math.random() * 40; g.bolt = 0; g.boltPts = null; g.thunderIn = 0; g.drops = []; g.ripples = [];
+    g.dv = new Map(); g.moodK = 0; g.moodT = 0;
     g.evv = null; g.black = 0; g.cheer = 0; g.helis = []; g.heliNext = 28 + Math.random() * 30; g.spotK = [0, 0];
     g.motes = Array.from({ length: 8 }, () => ({ x: Math.random() * Sim.W, y: Math.random() * Sim.H, p: Math.random() * 6 }));
     const wallStyle = w => { const cx = w.x + w.w / 2, cy = w.y + w.h / 2; return Terrain.nearRoad(map, cx, cy) < 250 || (map.lanes.length < 3 && Math.abs(cy - map.H / 2) < 200) || (map.plazas || []).some(p => p.kind === 'base' && Math.hypot(cx - p.x, cy - p.y) < p.r + 140) ? 1 : 0; };
     g.walls = map.walls.filter(w => !w.big).map(w => { const style = wallStyle(w); return { w, spr: Terrain.cliff(w, style, w.x + w.w / 2 > map.W / 2 ? 1 : 0) }; });
     g.decor = buildDecor(g);
+    // A precinct is paved: nothing planted may stand on one, and every landmark bakes during the load, not mid-fight.
+    if (s.districts) {
+      g.decor = g.decor.filter(d => d.kind === 3 || !s.districts.some(q => Math.hypot(d.x - q.x, d.y - q.y) < (q.r || 200) + 16));
+      for (const d of s.districts) { const k = distKind(d), spr = Terrain.landmark(k); for (let o = -1; o < 2; o++) Terrain.landLit(spr, ownCol(o)); Terrain.landLit(spr, '#ff3038'); Terrain.landLit(spr, '#ffe6a8'); Terrain.landRuin(spr, k); Terrain.districtFlag(ownCol(0)); Terrain.districtFlag(ownCol(1)); }
+      Terrain.districtScar();
+    }
     g.brushes = map.brush.map((b, i) => ({ b, i, on: 0 }));
     g.houses = g.decor.filter(d => d.kind === 2);
     // Light that never changes is painted into the ground once.
@@ -439,9 +446,11 @@ const { initWorld, render, introTick, outroStart, outroTick, drawCoin, visOf, wo
       const X = sx(c.x), Y = sy(c.y), R = 130 * Z, Ry = R * TILT, need = c.need || 1;
       const lead = !c.prog ? -1 : c.prog[0] > c.prog[1] ? 0 : c.prog[1] > c.prog[0] ? 1 : -1, busy = c.alive && lead >= 0;
       if (busy) { ctx.fillStyle = TEAM[lead]; ctx.globalAlpha = .14 + Math.sin(G.t * 9) * .05; ctx.beginPath(); ctx.ellipse(X, Y, R, Ry, 0, 0, TAU); ctx.fill(); }
-      ctx.globalAlpha = c.alive ? .7 : .22;
-      ctx.strokeStyle = '#d9cfb4'; ctx.lineWidth = 1.5; DASH2[0] = 10 * Z + 2; DASH2[1] = 9 * Z + 2; ctx.setLineDash(DASH2); ctx.lineDashOffset = -G.t * 6;
-      ctx.beginPath(); ctx.ellipse(X, Y, R, Ry, 0, 0, TAU); ctx.stroke(); ctx.setLineDash(NO_DASH); ctx.lineDashOffset = 0; ctx.globalAlpha = 1;
+      if (c.d === undefined || c.d < 0 || busy) {
+        ctx.globalAlpha = c.alive ? .7 : .22;
+        ctx.strokeStyle = '#d9cfb4'; ctx.lineWidth = 1.5; DASH2[0] = 10 * Z + 2; DASH2[1] = 9 * Z + 2; ctx.setLineDash(DASH2); ctx.lineDashOffset = -G.t * 6;
+        ctx.beginPath(); ctx.ellipse(X, Y, R, Ry, 0, 0, TAU); ctx.stroke(); ctx.setLineDash(NO_DASH); ctx.lineDashOffset = 0; ctx.globalAlpha = 1;
+      }
       if (!c.alive || !c.prog) continue;
       ctx.lineCap = 'butt'; siteArc(X, Y, R, Ry, TEAM[0], pct(c.prog[0], need), false); siteArc(X, Y, R, Ry, TEAM[1], pct(c.prog[1], need), true);
     }
@@ -768,28 +777,6 @@ const { initWorld, render, introTick, outroStart, outroTick, drawCoin, visOf, wo
     }
   }
 
-  // A vision beacon: a small brass mast, a turning lamp and one thin sweep on the ground.
-  const BEACON_SPR = [null, null];
-  function beaconSprite(team) {
-    if (BEACON_SPR[team]) return BEACON_SPR[team];
-    const S = 2, W = 44, H = 76, c = Art.cv(W * S, H * S), g = c.getContext('2d'), col = team ? '#ff4a5c' : '#ffdf9e', dk = team ? '#2a1820' : '#1a2c4a', mt = team ? '#a8b0bc' : '#e6d19c';
-    g.scale(S, S); g.fillStyle = 'rgba(0,0,0,.5)'; g.beginPath(); g.ellipse(22, 68, 15, 5, 0, 0, TAU); g.fill();
-    g.fillStyle = dk; g.beginPath(); g.moveTo(12, 68); g.lineTo(32, 68); g.lineTo(27, 60); g.lineTo(17, 60); g.closePath(); g.fill();
-    g.fillStyle = mt; g.fillRect(20, 22, 4, 40); g.fillStyle = 'rgba(0,0,0,.4)'; g.fillRect(22, 22, 2, 40);
-    g.fillStyle = dk; g.fillRect(14, 15, 16, 8); g.fillStyle = mt; g.fillRect(14, 22, 16, 1.5);
-    g.fillStyle = col; g.beginPath(); g.moveTo(22, 2); g.lineTo(29, 13); g.lineTo(15, 13); g.closePath(); g.fill();
-    return BEACON_SPR[team] = c;
-  }
-  function drawBeacon(b) {
-    const X = sx(b.x), Y = sy(b.y), R = 26 * Z, ally = b.team === G.me.team, col = ally ? 'rgba(170,220,255,' : 'rgba(255,110,90,', life = b.t && b.total ? b.t / b.total : 1, fade = clamp01(life * 8);
-    ctx.globalAlpha = fade;
-    ctx.strokeStyle = col + '.8)'; ctx.lineWidth = 1.4; ctx.beginPath(); ctx.ellipse(X, Y, R, R * TILT, 0, 0, TAU); ctx.stroke();
-    const an = G.t * 1.6 + b.x * .01, sw = (R + 34 * Z); ctx.strokeStyle = col + '.5)'; ctx.lineWidth = 1.2; ctx.beginPath(); ctx.ellipse(X, Y, sw, sw * TILT, 0, an, an + .9); ctx.stroke();
-    const spr = beaconSprite(b.team === 1 ? 1 : 0); ctx.drawImage(spr, X - 22 * Z, Y - 68 * Z, 44 * Z, 76 * Z);
-    const gl = Art.glow(ally ? '#bfe0ff' : Art.cb ? Art.PAL.enemy : '#ff8070'), r = (14 + Math.sin(G.t * 3 + b.x) * 2) * Z; ctx.globalCompositeOperation = 'lighter'; ctx.globalAlpha = fade * .7; ctx.drawImage(gl, X - r, Y - 60 * Z - r, r * 2, r * 2); ctx.globalCompositeOperation = 'source-over'; ctx.globalAlpha = 1;
-    if (b.hp !== undefined && b.maxHp && b.hp < b.maxHp) bar(X - 14 * Z, Y - 78 * Z, 28 * Z, 3, b.hp / b.maxHp, ally ? REL_COL.ally : REL_COL.enemy);
-  }
-
   // Minion rings are gathered up and stroked as two paths, on the ground under everything.
   const MRING = new Float32Array(240); let minRingN = 0;
   function minionRings() {
@@ -821,15 +808,103 @@ const { initWorld, render, introTick, outroStart, outroTick, drawCoin, visOf, wo
     if (u.shellT > 0) { const rr = R * Z * (1.28 + Math.sin(G.t * 6) * .02), col = '#a8f0ff'; ctx.strokeStyle = col; ctx.lineWidth = 2.2; ctx.beginPath(); for (let i = 0; i < 6; i++) { const a = i / 6 * TAU + G.t * .6, x0 = X + Math.cos(a) * rr, y0 = top + Math.sin(a) * rr * .86; if (i) ctx.lineTo(x0, y0); else ctx.moveTo(x0, y0); } ctx.closePath(); ctx.stroke(); }
   }
 
+  // ---------- districts ----------
+  // Art reads only s.districts: owner flips are noticed here, so hosts and guests see the same thing whatever events arrive.
+  const DIST_BACK = { subway: 40 };
+  const BANK_BACK = 118, LAND_K = { hospital: .74, bank: .7, power: .74, comms: .82, armory: .76, subway: 1 };
+  // Mine or theirs, the same blue and red as unit rings and the minimap. Hero and villain differ in how a place is taken, not in this colour.
+  const ownCol = o => o < 0 ? '#aab8cc' : o === G.me.team ? REL_COL.ally : Art.cb ? Art.PAL.enemy : REL_COL.enemy;
+  function distKind(d) { const k = String(d.kind || '').toLowerCase(); return /hosp/.test(k) ? 'hospital' : /bank/.test(k) ? 'bank' : /power/.test(k) ? 'power' : /comm/.test(k) ? 'comms' : /armo/.test(k) ? 'armory' : /sub|metro/.test(k) ? 'subway' : 'comms'; }
+  const distOwner = d => d.owner === 0 || d.owner === 1 ? d.owner : -1;
+  function distVis(d) {
+    let v = G.dv.get(d.id); if (v) return v;
+    const kind = distKind(d), own = distOwner(d);
+    v = { kind, k: LAND_K[kind] || 1, own, scar: clamp01(d.scar || 0), h: 0, b: 0, fade: 1, flip: 0, ph: (d.x * 7 + d.y * 3) % 6.28, smk: 1, fxT: 0, back: kind === 'bank' ? BANK_BACK : DIST_BACK[kind] !== undefined ? DIST_BACK[kind] : Math.min((d.r || 200) * .62, 118) };
+    G.dv.set(d.id, v); return v;
+  }
+  function distCap(d, v, dt) {
+    const f = clamp01(d.prog || 0), by = d.by, k = 1 - Math.exp(-dt * 8);
+    v.h += ((by === 0 ? f : 0) - v.h) * k; v.b += ((by === 1 ? f : 0) - v.b) * k;
+  }
+  const distDark = own => { const b = G.s.blackT; return !!b && own >= 0 && b[own] > 0; };
+  function districtsTick(dt) {
+    const list = G.s.districts; if (!list) return;
+    for (let i = 0; i < list.length; i++) {
+      const d = list[i], v = distVis(d), own = distOwner(d);
+      if (own !== v.own) { const was = v.own; v.own = own; v.flip = 1; if (!G.replay && onScreen(d.x, d.y, 260)) FX.districtFlip(d, was, own, v.kind); }
+      v.flip = Math.max(0, v.flip - dt * .9);
+      distCap(d, v, dt);
+      { const hurt = clamp01(d.scar || 0); v.scar += (hurt - v.scar) * (1 - Math.exp(-dt * (hurt > v.scar ? 2.2 : 1.5))); }
+      if (!onScreen(d.x, d.y, 300)) continue;
+      if (v.h > .01 || v.b > .01) FX.districtWork(d, v, dt);
+      push(d.y - v.back, 11, d);
+      if (quality >= 1 && v.scar > .5 && dt > 0 && (v.smk -= dt) <= 0 && G.smoke.length < 14) { v.smk = rnd(1.1, 2); G.smoke.push({ x: d.x + rnd(-70, 70), y: d.y - v.back, z: 90, t: 0, max: rnd(2.2, 3.2), dark: true, ph: rnd(0, 6) }); }
+    }
+  }
+  function districtGround() {
+    const list = G.s.districts; if (!list) return;
+    ctx.lineCap = 'butt';
+    for (let i = 0; i < list.length; i++) {
+      const d = list[i], r = d.r || 200; if (!onScreen(d.x, d.y, (r + 60) * Z)) continue;
+      const v = distVis(d), X = sx(d.x), Y = sy(d.y), own = v.own, pad = Terrain.districtPad(v.kind), Rp = r * Z * (pad.w / 2 / pad.R), Hp = Rp * TILT, Rr = r * Z, Ry = Rr * TILT;
+      if (v.scar > .02) { ctx.globalAlpha = v.scar; ctx.drawImage(Terrain.districtScar().c, X - Rp, Y - Hp, Rp * 2, Hp * 2); ctx.globalAlpha = 1; }
+      if (own >= 0) { ctx.globalCompositeOperation = 'lighter'; ctx.globalAlpha = .17 + v.flip * .4; { const Rg = Rr * .72, Yg = Ry * .72; ctx.drawImage(Terrain.pool(ownCol(own)), X - Rg, Y - Yg, Rg * 2, Yg * 2); } ctx.globalCompositeOperation = 'source-over'; ctx.globalAlpha = 1; }
+      ctx.beginPath(); ctx.ellipse(X, Y, Rr, Ry, 0, 0, TAU);
+      if (d.contested) { ctx.strokeStyle = INK; ctx.lineWidth = 6; ctx.stroke(); ctx.strokeStyle = ownCol((G.t * 5 | 0) % 2); ctx.lineWidth = 3.2; ctx.stroke(); }
+      else if (own >= 0) { ctx.strokeStyle = INK; ctx.lineWidth = 6; ctx.stroke(); ctx.strokeStyle = ownCol(own); ctx.lineWidth = 3.2; ctx.stroke(); }
+      else { ctx.strokeStyle = 'rgba(217,207,180,.42)'; ctx.lineWidth = 1.6; ctx.stroke(); }
+      if (v.h > .01 || v.b > .01) { const R2 = Rr * .92, Y2 = Ry * .92; siteArc(X, Y, R2, Y2, ownCol(0), v.h, false); siteArc(X, Y, R2, Y2, ownCol(1), v.b, true); }
+      if (v.kind === 'comms' && own >= 0 && quality >= 1 && !distDark(own)) { const a = G.t * .9 + v.ph; ctx.globalCompositeOperation = 'lighter'; ctx.strokeStyle = ownCol(own); ctx.globalAlpha = .55; ctx.lineWidth = 2.4; ctx.beginPath(); ctx.ellipse(X, Y, Rr * .82, Ry * .82, 0, a, a + .8); ctx.stroke(); ctx.globalAlpha = 1; ctx.globalCompositeOperation = 'source-over'; }
+    }
+  }
+  function districtSpark(x0, y0, x1, y1, seed) {
+    ctx.moveTo(x0, y0);
+    const dx = x1 - x0, dy = y1 - y0;
+    for (let i = 1; i < 6; i++) { const f = i / 6, o = Math.sin(seed * 13.7 + i * 5.3) * 15 * Z; ctx.lineTo(x0 + dx * f, y0 + dy * f + o); }
+    ctx.lineTo(x1, y1);
+  }
+  function drawDistrict(d) {
+    const v = G.dv.get(d.id); if (!v) return;
+    const spr = Terrain.landmark(v.kind), wy = d.y - v.back, X = sx(d.x), Y = sy(wy), own = v.own, ev = G.evv, K = v.k, Zk = Z * K, rear = hides(d.x, spr.half * K, wy, spr.top * K / TILT);
+    v.fade += ((rear ? .32 : 1) - v.fade) * (1 - Math.exp(-rdt * 10));
+    let al = v.fade;
+    // During a Heist the event draws this same bank at this same spot, with its own door.
+    const swap = v.kind === 'bank' && ev && !ev.ended && ev.kind === 'heist' && ev.host;
+    if (swap) al *= 1 - clamp01(ev.al); if (al < .02) return;
+    const shear = v.kind === 'subway' ? 0 : -leanAt(X) * .6;
+    ctx.globalAlpha = al; ctx.setTransform(dpr * Zk, 0, dpr * Zk * shear, dpr * Zk, dpr * X, dpr * Y); ctx.drawImage(spr.c, -spr.ax, -spr.ay, spr.w, spr.h);
+    if (v.kind === 'bank') { const door = Terrain.vaultDoor(); ctx.drawImage(door.c, -door.ax, spr.src.doorY - spr.ay - 54 - door.ay, door.w, door.h); }
+    if (v.scar > .02) { ctx.globalAlpha = al * v.scar; ctx.drawImage(Terrain.landRuin(spr, v.kind), -spr.ax, -spr.ay, spr.w, spr.h); }
+    // Lights: owner's colour; neutral buildings stay dim; damage makes them stutter; panic overrides them all.
+    const panic = G.moodK < 0 && G.moodT > 0, rally = G.moodK > 0 && G.moodT > 0, on = (own < 0 ? .3 : .85) * (distDark(own) ? .18 : 1) * (1 - G.black * .85) * (v.scar > .5 && (G.t * 7 + v.ph | 0) % 5 === 0 ? .35 : 1) + v.flip * .4 + (rally ? .3 : 0);
+    const col = panic && (G.t * 6 | 0) % 2 ? '#ff3038' : rally ? '#ffe6a8' : ownCol(own);
+    ctx.globalCompositeOperation = 'lighter'; ctx.globalAlpha = Math.min(1, on) * al; ctx.drawImage(Terrain.landLit(spr, col), -spr.ax, -spr.ay, spr.w, spr.h);
+    ctx.globalCompositeOperation = 'source-over'; ctx.globalAlpha = al;
+    if (own >= 0 && spr.flag) { const f = Terrain.districtFlag(ownCol(own)); ctx.drawImage(f.frames[(G.t * 5 + v.ph | 0) % 2], spr.flag[0] - f.ax, -spr.flag[1] - f.ay, f.w, f.h); }
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    // Only a couple of things move, and only on a live building.
+    ctx.globalCompositeOperation = 'lighter';
+    if (v.kind === 'power' && (own >= 0 || G.black > .05) && quality >= 1) {
+      const blackout = G.black > .05, tick = G.t * (blackout ? 30 : 16) | 0;
+      if (blackout || tick % 3 !== 0) { const [a, b] = spr.coils; ctx.strokeStyle = blackout || own < 0 ? '#d8ecff' : ownCol(own); ctx.globalAlpha = al * .9; ctx.lineWidth = 2.2; ctx.beginPath(); districtSpark(X + (a[0] - shear * a[1]) * Zk, Y - a[1] * Zk, X + (b[0] - shear * b[1]) * Zk, Y - b[1] * Zk, tick); ctx.stroke(); }
+    } else if (v.kind === 'comms' && own >= 0 && !distDark(own)) {
+      const tip = Y - spr.tip * Zk, p = (G.t * .7 + v.ph) % 1, R = (10 + p * 90) * Z; ctx.strokeStyle = ownCol(own); ctx.globalAlpha = al * (1 - p) * .7; ctx.lineWidth = 1.8; ctx.beginPath(); ctx.ellipse(X - shear * spr.tip * Zk, tip, R, R * .5, 0, 0, TAU); ctx.stroke();
+    } else if (v.kind === 'subway') {
+      const me = G.me, ready = own === me.team && me.alive && Math.hypot(me.x - d.x, me.y - d.y) < (d.r || 110) + 20;
+      if (ready) { const R = (46 + Math.sin(G.t * 5) * 6) * Z; ctx.globalAlpha = .75; ctx.drawImage(Art.glow(Terrain.DIST_COL.subway), X - R, Y - 24 * Z - R, R * 2, R * 2); }
+    }
+    ctx.globalCompositeOperation = 'source-over'; ctx.globalAlpha = 1;
+  }
+
   // ---------- map events: the set pieces ----------
   function eventTick(dt) {
     const e = G.s.event; let v = G.evv;
-    if (e && (!v || v.kind !== e.kind || v.ended)) v = G.evv = { kind: e.kind, x: e.x, y: e.y, al: 0, ended: false, face: 1, door: 0, e, lastX: e.x };
+    if (e && (!v || v.kind !== e.kind || v.ended)) { v = G.evv = { kind: e.kind, x: e.x, y: e.y, al: 0, ended: false, face: 1, door: 0, e, lastX: e.x, host: false }; if (e.kind === 'blackout' || e.kind === 'heist') for (const d of G.s.districts || EMPTY_LIST) if (distKind(d) === (e.kind === 'heist' ? 'bank' : 'power') && Math.hypot(d.x - e.x, d.y - e.y) < (d.r || 200) + 60) v.host = true; }
     if (v) {
       if (e && e.kind === v.kind) { const dx = e.x - v.lastX; if (Math.abs(dx) > .4) v.face = dx < 0 ? -1 : 1; v.lastX = e.x; v.x = e.x; v.y = e.y; v.e = e; v.al = Math.min(1, v.al + dt * 3); v.door += (clamp01(e.prog ? e.prog[1] : 0) - v.door) * (1 - Math.exp(-dt * 6)); }
       else { v.ended = true; v.al -= dt * .8; if (v.al <= 0) { G.evv = null; v = null; } }
     }
-    const blackOn = e && e.kind === 'blackout' && e.phase === 'live' ? 1 : 0;
+    const blackOn = (e && e.kind === 'blackout' && e.phase === 'live') || (G.s.blackT && G.s.blackT[G.me.team] > 0) ? 1 : 0;
     G.black += (blackOn - G.black) * (1 - Math.exp(-dt * (blackOn ? 2.4 : 1.2))); if (G.black < .002) G.black = 0;
     G.cheer = Math.max(0, G.cheer - dt);
     if (v && !v.ended && v.kind !== 'blackout' && !G.helis.some(h => h.event) && quality >= 1) G.helis.push({ x: v.x - 900, y: v.y - 80, z: 190, vx: 240, vy: 0, event: true });
@@ -851,14 +926,15 @@ const { initWorld, render, introTick, outroStart, outroTick, drawCoin, visOf, wo
   function drawEvent(v) {
     const e = v.e, X = sx(v.x), Y = sy(v.y), live = !v.ended, al = clamp01(v.al);
     if (v.kind === 'heist') {
-      const spr = Terrain.bank(), bY = Y - 86 * Z * TILT, lift = (1 - al) * 26 * Z, k = Z;
+      const spr = Terrain.bank(), bY = Y - (v.host ? BANK_BACK : 86) * Z * TILT, lift = v.host ? 0 : (1 - al) * 26 * Z, k = v.host ? Z * LAND_K.bank : Z, rear = v.host && hides(v.x, 146 * LAND_K.bank, v.y - BANK_BACK, 240 * LAND_K.bank / TILT);
+      v.rear = (v.rear === undefined ? 1 : v.rear) + ((rear ? .32 : 1) - (v.rear === undefined ? 1 : v.rear)) * (1 - Math.exp(-rdt * 10));
       if (live) { sirenWash(X, bY, 330 * Z); eventRing(v, e); }
-      ctx.globalAlpha = Math.max(al, .001);
+      ctx.globalAlpha = Math.max(al * v.rear, .001);
       ctx.drawImage(spr.c, X - spr.ax * k, bY - spr.ay * k + lift, spr.w * k, spr.h * k);
       // Lit windows, then a vault door that swings aside as the villains get in.
-      ctx.globalCompositeOperation = 'lighter'; ctx.globalAlpha = al * (live ? 1 : .4); ctx.drawImage(spr.L, X - spr.ax * k, bY - spr.ay * k + lift, spr.w * k, spr.h * k); ctx.globalCompositeOperation = 'source-over';
+      ctx.globalCompositeOperation = 'lighter'; ctx.globalAlpha = al * v.rear * (live ? 1 : .4); ctx.drawImage(spr.L, X - spr.ax * k, bY - spr.ay * k + lift, spr.w * k, spr.h * k); ctx.globalCompositeOperation = 'source-over';
       const d = Terrain.vaultDoor(), dx = X + v.door * 54 * k, dy = bY + (spr.doorY - spr.ay - 54) * k + lift, sq = Math.max(.25, 1 - v.door * .75);
-      ctx.globalAlpha = al; ctx.drawImage(d.c, dx - d.ax * k * sq, dy - d.ay * k, d.w * k * sq, d.h * k); ctx.globalAlpha = 1;
+      ctx.globalAlpha = al * v.rear; ctx.drawImage(d.c, dx - d.ax * k * sq, dy - d.ay * k, d.w * k * sq, d.h * k); ctx.globalAlpha = 1;
       if (live) { const R = 16 * Z; for (const [sx0, top] of spr.sirens) siren(X + sx0 * k, bY - top * k + lift, R, sx0 > 0 ? 0 : Math.PI); }
     } else if (v.kind === 'convoy') {
       const spr = Terrain.convoy(), img = spr.frames[(G.t * 12 | 0) % 2], bob = Math.abs(Math.sin(G.t * 9)) * 1.4 * Z, k = Z * .9;
@@ -869,8 +945,8 @@ const { initWorld, render, introTick, outroStart, outroTick, drawCoin, visOf, wo
       // The generator: the one thing still sparking in a dark city, until someone restarts it.
       const spr = Terrain.generator(), k = Z, on = e && e.prog ? clamp01(Math.max(e.prog[0], e.prog[1])) : 0, X0 = X, Y0 = Y;
       if (live) eventRing(v, e, e.r || 170);
-      ctx.globalAlpha = al; ctx.drawImage(spr.c, X0 - spr.ax * k, Y0 - spr.ay * k, spr.w * k, spr.h * k); ctx.globalAlpha = 1;
-      if (live && (G.t * 9 | 0) % 3 !== 0) { const R = (22 + on * 18) * Z; ctx.globalCompositeOperation = 'lighter'; ctx.globalAlpha = .8; ctx.drawImage(Art.glow('#8ad8ff'), X0 - R, Y0 - spr.ay * k + 10 * k - R, R * 2, R * 2); ctx.globalAlpha = 1; ctx.globalCompositeOperation = 'source-over'; }
+      if (!v.host) { ctx.globalAlpha = al; ctx.drawImage(spr.c, X0 - spr.ax * k, Y0 - spr.ay * k, spr.w * k, spr.h * k); ctx.globalAlpha = 1; }
+      if (live && !v.host && (G.t * 9 | 0) % 3 !== 0) { const R = (22 + on * 18) * Z; ctx.globalCompositeOperation = 'lighter'; ctx.globalAlpha = .8; ctx.drawImage(Art.glow('#8ad8ff'), X0 - R, Y0 - spr.ay * k + 10 * k - R, R * 2, R * 2); ctx.globalAlpha = 1; ctx.globalCompositeOperation = 'source-over'; }
     } else if (v.kind === 'drop') {
       const landed = e.phase === 'live' || !live, chute = Terrain.parachute(), box = Terrain.crate(!live), k = Z * .82, frac = !landed && e.total ? clamp01(e.t / e.total) : 0, h = frac * 340 * Z, sway = frac ? Math.sin(G.t * 1.6) * 16 * Z : 0, sh = Art.shadow(), s0 = (1.4 - frac * .5) * 44 * Z;
       if (live) eventRing(v, e, e.r || 140);
@@ -929,7 +1005,8 @@ const { initWorld, render, introTick, outroStart, outroTick, drawCoin, visOf, wo
     const m = 190;
     litNow = clamp01((G.hopeS - 18) / 22);
     tickSmoke(wdt);
-    eventTick(wdt); tickHelis(wdt);
+    eventTick(wdt); tickHelis(wdt); districtsTick(wdt);
+    if (G.moodT > 0) G.moodT -= wdt;
     if (s.sites) for (const c of s.sites) if (c.alive && onScreen(c.x, c.y, 120)) push(c.y, 7, c);
     for (const d of G.decor) if (onScreen(d.x, d.y, m + (d.sky ? 260 : 0))) push(d.y, 0, d);
     for (const w of G.walls) if (onScreen(w.w.x + w.w.w / 2, w.w.y + w.w.h / 2, Math.max(w.w.w, w.w.h) * Z + 120)) push(w.w.y + w.w.h, 1, w);
@@ -946,8 +1023,7 @@ const { initWorld, render, introTick, outroStart, outroTick, drawCoin, visOf, wo
     // Enemies only exist on screen where your team can see them.
     for (const q of minions) { if (!isUp(q) || q.delay > 0) continue; const v = tickMinion(q, a, wdt), px = WP.x, py = WP.y; if (onScreen(px, py, 70) && seesU(q)) { push(py - 40, 4, q, px, py, v); pushBar(q, px, py, v); VIS_UNITS.push(px, py); if (minRingN < 236) { MRING[minRingN++] = sx(px + v.rx); MRING[minRingN++] = sy(py + v.ry); MRING[minRingN++] = (artR(q) + 3) * Z; MRING[minRingN++] = q.team === me.team ? 0 : 1; } } }
     for (const q of monsters) { if (!isUp(q)) continue; const v = visOf(q), p = posNow(q, a), px = p.x, py = p.y, sp = Math.hypot(q.vx || 0, q.vy || 0); tickVis(q, v, p, wdt, sp, q.ms || 260); if (onScreen(px, py, 120) && seesU(q)) { push(py, 5, q, px, py, v); pushBar(q, px, py, v); VIS_UNITS.push(px, py); } }
-    if (G.evv && onScreen(G.evv.x, G.evv.y, 420)) push(G.evv.y - (G.evv.kind === 'heist' ? 60 : 0), 10, G.evv);
-    if (s.beacons) for (const b of s.beacons) { if (onScreen(b.x, b.y, 120) && (b.team === me.team || litAt(b.x, b.y, 40))) push(b.y, 9, b); }
+    if (G.evv && onScreen(G.evv.x, G.evv.y, 420)) push(G.evv.y - (G.evv.kind === 'heist' ? (G.evv.host ? BANK_BACK : 60) : 0), 10, G.evv);
     for (const c of champs) {
       const v = tickChamp(c, a, wdt);
       if (!isUp(c) || !seesU(c)) continue;
@@ -967,6 +1043,7 @@ const { initWorld, render, introTick, outroStart, outroTick, drawCoin, visOf, wo
     searchlights();
     weather(dt, sk);
     siteRings();
+    districtGround();
     brushHint(dt);
     drawRubble();
     minionRings();
@@ -987,8 +1064,8 @@ const { initWorld, render, introTick, outroStart, outroTick, drawCoin, visOf, wo
         case 6: drawChamp(e.o, e.v, e.px, e.py, a, me); break;
         case 7: drawCivilians(e.o); break;
         case 8: drawFallen(e.o, e.v); break;
-        case 9: drawBeacon(e.o); break;
         case 10: drawEvent(e.o); break;
+        case 11: drawDistrict(e.o); break;
       }
     }
     drawSmoke();

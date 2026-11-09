@@ -45,7 +45,7 @@ const Terrain = (() => {
   }
   const LEAF = [['#0d4a3a', '#16806a', '#3fd2a0'], ['#123e5c', '#1a7a98', '#4ad0e0'], ['#2a2f7a', '#5148b8', '#a07cf0']];
 
-  function paint(map, towers, GS, sites = [], mood = 0, camps = []) {
+  function paint(map, towers, GS, sites = [], mood = 0, camps = [], districts = []) {
     // iOS refuses any canvas over 16.7 million pixels, and the paint happens on one before it's cut into tiles.
     const W = map.W, Ht = Math.ceil(map.H * TILT);
     GS = Math.min(GS, Math.sqrt(16e6 / (W * Ht)));
@@ -225,6 +225,9 @@ const Terrain = (() => {
     mg.strokeStyle = 'rgba(255,255,255,.5)'; for (const p of roadPaths) { mg.lineWidth = ROAD * 2 + 110; mg.stroke(p); }
     mg.strokeStyle = '#fff'; for (const p of roadPaths) { mg.lineWidth = ROAD * 2; mg.stroke(p); } mg.lineWidth = HALF * 2; mg.stroke(path);
     mg.fillStyle = 'rgba(255,255,255,.4)'; for (const p of plazas) { mg.save(); mg.translate(p.x, Y(p.y)); mg.scale(1, TILT); mg.beginPath(); mg.arc(0, 0, p.r, 0, TAU); mg.fill(); mg.restore(); }
+
+    // District floors are static, so they cost nothing once they're part of the ground. Owner, capture and damage go on top per frame.
+    for (const d of districts) { const kind = d.kind, pad = districtPad(kind), R = (d.r || 200) * (pad.w / 2 / pad.R), H = R * TILT; g.drawImage(pad.c, d.x - R, Y(d.y) - H, R * 2, H * 2); }
 
     // Slice into tiles: every phone can hold these as textures, and a frame only touches the few on screen.
     const TILE = 1800, tiles = [], OV = 2;
@@ -832,5 +835,182 @@ const Terrain = (() => {
       return { c, w: W0, h: H0, ax: cx, ay: base };
     });
   }
-  return { arenaProp, nearRoad, litOf, rubble, crowd, generator, bank, vaultDoor, convoy, crate, parachute, heli, beam, ARENA, paint, bake, cliff, tree, lantern, pillar, banner, house, hq, towerCoin, towerCrown, backOf, wave, spark, smoke, bubble, pool, nearRoad, spline, HALF, INK };
+  // ---------- districts (12.0) ----------
+  // Every landmark is baked once: a dark neutral body, a white mask of everything that lights up (tinted per owner, once),
+  // and a damage layer that villain ownership fades in. A frame only ever blits these.
+  const DIST_COL = { hospital: '#6ff0c8', bank: '#ffd98a', power: '#7fd4ff', comms: '#c8a6ff', armory: '#ff9a4a', subway: '#9fe8ff' };
+  const block = (g, x0, x1, top, bot, col = '#182030', lit = '#2a3648', trim = HERO.goldDk) => {
+    fillP(g, [[x0, bot], [x1, bot], [x1, top], [x0, top]], col);
+    const w = x1 - x0; fillP(g, [[x0, bot], [x0 + w * .28, bot], [x0 + w * .28, top], [x0, top]], lit);
+    g.fillStyle = 'rgba(0,0,0,.34)'; g.fillRect(x1 - w * .14, top, w * .14, bot - top);
+    g.fillStyle = trim; g.fillRect(x0 - 2, top - 2, w + 4, 2.6);
+  };
+  const panes = (g, l, x0, x1, top, bot, cols, rows, r, on = .72) => {
+    const dx = (x1 - x0) / cols, dy = (bot - top) / rows, pw = Math.max(3, dx * .52), ph = Math.max(4, dy * .62);
+    for (let i = 0; i < cols; i++) for (let j = 0; j < rows; j++) {
+      const x = x0 + dx * (i + .5) - pw / 2, y = top + dy * (j + .5) - ph / 2; g.fillStyle = '#05070b'; g.fillRect(x, y, pw, ph);
+      if (r() < on) { l.fillStyle = 'rgba(255,255,255,.9)'; l.fillRect(x + .6, y + .6, pw - 1.2, ph - 1.2); }
+    }
+  };
+  const shade = (g, cx, base, rx) => { g.fillStyle = 'rgba(0,0,0,.62)'; g.beginPath(); g.ellipse(cx - 12, base + 2, rx, rx * .13, 0, 0, TAU); g.fill(); };
+  const LAND_ART = {
+    // A stepped white-tile clinic under a mint cross in a ring: the one bright, clean shape in the city.
+    hospital() {
+      const W0 = 250, H0 = 262, a = mk(W0, H0), g = a.g, l = mk(W0, H0).g, cx = W0 / 2, base = H0 - 12, r = seeded(411); shade(g, cx, base, 112);
+      block(g, cx - 104, cx + 104, base - 84, base, '#232d3c', '#3c4a5e'); panes(g, l, cx - 96, cx - 36, base - 76, base - 12, 4, 3, r); panes(g, l, cx + 36, cx + 96, base - 76, base - 12, 4, 3, r);
+      block(g, cx - 70, cx + 70, base - 150, base - 84, '#262f40', '#414f64'); panes(g, l, cx - 62, cx + 62, base - 144, base - 92, 8, 3, r);
+      block(g, cx - 40, cx + 40, base - 188, base - 150, '#2a3446', '#47566c'); panes(g, l, cx - 32, cx + 32, base - 182, base - 156, 5, 2, r);
+      // the ambulance bay: a deep canopy over lit doors
+      g.fillStyle = '#05070b'; g.fillRect(cx - 28, base - 52, 56, 52); l.fillStyle = 'rgba(255,255,255,.95)'; l.fillRect(cx - 24, base - 48, 22, 48); l.fillRect(cx + 2, base - 48, 22, 48);
+      fillP(g, [[cx - 40, base - 52], [cx + 40, base - 52], [cx + 34, base - 64], [cx - 34, base - 64]], '#46566e'); g.fillStyle = HERO.gold; g.fillRect(cx - 40, base - 53, 80, 2);
+      // the cross: a ring on a short pylon, brightest thing on the block
+      const Cy = base - 222, arm = 19, t = 7; g.fillStyle = '#2b3546'; g.fillRect(cx - 4, base - 198, 8, 12);
+      g.fillStyle = INK; g.beginPath(); g.arc(cx, Cy, 32, 0, TAU); g.fill(); g.strokeStyle = '#2fb8a0'; g.lineWidth = 3.4; g.beginPath(); g.arc(cx, Cy, 28, 0, TAU); g.stroke();
+      const plus = (c, k = 0) => { c.fillRect(cx - t - k, Cy - arm - k, (t + k) * 2, (arm + k) * 2); c.fillRect(cx - arm - k, Cy - t - k, (arm + k) * 2, (t + k) * 2); };
+      g.fillStyle = '#dff8ef'; plus(g); l.fillStyle = '#fff'; plus(l); l.lineWidth = 3; l.strokeStyle = 'rgba(255,255,255,.7)'; l.beginPath(); l.arc(cx, Cy, 28, 0, TAU); l.stroke();
+      return { a, l: l.canvas, cx, base, top: 256, flag: [-92, 90], half: 112 };
+    },
+    bank() { return null; },
+    // Two cooling stacks and a turbine hall, with a pair of coils out front that arc whenever the station is live.
+    power() {
+      const W0 = 300, H0 = 262, a = mk(W0, H0), g = a.g, l = mk(W0, H0).g, cx = W0 / 2, base = H0 - 12, r = seeded(523); shade(g, cx, base, 140);
+      const stack = (x, w, h) => {
+        const top = base - h, waist = top + h * .34, path = c => { c.beginPath(); c.moveTo(x - w, base); c.quadraticCurveTo(x - w * .46, waist, x - w * .62, top); c.lineTo(x + w * .62, top); c.quadraticCurveTo(x + w * .46, waist, x + w, base); c.closePath(); };
+        path(g); g.fillStyle = '#1b2433'; g.fill(); g.save(); path(g); g.clip(); g.fillStyle = '#3a4a60'; g.fillRect(x - w, top, w * .72, h); g.fillStyle = 'rgba(0,0,0,.36)'; g.fillRect(x + w * .4, top, w, h);
+        l.save(); path(l); l.clip(); l.fillStyle = 'rgba(255,255,255,.85)'; l.fillRect(x - w, top + 24, w * 2, 4); l.fillRect(x - w, top + 62, w * 2, 2.4); l.restore(); g.restore();
+        g.strokeStyle = HERO.goldDk; g.lineWidth = 2.4; g.beginPath(); g.moveTo(x - w * .62, top); g.lineTo(x + w * .62, top); g.stroke();
+      };
+      stack(cx - 66, 62, 200); stack(cx + 66, 56, 168);
+      block(g, cx - 122, cx + 122, base - 66, base, '#171e2b', '#2b374a'); panes(g, l, cx - 112, cx + 112, base - 60, base - 18, 14, 2, r, .85);
+      // bus bars feeding the coils
+      for (const s of [-1, 1]) {
+        const x = cx + s * 128, h = 126; fillP(g, [[x - 12, base], [x + 12, base], [x + 6, base - 18], [x - 6, base - 18]], '#2b3546');
+        g.strokeStyle = '#8a97ac'; g.lineWidth = 2.6; g.beginPath(); for (let i = 0; i < 9; i++) { const y = base - 24 - i * 9, k = 8 - i * .3; g.moveTo(x - k, y); g.lineTo(x + k, y); } g.stroke();
+        g.fillStyle = '#46546a'; g.fillRect(x - 2, base - h, 4, h - 16); g.fillStyle = '#c8d8ec'; g.beginPath(); g.arc(x, base - h, 9, 0, TAU); g.fill(); l.fillStyle = '#fff'; l.beginPath(); l.arc(x, base - h, 6.5, 0, TAU); l.fill();
+      }
+      return { a, l: l.canvas, cx, base, top: 214, flag: [66, 172], half: 142, coils: [[-128, 126], [128, 126]] };
+    },
+    // A thin lattice mast taller than anything nearby, with a dish halfway up: readable from across the screen.
+    comms() {
+      const W0 = 190, H0 = 340, a = mk(W0, H0), g = a.g, l = mk(W0, H0).g, cx = W0 / 2, base = H0 - 10, r = seeded(617), mh = 300; shade(g, cx, base, 76);
+      block(g, cx - 72, cx + 72, base - 54, base, '#171e2b', '#2b374a'); panes(g, l, cx - 62, cx + 62, base - 48, base - 14, 8, 2, r, .6);
+      const hw = y => 28 - (base - 54 - y) / (mh - 54) * 24;
+      g.lineWidth = 2.4; g.strokeStyle = '#7a889c';
+      g.beginPath(); g.moveTo(cx - 28, base - 54); g.lineTo(cx - 4, base - mh); g.moveTo(cx + 28, base - 54); g.lineTo(cx + 4, base - mh); g.stroke();
+      g.lineWidth = 1.4; g.strokeStyle = '#566478'; g.beginPath();
+      for (let i = 0; i < 11; i++) { const y0 = base - 54 - i * 22, y1 = y0 - 22, a0 = hw(y0), a1 = hw(y1); g.moveTo(cx - a0, y0); g.lineTo(cx + a1, y1); g.moveTo(cx + a0, y0); g.lineTo(cx - a1, y1); g.moveTo(cx - a1, y1); g.lineTo(cx + a1, y1); } g.stroke();
+      // platforms and the dish
+      for (const k of [.36, .68]) { const y = base - 54 - (mh - 54) * k, w = hw(y) + 14; g.fillStyle = '#2b3546'; g.fillRect(cx - w, y - 3, w * 2, 6); g.fillStyle = HERO.goldDk; g.fillRect(cx - w, y - 4, w * 2, 1.6); l.fillStyle = 'rgba(255,255,255,.8)'; for (let i = -1; i <= 1; i += 2) l.fillRect(cx + i * w - 2, y - 2, 4, 3); }
+      const dy = base - 170; g.fillStyle = '#c0ccdc'; g.beginPath(); g.ellipse(cx + 26, dy, 13, 30, -.3, 0, TAU); g.fill(); g.fillStyle = '#3a485e'; g.beginPath(); g.ellipse(cx + 30, dy, 10, 26, -.3, 0, TAU); g.fill(); g.fillStyle = '#8a97ac'; g.fillRect(cx, dy - 1.5, 26, 3);
+      l.fillStyle = '#fff'; l.beginPath(); l.arc(cx, base - mh - 2, 6, 0, TAU); l.fill(); g.fillStyle = '#c8d8ec'; g.beginPath(); g.arc(cx, base - mh - 2, 4, 0, TAU); g.fill();
+      return { a, l: l.canvas, cx, base, top: mh + 8, flag: [-62, 56], half: 84, tip: mh + 2 };
+    },
+    // A battered blockhouse with a blast door. Crossed blades on a shield, set where a bank would put its name.
+    armory() {
+      const W0 = 300, H0 = 216, a = mk(W0, H0), g = a.g, l = mk(W0, H0).g, cx = W0 / 2, base = H0 - 12, r = seeded(709); shade(g, cx, base, 138);
+      fillP(g, [[cx - 134, base], [cx + 134, base], [cx + 112, base - 118], [cx - 112, base - 118]], '#1a2130'); fillP(g, [[cx - 134, base], [cx - 72, base], [cx - 56, base - 118], [cx - 112, base - 118]], '#2e3a4c'); fillP(g, [[cx + 96, base], [cx + 134, base], [cx + 112, base - 118], [cx + 86, base - 118]], '#10151f');
+      g.fillStyle = HERO.goldDk; g.fillRect(cx - 114, base - 121, 228, 3);
+      for (const s of [-1, 1]) {
+        const x = cx + s * 112; block(g, x - 30, x + 30, base - 164, base, s < 0 ? '#222b3b' : '#171e2b', s < 0 ? '#3a485c' : '#232d3c');
+        for (let i = 0; i < 3; i++) { g.fillStyle = '#10151f'; g.fillRect(x - 28 + i * 21, base - 174, 14, 12); }
+        g.fillStyle = '#05070b'; g.fillRect(x - 3, base - 142, 6, 26); l.fillStyle = '#fff'; l.fillRect(x - 2, base - 141, 4, 24);
+      }
+      // the blast door, hazard stripes along its foot
+      g.fillStyle = '#05070b'; g.fillRect(cx - 62, base - 96, 124, 96); g.fillStyle = '#2e3a4c'; g.fillRect(cx - 58, base - 92, 116, 92); g.fillStyle = '#39475c'; g.fillRect(cx - 58, base - 92, 56, 92); g.fillStyle = '#0a0e15'; g.fillRect(cx - 1.2, base - 92, 2.4, 92);
+      for (let i = 0; i < 8; i++) { g.fillStyle = i % 2 ? '#e0a020' : '#14161c'; fillP(g, [[cx - 58 + i * 14.5, base], [cx - 58 + (i + 1) * 14.5, base], [cx - 58 + (i + 1) * 14.5 + 6, base - 11], [cx - 58 + i * 14.5 + 6, base - 11]], i % 2 ? '#e0a020' : '#14161c'); }
+      const Cy = base - 56, sh = [[cx - 24, Cy - 24], [cx + 24, Cy - 24], [cx + 24, Cy + 4], [cx, Cy + 26], [cx - 24, Cy + 4]];
+      fillP(g, sh.map(([x, y]) => [cx + (x - cx) * 1.14, Cy + (y - Cy) * 1.12]), INK); fillP(g, sh, '#c8a860'); fillP(g, sh.map(([x, y]) => [cx + (x - cx) * .78, Cy + (y - Cy) * .78]), '#2a2e38');
+      g.strokeStyle = '#f0e4c0'; g.lineWidth = 3.4; g.beginPath(); g.moveTo(cx - 13, Cy + 12); g.lineTo(cx + 13, Cy - 16); g.moveTo(cx + 13, Cy + 12); g.lineTo(cx - 13, Cy - 16); g.stroke();
+      l.fillStyle = 'rgba(255,255,255,.85)'; l.fillRect(cx - 58, base - 13, 116, 2.4);
+      panes(g, l, cx - 106, cx - 70, base - 104, base - 62, 2, 2, r, .9); panes(g, l, cx + 70, cx + 106, base - 104, base - 62, 2, 2, r, .9);
+      return { a, l: l.canvas, cx, base, top: 180, flag: [0, 124], half: 144 };
+    },
+    // A deco kiosk over a stairwell. Low on purpose: stations sit in traffic, and they must never hide a fight.
+    subway() {
+      const W0 = 170, H0 = 132, a = mk(W0, H0), g = a.g, l = mk(W0, H0).g, cx = W0 / 2, base = H0 - 8; shade(g, cx, base, 74);
+      // the arch and sign at the back
+      for (const s of [-1, 1]) { const x = cx + s * 54; g.fillStyle = '#2b3546'; g.fillRect(x - 5, base - 94, 10, 66); g.fillStyle = HERO.gold; g.fillRect(x - 6, base - 95, 12, 2.4); }
+      fillP(g, [[cx - 70, base - 92], [cx + 70, base - 92], [cx + 58, base - 118], [cx - 58, base - 118]], '#1d2636'); g.fillStyle = HERO.gold; g.fillRect(cx - 72, base - 92, 144, 2.6);
+      const Sy = base - 106; fillP(g, [[cx, Sy - 14], [cx + 34, Sy], [cx, Sy + 14], [cx - 34, Sy]], INK); fillP(g, [[cx, Sy - 11], [cx + 28, Sy], [cx, Sy + 11], [cx - 28, Sy]], '#2d3a4e');
+      l.fillStyle = '#fff'; l.beginPath(); [[cx, Sy - 10], [cx + 26, Sy], [cx, Sy + 10], [cx - 26, Sy]].forEach(([x, y], i) => l[i ? 'lineTo' : 'moveTo'](x, y)); l.closePath(); l.fill();
+      g.fillStyle = '#0a0e15'; g.fillRect(cx - 13, Sy - 5, 26, 8); g.fillRect(cx - 9, Sy + 3, 3, 2.4); g.fillRect(cx + 6, Sy + 3, 3, 2.4); g.fillStyle = '#ecd9a6'; g.fillRect(cx - 10, Sy - 3, 6, 4); g.fillRect(cx + 4, Sy - 3, 6, 4);
+      // the stairwell, falling toward the camera: treads narrowing into the dark
+      fillP(g, [[cx - 60, base], [cx + 60, base], [cx + 46, base - 42], [cx - 46, base - 42]], '#05070b');
+      for (let i = 0; i < 6; i++) { const y = base - 6 - i * 6.6, w = 56 - i * 2.2; g.fillStyle = i % 2 ? '#1e2736' : '#293446'; g.fillRect(cx - w, y, w * 2, 3.4); l.fillStyle = `rgba(255,255,255,${.5 - i * .06})`; l.fillRect(cx - w, y, w * 2, 1.2); }
+      for (const s of [-1, 1]) { g.strokeStyle = HERO.gold; g.lineWidth = 2.6; g.beginPath(); g.moveTo(cx + s * 62, base + 1); g.lineTo(cx + s * 48, base - 46); g.stroke(); }
+      l.fillStyle = 'rgba(255,255,255,.75)'; l.fillRect(cx - 44, base - 40, 88, 5);
+      return { a, l: l.canvas, cx, base, top: 122, half: 76, sign: 106 };
+    },
+  };
+  // Cracks, scorch and broken glass, kept strictly to the building's own silhouette.
+  function ruin(c, w, h, seed) {
+    const o = cv(w, h), g = o.getContext('2d'), r = seeded(seed);
+    for (let i = 0; i < 16; i++) { const x = r() * w, y = h * .08 + r() * h * .84, R = (12 + r() * 30) * w / 240; g.fillStyle = `rgba(4,3,5,${.3 + r() * .5})`; g.beginPath(); g.ellipse(x, y, R, R * (.6 + r() * .6), r() * 3, 0, TAU); g.fill(); }
+    g.lineJoin = 'miter';
+    for (let i = 0; i < 8; i++) {
+      let x = r() * w, y = h * .06 + r() * h * .34; const pts = [[x, y]]; for (let k = 0; k < 6; k++) { x += (r() - .5) * w * .13; y += (.05 + r() * .09) * h; pts.push([x, y]); }
+      for (const [col, lw] of [['#050306', 3], ['#b8481e', 1]]) { g.strokeStyle = col; g.lineWidth = lw * w / 240; g.beginPath(); pts.forEach(([a, b], j) => g[j ? 'lineTo' : 'moveTo'](a, b)); g.stroke(); }
+    }
+    g.globalCompositeOperation = 'destination-in'; g.drawImage(c, 0, 0, w, h);
+    return o;
+  }
+  function landmark(kind) {
+    return once('land' + kind, () => {
+      if (kind === 'bank') { const b = bank(); return { c: b.c, L: b.L, D: null, src: b, w: b.w, h: b.h, ax: b.ax, ay: b.ay, top: 240, flag: [-112, 196], half: 146, lit: {} }; }
+      const o = LAND_ART[kind](), w = o.a.c.width / SS, h = o.a.c.height / SS;
+      return { ...o, c: o.a.c, L: o.l, D: null, w, h, ax: o.cx, ay: o.base, lit: {} };
+    });
+  }
+  function landRuin(spr, kind) { return spr.D || (spr.D = ruin(spr.c, Math.ceil(spr.w), Math.ceil(spr.h), 900 + kind.length * 37)); }
+  // The lit mask in one owner's colour. Baked at world resolution: glow does not need supersampling.
+  function landLit(spr, col) {
+    let c = spr.lit[col]; if (c) return c;
+    c = cv(Math.ceil(spr.w), Math.ceil(spr.h)); const g = c.getContext('2d');
+    g.drawImage(spr.L, 0, 0, c.width, c.height); g.globalCompositeOperation = 'source-in'; g.fillStyle = col; g.fillRect(0, 0, c.width, c.height);
+    return spr.lit[col] = c;
+  }
+  // The precinct floor. Flat, low contrast, and different per kind, so you know where you are with the building off screen.
+  const PAD_R = 200;
+  function districtPad(kind) {
+    return once('pad' + kind, () => {
+      const W0 = (PAD_R + 12) * 2, H0 = Math.ceil(W0 * TILT), c = cv(W0, H0), g = c.getContext('2d'), col = DIST_COL[kind] || '#aab8cc', R = PAD_R, sub = kind === 'subway';
+      g.translate(W0 / 2, H0 / 2); g.scale(1, TILT);
+      const oct = (rr, fill) => { poly(g, octa(rr, 16, 0)); g.fillStyle = fill; g.fill(); }, rim = (rr, s, w) => { g.strokeStyle = s; g.lineWidth = w; g.beginPath(); g.arc(0, 0, rr, 0, TAU); g.stroke(); };
+      oct(R + 10, 'rgba(5,7,12,.86)'); oct(R, '#141a24'); rim(R - 7, '#3a4658', 2); rim(R - 16, 'rgba(230,209,156,.26)', 1.4);
+      for (let i = 0; i < 24; i++) { const a0 = i / 24 * TAU, a1 = (i + 1) / 24 * TAU; g.fillStyle = i % 2 ? '#19202c' : '#1d2532'; g.beginPath(); g.moveTo(Math.cos(a0) * 64, Math.sin(a0) * 64); g.arc(0, 0, R - 18, a0, a1); g.lineTo(Math.cos(a1) * 64, Math.sin(a1) * 64); g.closePath(); g.fill(); }
+      oct(66, '#10151e'); rim(64, col, 2.2);
+      g.strokeStyle = col; g.fillStyle = col; g.globalAlpha = .42;
+      if (kind === 'hospital') { for (let i = 0; i < 8; i++) { g.save(); g.rotate(i / 8 * TAU); g.fillRect(120, -5, 40, 10); g.fillRect(135, -20, 10, 40); g.restore(); } g.fillRect(-9, -34, 18, 68); g.fillRect(-34, -9, 68, 18); }
+      else if (kind === 'bank') { for (let i = 0; i < 40; i++) { g.save(); g.rotate(i / 40 * TAU); g.fillRect(150, -2, i % 5 ? 12 : 26, 4); g.restore(); } g.lineWidth = 3; g.beginPath(); g.arc(0, 0, 40, 0, TAU); g.stroke(); g.beginPath(); g.arc(0, 0, 26, 0, TAU); g.stroke(); }
+      else if (kind === 'power') { g.lineWidth = 3; for (let i = 0; i < 8; i++) { const a = i / 8 * TAU + .39, c0 = Math.cos(a), s0 = Math.sin(a); g.beginPath(); g.moveTo(c0 * 72, s0 * 72); g.lineTo(c0 * 164, s0 * 164); g.stroke(); g.fillRect(c0 * 172 - 7, s0 * 172 - 7, 14, 14); } g.beginPath(); g.moveTo(10, -42); g.lineTo(-18, 6); g.lineTo(4, 6); g.lineTo(-10, 42); g.lineTo(20, -8); g.lineTo(-2, -8); g.closePath(); g.fill(); }
+      else if (kind === 'comms') { g.lineWidth = 2; for (const rr of [96, 130, 164]) { g.beginPath(); g.arc(0, 0, rr, 0, TAU); g.stroke(); } g.lineWidth = 1.6; g.beginPath(); g.moveTo(-R + 22, 0); g.lineTo(R - 22, 0); g.moveTo(0, -R + 22); g.lineTo(0, R - 22); g.stroke(); g.beginPath(); g.arc(0, 0, 10, 0, TAU); g.fill(); }
+      else if (kind === 'armory') { for (let i = 0; i < 8; i++) { g.save(); g.rotate(i / 8 * TAU); g.beginPath(); g.moveTo(118, -22); g.lineTo(150, 0); g.lineTo(118, 22); g.lineTo(130, 0); g.closePath(); g.fill(); g.restore(); } g.lineWidth = 7; g.beginPath(); g.moveTo(-24, 26); g.lineTo(24, -26); g.moveTo(24, 26); g.lineTo(-24, -26); g.stroke(); }
+      else if (sub) { g.fillStyle = '#e0a020'; g.globalAlpha = .55; for (let i = -7; i <= 7; i++) g.fillRect(i * 22 - 8, 104, 14, 14); g.fillStyle = col; g.globalAlpha = .42; g.fillRect(-150, -56, 300, 4); g.fillRect(-150, -24, 300, 4); for (let i = -6; i <= 6; i++) g.fillRect(i * 24 - 2, -66, 4, 52); g.beginPath(); g.moveTo(0, -18); g.lineTo(30, 0); g.lineTo(0, 18); g.lineTo(-30, 0); g.closePath(); g.fill(); }
+      g.globalAlpha = 1;
+      return { c, w: W0, h: H0, R: PAD_R };
+    });
+  }
+  // Damage left on the precinct by a villain takeover: burn, split paving, thrown rubble. One image, faded in.
+  function districtScar() {
+    return once('dscar', () => {
+      const W0 = (PAD_R + 12) * 2, H0 = Math.ceil(W0 * TILT), c = cv(W0, H0), g = c.getContext('2d'), r = seeded(1212);
+      g.translate(W0 / 2, H0 / 2); g.scale(1, TILT);
+      for (let i = 0; i < 22; i++) { const a = r() * TAU, d = 40 + r() * 140, R = 18 + r() * 44; g.fillStyle = `rgba(3,2,4,${.28 + r() * .34})`; g.beginPath(); g.ellipse(Math.cos(a) * d, Math.sin(a) * d, R, R * .8, r() * 3, 0, TAU); g.fill(); }
+      g.lineJoin = 'miter';
+      for (let i = 0; i < 12; i++) {
+        let a = r() * TAU, d = 50; const pts = [[Math.cos(a) * d, Math.sin(a) * d]]; while (d < 186) { a += (r() - .5) * .5; d += 18 + r() * 24; pts.push([Math.cos(a) * d, Math.sin(a) * d]); }
+        for (const [col, lw] of [['#040305', 5], ['#7a2416', 1.3]]) { g.strokeStyle = col; g.lineWidth = lw; g.beginPath(); pts.forEach(([x, y], j) => g[j ? 'lineTo' : 'moveTo'](x, y)); g.stroke(); }
+      }
+      for (let i = 0; i < 30; i++) { const a = r() * TAU, d = 70 + r() * 124, s = 3 + r() * 8; g.fillStyle = i % 3 ? '#2a2e38' : '#3a4250'; g.save(); g.translate(Math.cos(a) * d, Math.sin(a) * d); g.rotate(r() * 3); g.fillRect(-s, -s * .7, s * 2, s * 1.4); g.restore(); }
+      return { c, w: W0, h: H0, R: PAD_R };
+    });
+  }
+  // A swallowtail flag on a short pole, two frames.
+  function districtFlag(col) {
+    return once('dflag' + col, () => {
+      const frames = [0, 1].map(fr => { const { c, g } = mk(44, 62); g.fillStyle = '#c8cfdb'; g.fillRect(4, 2, 2.4, 58); const d = fr ? 3 : -3; g.fillStyle = INK; g.beginPath(); g.moveTo(5, 3); g.quadraticCurveTo(22, 3 + d, 42, 6); g.lineTo(32, 16); g.lineTo(42, 27); g.quadraticCurveTo(22, 24 - d, 5, 27); g.closePath(); g.fill(); g.fillStyle = col; g.beginPath(); g.moveTo(6.4, 5); g.quadraticCurveTo(22, 5 + d, 38, 8); g.lineTo(29, 16); g.lineTo(38, 25); g.quadraticCurveTo(22, 22 - d, 6.4, 25); g.closePath(); g.fill(); return c; });
+      return { frames, w: 44, h: 62, ax: 5, ay: 60 };
+    });
+  }
+  return { DIST_COL, landmark, landRuin, landLit, districtPad, districtScar, districtFlag, arenaProp, nearRoad, litOf, rubble, crowd, generator, bank, vaultDoor, convoy, crate, parachute, heli, beam, ARENA, paint, bake, cliff, tree, lantern, pillar, banner, house, hq, towerCoin, towerCrown, backOf, wave, spark, smoke, bubble, pool, nearRoad, spline, HALF, INK };
 })();

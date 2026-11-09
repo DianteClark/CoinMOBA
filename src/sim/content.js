@@ -890,9 +890,46 @@
     { id: 'cleanse', name: 'Cleanse', d: 'Clears stuns, roots, slows, poison and curses at once. 25 second cooldown.', cost: 170, tier: 1, tags: ['consumable'], consumable: true },
     { id: 'tonic', name: 'Speed Tonic', d: '+20% move speed for 8 seconds.', cost: 120, tier: 1, tags: ['consumable'], consumable: true },
     { id: 'elixir', name: 'War Elixir', d: '+15% damage for 90 seconds.', cost: 280, tier: 1, tags: ['consumable'], consumable: true },
-    { id: 'beaconkit', name: 'Beacon Kit', d: 'One extra vision beacon, right now.', cost: 90, tier: 1, tags: ['consumable'], consumable: true },
   ];
-  const ITEM_SLOTS = 5, CONSUMABLES = ['potion', 'cleanse', 'tonic', 'elixir', 'beaconkit'];
+  // ---------- nemesis: one per champion, mutual, hero against villain ----------
+  const NEMESIS_PAIRS = [['vesper', 'deadbolt'], ['kade', 'duelist'], ['ione', 'hex'], ['solenne', 'plague'], ['sable', 'shiv'], ['gravel', 'ironjaw'], ['voltaic', 'ravager'], ['tidecaller', 'cinder'], ['paragon', 'cataclysm'], ['mirage', 'puppeteer']];
+  const NEMESIS = {}; for (const [a, b] of NEMESIS_PAIRS) { NEMESIS[a] = b; NEMESIS[b] = a; }
+  const nemesisOf = kit => NEMESIS[kit] || null;
+  // The small hidden part: damage multiplier against your nemesis. Tuned from matchup sweeps so that a strong champion does not simply farm its rival.
+  const NEMESIS_EDGE = { vesper: 1.04, deadbolt: 1.04, kade: 1.04, duelist: 1.04, ione: 1.04, hex: 1.04, solenne: 1.04, plague: 1.04, sable: 1, shiv: 1.08, gravel: 1.1, ironjaw: 1, voltaic: 1.04, ravager: 1.04, tidecaller: 1.04, cinder: 1.04, paragon: 1.04, cataclysm: 1.04, mirage: 1.04, puppeteer: 1.04 };
+  // The real part: what each champion's skills do to their nemesis in particular. Runs when a skill lands on them, at most once per NEMESIS_GAP.
+  const NEMESIS_GAP = 3;
+  const alliesOf = (s, u, r) => s.champs.filter(a => a.team === u.team && a.alive && Math.hypot(a.x - u.x, a.y - u.y) < r);
+  const NEMESIS_HIT = {
+    vesper(s, c, t) { t.revealT = Math.max(t.revealT || 0, 2); for (const z of s.zones) if (z.kind === 'tripline' && z.owner === t && Math.hypot(z.x - t.x, z.y - t.y) < 520) z.t = 0; }, // a clean shot snaps his wires
+    deadbolt(s, c, t) { if (t.rootT > 0) t.rootT += .45; slow(t, .2, 1); }, // the trap holds a sniper longer
+    kade(s, c, t) { t.stealthT = 0; t.pstack = 0; }, // a straight lunge cuts through feints and angle stacks
+    duelist(s, c, t) { t.parryT = 0; t.cd[1] = Math.max(t.cd[1], 3); }, // angles get under the guard
+    ione(s, c, t) { c.cd[0] = Math.max(0, c.cd[0] - 1.5); if (t.markT > 0) for (const a of alliesOf(s, c, 420)) { a.curseN = 0; a.curseT = 0; } }, // breaking a mark on her burns curses off friends
+    hex(s, c, t) { t.curseN = Math.min(5, (t.curseN || 0) + 1); t.curseT = Math.max(t.curseT || 0, 4); for (const a of alliesOf(s, c, 520)) a.markT = 0; }, // curses eat sigils
+    solenne(s, c, t) { for (const a of alliesOf(s, c, 400)) { if (a.poisonBy === t) a.poisonT = 0; if (a.noHealT > 0) a.noHealT = 0; } }, // light burns the sickness out
+    plague(s, c, t) { t.noHealT = Math.max(t.noHealT || 0, 1.2); if (t.shieldHp > 0) t.shieldHp *= .6; }, // and rot starves the healer
+    sable(s, c, t) { t.revealT = Math.max(t.revealT || 0, 2.5); t.stealthT = 0; }, // one shadow knows another (she also sees him through Vanish up close, in canSee)
+    shiv(s, c, t) { t.echo = null; t.recast[1] = 0; slow(t, .25, 1); }, // a shank cuts the echo loose
+    gravel(s, c, t) { t.rage = (t.rage || 0) * .55; }, // nothing to get angry at
+    ironjaw(s, c, t) { t.vulnT = Math.max(t.vulnT || 0, .8); c.rage = Math.min(100, (c.rage || 0) + 15); }, // the one thing that dents him
+    voltaic(s, c, t) { if (t.frenzyT > 0) t.frenzyT = Math.max(0, t.frenzyT - 1.2); slow(t, .2, .8); }, // the shock breaks the frenzy
+    ravager(s, c, t) { t.volt = 0; t.pready = 0; t.pstack = 0; }, // grounded: all that charge, gone
+    tidecaller(s, c, t) { t.kindleN = 0; for (const a of alliesOf(s, c, 520)) { a.kindleN = 0; a.kindleT = 0; } for (const z of s.zones) if (z.owner === t && z.fx === 'scorch' && Math.hypot(z.x - c.x, z.y - c.y) < 620) z.t = 0; }, // water on the fire
+    cinder(s, c, t) { t.noHealT = Math.max(t.noHealT || 0, 1); }, // steam: the wave cannot mend
+    paragon(s, c, t) { t.drT = 0; for (const z of s.zones) if (z.owner === t && z.fx === 'entrench') z.t = 0; slow(t, .3, 1); }, // force from above uproots him
+    cataclysm(s, c, t) { slow(t, .3, 1.5); t.cd[0] = Math.max(t.cd[0], 3); }, // and broken ground leaves nowhere to leap from
+    mirage(s, c, t) { for (const z of s.zones) if (z.owner === t && z.kind === 'puppet' && Math.hypot(z.x - c.x, z.y - c.y) < 700) z.t = 0; for (const a of alliesOf(s, c, 420)) a.stringT = 0; }, // shatters the strings
+    puppeteer(s, c, t) { t.stealthT = 0; t.revealT = Math.max(t.revealT || 0, 2); }, // a thread finds the real one
+  };
+  function nemesisContact(s, src, t, o) {
+    const fresh = !(src.rivalAt > s.t); src.rivalAt = t.rivalAt = s.t + 20;
+    if (fresh) s.ev.push({ e: 'rival', u: src.id, v: t.id, x: Math.round((src.x + t.x) / 2), y: Math.round((src.y + t.y) / 2) });
+    if (!o.skill || src.nemAt > s.t) return;
+    src.nemAt = s.t + NEMESIS_GAP; const fn = NEMESIS_HIT[src.champ]; if (fn) fn(s, src, t);
+  }
+
+  const ITEM_SLOTS = 5, CONSUMABLES = ['potion', 'cleanse', 'tonic', 'elixir'];
   const ITEM_BY = {}; ITEMS.forEach((it, i) => { ITEM_BY[it.id] = it; it.i = i; });
   const itemPath = id => { const out = []; for (let it = ITEM_BY[id]; it; it = ITEM_BY[it.upgradesFrom]) out.unshift(it.id); return out; };
   // The full cost of a step: from an owned ancestor if there is one, otherwise the whole chain.
@@ -903,7 +940,7 @@
     for (let i = path.length - 2; i >= 0 && slot < 0; i--) { const k = c.items.indexOf(path[i]); if (k >= 0) { own = i; slot = k; } }
     if (slot < 0 && !c.items.some(x => !x)) return null;
     let cost = 0; for (let i = own + 1; i < path.length; i++) cost += ITEM_BY[path[i]].cost;
-    return cost;
+    return Math.round(cost * (c.armoryK || 1));
   }
   // Final items a build wants, in buying order. Bots buy down each chain; the shop highlights them.
   const REC = {
@@ -984,7 +1021,7 @@
     ],
     support: [
       { id: 'guardian', name: 'Guardian', d: '+20% healing and shields.' },
-      { id: 'pathfinder', name: 'Pathfinder', d: 'Hold a third beacon, recharge beacons twice as fast and see farther from them.' },
+      { id: 'pathfinder', name: 'Pathfinder', d: 'Capture districts 35% faster and ride the subway twice as often.' },
       { id: 'patron', name: 'Patron', d: 'Assists pay 40% more, and you earn passive gold 60% faster.' },
     ],
   };
@@ -1056,10 +1093,12 @@
     }
     return { career: out, earned };
   }
-  const MARK_BONUS = { potg: 25, mvp: 30, svp: 15, medal: [40, 100, 300] };
+  const MARK_BONUS = { potg: 25, mvp: 30, svp: 15, medal: [40, 100, 300], nemesis: 25 };
+  // You beat your nemesis by winning the match having killed them at least as often as they killed you, and at least once.
+  const beatNemesis = (won, st) => !!won && (st.nemKills || 0) > 0 && (st.nemKills || 0) >= (st.nemDeaths || 0);
   // bonus = { potg, mvp, svp, medals: earned list from medalProgress }, all optional.
   function marksEarned(won, st, bonus) {
     st = st || {}; const b = bonus || {};
     const base = 30 + (won ? 45 : 0) + Math.min(30, (st.kills || 0) * 3 + (st.assists || 0) * 1.5) + Math.min(10, (st.skillHits || 0) * .1);
-    return Math.round(base + (b.potg ? MARK_BONUS.potg : 0) + (b.mvp ? MARK_BONUS.mvp : 0) + (b.svp ? MARK_BONUS.svp : 0) + (b.medals || []).reduce((a, m) => a + (MARK_BONUS.medal[m.tier] || 0), 0));
+    return Math.round(base + (b.potg ? MARK_BONUS.potg : 0) + (b.mvp ? MARK_BONUS.mvp : 0) + (b.svp ? MARK_BONUS.svp : 0) + (beatNemesis(won, st) ? MARK_BONUS.nemesis : 0) + (b.medals || []).reduce((a, m) => a + (MARK_BONUS.medal[m.tier] || 0), 0));
   }

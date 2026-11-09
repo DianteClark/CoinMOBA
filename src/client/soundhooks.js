@@ -188,6 +188,12 @@ function soundEv(e, me) {
     case 'boon': { if (e.on && e.team === me.team) Sound.play('boon', undefined, 600, { vol: .7 }); return; }
     case 'boss': Sound.play('boss', undefined, 400, { vol: .85 }); return;
     case 'bossup': Sound.play('bossup', undefined, 400, { vol: .85 }); return;
+    case 'district': { if (e.phase === 'flip') Sound.play(e.team === 0 ? 'secure' : 'seize', undefined, 300, { vol: e.team === me.team ? .85 : .55 }); else if (e.phase === 'attack' && e.from === me.team) Sound.play('districtAlarm', undefined, 2500, { vol: .6 }); return; }
+    case 'subway': { if (e.u === me.id) { if (e.phase === 'go') Sound.play('subwayGo', undefined, 500, { vol: .8 }); else if (e.phase === 'arrive') Sound.play('subwayArrive', undefined, 500, { vol: .8 }); } return; }
+    case 'blackout': Sound.play('blackoutHit', undefined, 800, { vol: .75 }); return;
+    case 'city': Sound.play(e.kind === 'rally' ? 'rally' : 'panic', undefined, 2000, { vol: .85 }); return;
+    case 'hunt': if (e.team === me.team && e.paid) Sound.play('huntPay', undefined, 500, { vol: .8 }); return;
+    case 'rival': if (e.u === me.id || e.v === me.id) Sound.play('rivalClash', undefined, 3000, { vol: .9 }); return;
     case 'mapevent': {
       if (e.phase === 'warn' && (e.kind === 'heist' || e.kind === 'convoy')) Sound.play('siren', undefined, 1500, { vol: .6 });
       else if (e.phase === 'start' && e.kind === 'blackout') Sound.play('powerDown', undefined, 800, { vol: .8 });

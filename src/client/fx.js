@@ -63,7 +63,7 @@ const { FX, fxEvent } = (() => {
     return linkC[k] = c;
   }
 
-  function reset() { VIC = CUT = KF = null; PINGS.length = 0; ZST.clear(); P = []; cursor = 0; trails = new Map(); flyers = []; OV = []; panel = null; readyFx = []; prevCd = []; zoneTeam = new Map(); falls = []; arrive = []; DUST.length = 0; dustN = 0; lastKill = -9; GW.length = 0; LATER.length = 0; CINE = null; G.text = []; G.tAim = null; }
+  function reset() { TUN = null; VIC = CUT = KF = null; PINGS.length = 0; ZST.clear(); P = []; cursor = 0; trails = new Map(); flyers = []; OV = []; panel = null; readyFx = []; prevCd = []; zoneTeam = new Map(); falls = []; arrive = []; DUST.length = 0; dustN = 0; lastKill = -9; GW.length = 0; LATER.length = 0; CINE = null; G.text = []; G.tAim = null; }
 
   function add(k, x, y, z, life) {
     const cap = FX_CAP(quality); let p;
@@ -754,6 +754,7 @@ const { FX, fxEvent } = (() => {
     NUMS.set(id, n = { c, w, h, fs }); return n;
   }
   function textLayer(dt) {
+    drawMood(); drawTunnel(dt);
     // flashes and speed lines behind the numbers
     for (let i = OV.length - 1; i >= 0; i--) { if ((OV[i].t += dt) >= OV[i].life) OV.splice(i, 1); }
     drawCine(dt);
@@ -1318,6 +1319,72 @@ const { FX, fxEvent } = (() => {
     }
     later(.05, land);
   }
+  // ---------- districts, subway, the city, rivals (12.0) ----------
+  // Heroes take a place by standing with it: ordered rings, light going up. Villains take a place by breaking it: one hit, debris, red.
+  function districtFlip(d, from, to) {
+    const X = d.x, Y = d.y, r = d.r || 200, near = Math.hypot(X - G.me.x, Y - G.me.y) < 700;
+    if (to === 0) {
+      const col = '#ffe6a8'; pillar(X, Y, '#9fd4ff', '#fff4d8', .9); wave(X, Y, r * 2.1, col, .9);
+      for (let i = 0; i < 3; i++) later(i * .14, () => ring(X, Y, r * (.55 + i * .3), HERO.ring, .5, 4));
+      rise(X, Y, 16, col, r * .6, 1.3, 11); civRun(X, Y, 5, false); G.cheer = Math.max(G.cheer, 3);
+      if (near) { number(X, Y, 150, 'SECURED', col, true, 1.1); G.punch = Math.max(G.punch, .02); }
+    } else if (to === 1) {
+      const col = '#ff4a3a'; sigil('crash', X, Y, r * 1.1, col, .45, 0, 2); wave(X, Y, r * 2.4, col, .55); ring(X, Y, r * .9, VILL.ring, .3); flare(X, Y, 40, '#ffb098', 300, .22);
+      spark(X, Y, 18, '#ff7038', 560, .6, 14, 30); chips(X, Y, 12, '#3a4250', 520, 26); puff(X, Y, 8, 1, 46, .9, 20, 90); dustRing(X, Y, r * .7, 9); civRun(X, Y, 6, true);
+      if (near) { number(X, Y, 150, 'SEIZED', col, true, 1.1); G.shake = Math.max(G.shake, 7); G.punch = Math.max(G.punch, .04); }
+    } else ring(X, Y, r * .9, '#aab8cc', .4);
+  }
+  // While it's being taken. Kept to a trickle: the arc on the ground is the real readout.
+  function districtWork(d, v, dt) {
+    if (dt <= 0 || quality < 1 || (v.fxT -= dt) > 0) return;
+    const r = (d.r || 200) * .7, a = Math.random() * TAU, x = d.x + Math.cos(a) * r * Math.random(), y = d.y + Math.sin(a) * r * Math.random();
+    if (v.h >= v.b) { v.fxT = .22; rise(x, y, 1, '#ffe6a8', 26, 1, 8); }
+    else { v.fxT = .17; spark(x, y, 2, '#ff7038', 220, .4, 9, 8); if (Math.random() < .3) puff(x, y, 1, 1, 26, .7, 8, 30); }
+  }
+  // The rider drops through the street at one end and is thrown up at the other. Your own trip runs through the tunnel.
+  let TUN = null;
+  function subwayFx(u, x0, y0, x1, y1) {
+    const own = u === G.me, col = Terrain.DIST_COL.subway, team = u ? u.team : 0, pal = palT(team);
+    if (x0 !== undefined && onScreen(x0, y0, 160) && (own || !u || u.team === G.me.team || litAt(x0, y0, 40))) { gather(x0, y0, 130, col, 10, .2, 24); ring(x0, y0, 96, pal.ring, .3); puff(x0, y0, 3, 0, 30, .4, 6, 40); }
+    later(.1, () => {
+      if (x1 === undefined || !onScreen(x1, y1, 160) || !(own || !u || u.team === G.me.team || litAt(x1, y1, 40))) return;
+      ring(x1, y1, 150, col, .4, 4); wave(x1, y1, 300, col, .4); rise(x1, y1, 6, col, 40, .6, 10); dustRing(x1, y1, 60, 6); flare(x1, y1, 26, '#ffffff', 170, .16);
+      if (own) { G.punch = Math.max(G.punch, .03); G.shake = Math.max(G.shake, 3); }
+    });
+    if (own && !calm) TUN = { t: 0, life: .5 };
+  }
+  // Rails of light flying past, dark between them. Twelve rectangles, half a second.
+  function drawTunnel(dt) {
+    if (!TUN) return; TUN.t += dt; const a = TUN.t / TUN.life; if (a >= 1) { TUN = null; return; }
+    const env = a < .3 ? a / .3 : 1 - (a - .3) / .7;
+    ctx.globalAlpha = .88 * env; ctx.fillStyle = '#05070b'; ctx.fillRect(0, 0, VW, VH);
+    ctx.globalCompositeOperation = 'lighter'; ctx.fillStyle = Terrain.DIST_COL.subway;
+    for (let i = 0; i < 12; i++) { const h0 = (i * 57.31) % 1, h1 = (i * 91.77) % 1, L = 120 + h0 * 240, x = ((TUN.t * (2400 + h1 * 1600) + h0 * 900) % (VW + L * 2)) - L; ctx.globalAlpha = env * (.3 + h1 * .5); ctx.fillRect(x, h0 * VH, L, 1.5 + h1 * 2.5); }
+    ctx.globalCompositeOperation = 'source-over'; ctx.globalAlpha = 1;
+  }
+  // The people bar at an extreme. Every lit building answers (world.js reads G.moodK), and the sky takes one slow breath of colour.
+  function cityMood(k) {
+    G.moodK = k; G.moodT = 3.4;
+    const list = G.s.districts || [], me = G.me;
+    if (k > 0) { G.cheer = Math.max(G.cheer, 7); wave(me.x, me.y, 900, '#ffe6a8', 1); let n = 0; for (const d of list) if (n < 3 && onScreen(d.x, d.y, 200)) { n++; fireworks(d.x, d.y, '#ffe6a8', 5); } if (!n) fireworks(me.x, me.y - 200, '#ffe6a8', 4); }
+    else { wave(me.x, me.y, 900, '#ff3038', .8); civRun(me.x + rnd(-200, 200), me.y + rnd(-120, 120), 6, true); for (const d of list) if (onScreen(d.x, d.y, 200)) civRun(d.x, d.y, 6, true); }
+  }
+  function drawMood() {
+    if (!(G.moodT > 0) || calm) return; const f = Math.min(1, G.moodT / 1.2) * Math.min(1, (3.4 - G.moodT) / .5), up = G.moodK > 0;
+    ctx.globalCompositeOperation = 'lighter'; ctx.globalAlpha = f * (up ? .1 : .08 + Math.sin(G.t * 10) * .03); ctx.fillStyle = up ? '#e6c98e' : '#ff2c34'; ctx.fillRect(0, 0, VW, VH); ctx.globalCompositeOperation = 'source-over'; ctx.globalAlpha = 1;
+  }
+  // Nemeses meet: both colours cross at one point, and the moment lands harder if it's yours.
+  let rivalAt = -99;
+  function rivalFx(e) {
+    const a = unitById(e.u), b = unitById(e.v);
+    const X = e.x !== undefined ? e.x : a && b ? (a.x + b.x) / 2 : a ? a.x : undefined, Y = e.y !== undefined ? e.y : a && b ? (a.y + b.y) / 2 : a ? a.y : undefined;
+    if (X === undefined || !onScreen(X, Y, 220) || G.t - rivalAt < 5) return; rivalAt = G.t;
+    const mine = a === G.me || b === G.me, h = HERO, v = VILL, R = mine ? 1.25 : .9;
+    cut(X, Y, -.7, 230 * R, h.mid, .3, 30); cut(X, Y, .7, 230 * R, v.mid, .3, 30); sigil('crash', X, Y, 190 * R, v.mid, .42, 0, 2); sigil('mark', X, Y, 120 * R, h.mid, .42, 3, 4);
+    wave(X, Y, 420 * R, h.mid, .5); wave(X, Y, 300 * R, v.mid, .4); flare(X, Y, 40, '#ffffff', 360 * R, .24); spark(X, Y, 14, h.mid, 520, .5, 15, 34); spark(X, Y, 14, v.mid, 520, .5, 15, 34); dustRing(X, Y, 90, 6);
+    number(X, Y, 130, 'RIVALS', '#fff4d8', true, 1.2);
+    if (mine) { hitStop(.06); slowMo(.3, .45); cine(.6, .7); G.shake = Math.max(G.shake, 8); G.punch = Math.max(G.punch, .06); const foe = a === G.me ? b : a; if (foe && foe.champ) impactFrame(foe.champ, foe.team ? v.mid : h.mid, X, Y); }
+  }
   function fxEvent(e) {
     const s = G.s, me = G.me; if (!s || !me) return;
     switch (e.e) {
@@ -1444,6 +1511,25 @@ const { FX, fxEvent } = (() => {
         break;
       }
       case 'tower': break;
+      case 'subway': {
+        const st = id => (s.districts || []).find(d => d.id === id), a = st(e.from), b = st(e.to), u = unitById(e.u);
+        if (!a || !b) break;
+        if (e.phase === 'go') { if (onScreen(a.x, a.y, 160) && (u === me || (u && u.team === me.team) || litAt(a.x, a.y, 40))) { ring(a.x, a.y, 120, Terrain.DIST_COL.subway, 1.2, 2); gather(a.x, a.y, 150, Terrain.DIST_COL.subway, 8, .5, 20); } }
+        else if (e.phase === 'arrive') subwayFx(u, a.x, a.y, b.x, b.y);
+        break;
+      }
+      case 'district': {
+        // A flip is drawn where the owner changes (world.js). An attack is the alarm: the side being hit should notice.
+        if (e.phase === 'attack') { const d = (s.districts || []).find(q => q.id === e.id); if (d && onScreen(d.x, d.y, 260)) { const col = e.team === 1 ? '#ff4a3a' : '#ffe6a8'; ring(d.x, d.y, (d.r || 200) * 1.05, col, .5, 2); wave(d.x, d.y, (d.r || 200) * 1.5, col, .4); } }
+        break;
+      }
+      case 'blackout': {
+        const d = (s.districts || []).find(q => q.kind === 'power'); if (!d || !onScreen(d.x, d.y, 300)) break;
+        pillar(d.x, d.y, '#7fd4ff', '#d8ecff', .7); wave(d.x, d.y, 620, '#7fd4ff', .6); arcs(d.x - 90, d.y - 40, 90, d.x + 90, d.y - 30, 90, '#d8ecff', .3, 26);
+        break;
+      }
+      case 'city': cityMood(e.kind === 'rally' ? 1 : -1); break;
+      case 'rival': rivalFx(e); break;
       case 'forge': { const u = unitById(e.u); if (u === me && onScreen(u.x, u.y, 140)) { ring(u.x, u.y, 90, GOLD, .4); rise(u.x, u.y, 8, GOLD, 34, .7, 10); } break; }
       case 'tshot': { if (e.t === me.id) G.tAim = { id: e.u, t: 1.25 }; break; }
       case 'matk': {
@@ -1497,5 +1583,5 @@ const { FX, fxEvent } = (() => {
   }
 
   const goldCoin = () => coinSp();
-  return { FX: { minionHit, wave, cine, later, fireworks, bossFall, finisher, goldCoin, poseStart, poseTick, cosmeticTick, sigil, beam, arcs, cut, reset, spark, puff, dust, drawDust, coins, ring, slash, ghost, ghostLine, corpse, shatter, leaves, splash, rise, popCoin, chips, pillar, burst, draw, projectiles, telegraphs, danger, textLayer, tickWarn, towerFall, finale }, fxEvent };
+  return { FX: { districtFlip, districtWork, minionHit, wave, cine, later, fireworks, bossFall, finisher, goldCoin, poseStart, poseTick, cosmeticTick, sigil, beam, arcs, cut, reset, spark, puff, dust, drawDust, coins, ring, slash, ghost, ghostLine, corpse, shatter, leaves, splash, rise, popCoin, chips, pillar, burst, draw, projectiles, telegraphs, danger, textLayer, tickWarn, towerFall, finale }, fxEvent };
 })();
