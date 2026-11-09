@@ -27,12 +27,10 @@ const IOS = /iP(hone|od|ad)/.test(navigator.userAgent) || (navigator.platform ==
 const UI_MARGIN = 44;
 function layout() {
   let w = innerWidth, h = innerHeight;
-  // An installed iPhone app can report a height short by the status bar, which left a dead band at the bottom.
-  if (navigator.standalone && screen.width && screen.height) { const lo = Math.min(screen.width, screen.height), hi = Math.max(screen.width, screen.height); if (h >= w) { w = Math.max(w, lo); h = Math.max(h, hi); } else { w = Math.max(w, hi); h = Math.max(h, lo); } }
   rotated = h > w; physW = w;
   const ins = safeInsets();
-  // iOS keeps taps for itself in and just below the status bar, so that edge needs a little more than the reported inset.
-  const topNeed = IOS && rotated ? Math.max(ins.t, navigator.standalone ? 20 : 0) + 14 : ins.t;
+  // If the page runs under the status bar, iOS keeps taps there and just below it, so that edge needs a little extra.
+  const topNeed = IOS && rotated && ins.t > 0 ? ins.t + 14 : ins.t;
   const needA = rotated ? topNeed : ins.l, needB = rotated ? ins.b : ins.r;
   const shiftA = Math.ceil(Math.max(0, needA - UI_MARGIN)), shiftB = Math.ceil(Math.max(0, needB - UI_MARGIN));
   stageX = shiftA;
