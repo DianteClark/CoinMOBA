@@ -3,6 +3,8 @@
 from pathlib import Path
 root = Path(__file__).parent
 src = root / 'src'
+# src/sim.js is generated: game rules plus bot brains, one closure. Edit src/sim/*.js.
+(src / 'sim.js').write_text((src / 'sim' / 'game.js').read_text().replace('/*BOTS*/', (src / 'sim' / 'bots.js').read_text()))
 page = (src / 'template.html').read_text()
 client = '\n'.join((src / 'client' / n).read_text() for n in ('core.js', 'world.js', 'fx.js', 'controls.js', 'net.js', 'hud.js', 'menus.js', 'soundhooks.js', 'zz_boot.js'))
 parts = {

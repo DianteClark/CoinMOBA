@@ -401,7 +401,7 @@ const Net = (() => {
         if (me.charge && me.charge.slot === q.slot) { me.charge = null; chargeLocal = 0; chargeBlock = now + wait; }
         if (a && canAct(me, a, q.slot) && (recast || me.cd[q.slot] <= 0)) {
           const pd = recast ? a.pdr : a.pd, l = Math.hypot(dx, dy) || 1, ndx = l > 1 ? dx / l : me.fx, ndy = l > 1 ? dy / l : me.fy;
-          if (pd) { me.pdash = { vx: ndx * pd[1], vy: ndy * pd[1], t: pd[0] / pd[1] }; me.dash = me.dash || { net: true }; reconcileHold = now + wait + 250; }
+          if (pd) { const reach = Math.max(0, Math.min(pd[0], Sim.rayWall(me.x, me.y, ndx, ndy, pd[0] + me.r) - me.r)); me.pdash = { vx: ndx * pd[1], vy: ndy * pd[1], t: reach / pd[1] }; me.dash = me.dash || { net: true }; reconcileHold = now + wait + 250; }
           if (recast) { me.recast[q.slot] = 0; pendRecast[q.slot] = now + wait; }
           else { me.cd[q.slot] = q.slot === 1 && me.champ === 'kade' ? a.cd : a.cd * (1 - me.up.haste * .08); pendCd[q.slot] = now + wait; }
           me.fx = ndx; me.fy = ndy;

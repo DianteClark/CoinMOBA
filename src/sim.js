@@ -1,7 +1,7 @@
 // Mintfall simulation. No DOM in this file, so it can run on a phone today
 // and inside a Cloudflare Durable Object later without changes.
 const Sim = (() => {
-  const W = 3200, H = 1900, TICK = 30, DT = 1 / TICK;
+  const W = 4320, H = 2560, TICK = 30, DT = 1 / TICK;
   const TEAM_NAMES = ['Heroes', 'Villains'];
   // Each kit is played by one hero and one villain. Balance is shared.
   const CHARS = {
@@ -22,11 +22,6 @@ const Sim = (() => {
     { name: 'Gold', at: 2000 }, { name: 'Platinum', at: 4000 }, { name: 'Aether', at: 7500 },
   ];
   const FORGE_COST = [250, 450, 700];
-  const DIFF = {
-    easy: { react: .55, err: .28, dodge: .15, aggr: .8, gap: .9, lead: .55, think: .26, lh: .45, lhErr: .2, judge: .45, iq: .2, low: .22, see: 720 },
-    normal: { react: .32, err: .13, dodge: .45, aggr: 1, gap: .5, lead: .85, think: .16, lh: .8, lhErr: .08, judge: .15, iq: .7, low: .3, see: 1000 },
-    hard: { react: .16, err: .05, dodge: .8, aggr: 1.15, gap: .25, lead: 1, think: .1, lh: .98, lhErr: .02, judge: .03, iq: 1, low: .36, see: 1000 },
-  };
 
   // ---------- helpers ----------
   const clamp = (v, a, b) => v < a ? a : v > b ? b : v;
@@ -40,22 +35,41 @@ const Sim = (() => {
   };
 
   // ---------- map ----------
+  // Top-left quadrant is authored; everything is mirrored four ways. Cliffs are at least 200 apart:
+  //   top lane corridor  y 120-540 (420 wide)     jungle route   y 630-980 (350 wide)
+  //   main street        y 1070-1490 (420 wide)   river corridor x 1950-2370 (420 wide)
+  // Entrances into each jungle half: the diagonal lane mouth, the north gap at x 1500-1760 (from the lane),
+  // the two south gaps at x 870-1090 and 1320-1620 (from main street), and the river corridor.
+  const LANE_TOP = [[340, 1280], [470, 880], [720, 600], [1120, 370], [1640, 330], [2160, 330], [2680, 330], [3200, 370], [3600, 600], [3850, 880], [3980, 1280]];
+  const RIVER = [[2240, -80], [2160, 330], [2120, 800], [2160, 1280], [2200, 1760], [2160, 2230], [2080, 2640]];
+  const QUAD_CLIFFS = [
+    [1130, 540, 370, 90], [1760, 540, 190, 90],   // north side of the jungle: lane wall, with a gank gap between
+    [1090, 980, 230, 90], [1620, 980, 320, 90],   // south side of the jungle, leaving gaps to main street
+    [780, 880, 90, 230],                          // base rampart, framing the centre gate
+    [1430, 1240, 80, 80],                         // main street cover, on the axis
+  ];
+  const QUAD_FOREST = [[0, 0, 440, 470], [0, 470, 210, 260]];
+  const QUAD_BRUSH = [[1300, 465, 75], [1630, 600, 105], [2010, 450, 70], [1490, 1130, 90]];
+  const FOUNTAIN_HEAL_R = 360, FOUNTAIN_BURN_R = 340;
+  const four = fn => [[0, 0], [1, 0], [0, 1], [1, 1]].forEach(([mx, my]) => fn(mx, my));
+  const WALLS = (() => {
+    const out = [], seen = new Set();
+    const add = (r, big) => four((mx, my) => {
+      const [x, y, w, h] = r, wx = mx ? W - x - w : x, wy = my ? H - y - h : y, key = [wx, wy, w, h].join();
+      if (!seen.has(key)) { seen.add(key); out.push({ x: wx, y: wy, w, h, big }); }
+    });
+    QUAD_CLIFFS.forEach(r => add(r, false)); QUAD_FOREST.forEach(r => add(r, true));
+    return out;
+  })();
   function buildMap() {
-    const quad = [[690, 480, 340, 64], [1170, 480, 250, 64], [1040, 700, 64, 170], [1260, 690, 190, 64], [560, 640, 80, 200]];
-    const corner = [[0, 0, 330, 330]];
-    const walls = [];
-    const add = (r, solid) => {
-      const [x, y, w, h] = r;
-      for (const [mx, my] of [[0, 0], [1, 0], [0, 1], [1, 1]])
-        walls.push({ x: mx ? W - x - w : x, y: my ? H - y - h : y, w, h, big: solid });
-    };
-    quad.forEach(r => add(r, false)); corner.forEach(r => add(r, true));
+    const walls = WALLS.map(w => Object.assign({}, w));
     const brush = [];
-    for (const [x, y, r] of [[1000, 405, 95], [1470, 610, 105], [850, 620, 90]])
-      for (const [mx, my] of [[0, 0], [1, 0], [0, 1], [1, 1]])
-        brush.push({ x: mx ? W - x : x, y: my ? H - y : y, r });
-    const top = [[250, 950], [430, 520], [800, 300], [1600, 240], [2400, 300], [2770, 520], [2950, 950]];
-    const lanes = [top, top.map(([x, y]) => [x, H - y])];
+    for (const [x, y, r] of QUAD_BRUSH) four((mx, my) => brush.push({ x: mx ? W - x : x, y: my ? H - y : y, r }));
+    const lanes = [LANE_TOP.map(p => p.slice()), LANE_TOP.map(([x, y]) => [x, H - y])];
+    const center = { x: W / 2, y: H / 2 };
+    const fountains = [{ x: 130, y: H / 2 }, { x: W - 130, y: H / 2 }];
+    const plazas = [{ x: 290, y: H / 2, r: 500, kind: 'base', team: 0 }, { x: W - 290, y: H / 2, r: 500, kind: 'base', team: 1 }, { x: center.x, y: center.y, r: 370, kind: 'centre', team: -1 }];
+    const bridges = [{ x: W / 2, y: 330 }, { x: W / 2, y: H - 330 }];
     const cols = Math.ceil(W / 40), rows = Math.ceil(H / 40);
     const grid = new Uint8Array(cols * rows);
     for (let j = 0; j < rows; j++) for (let i = 0; i < cols; i++) {
@@ -64,8 +78,27 @@ const Sim = (() => {
       for (const w of walls) if (px > w.x - 34 && px < w.x + w.w + 34 && py > w.y - 34 && py < w.y + w.h + 34) b = true;
       grid[j * cols + i] = b ? 1 : 0;
     }
-    return { W, H, walls, brush, lanes, cols, rows, grid };
+    return { W, H, walls, brush, lanes, river: RIVER.map(p => p.slice()), center, fountains, plazas, bridges, cols, rows, grid, fountainR: FOUNTAIN_HEAL_R };
   }
+
+  // How far a line from (x, y) along unit vector (dx, dy) can travel, up to len, before a wall or the map's edge.
+  function rayWall(x, y, dx, dy, len) {
+    let best = len;
+    if (dx > 0) best = Math.min(best, (W - 40 - x) / dx); else if (dx < 0) best = Math.min(best, (40 - x) / dx);
+    if (dy > 0) best = Math.min(best, (H - 110 - y) / dy); else if (dy < 0) best = Math.min(best, (110 - y) / dy);
+    if (best < 0) best = 0;
+    for (const w of WALLS) {
+      let t0 = 0, t1 = best;
+      if (dx === 0) { if (x < w.x || x > w.x + w.w) continue; }
+      else { const a = (w.x - x) / dx, b = (w.x + w.w - x) / dx; t0 = Math.max(t0, Math.min(a, b)); t1 = Math.min(t1, Math.max(a, b)); }
+      if (dy === 0) { if (y < w.y || y > w.y + w.h) continue; }
+      else { const a = (w.y - y) / dy, b = (w.y + w.h - y) / dy; t0 = Math.max(t0, Math.min(a, b)); t1 = Math.min(t1, Math.max(a, b)); }
+      if (t0 <= t1 && t0 < best) best = t0;
+    }
+    return best;
+  }
+  // True when nothing solid stands on the straight line between two points.
+  const hasLOS = (ax, ay, bx, by) => { const n = norm(bx - ax, by - ay); return n.l < 1 || rayWall(ax, ay, n.x, n.y, n.l) >= n.l - .5; };
 
   function blocked(m, x, y) {
     const i = x / 40 | 0, j = y / 40 | 0;
@@ -99,12 +132,12 @@ const Sim = (() => {
 
   function fire(s, c, aim, o) {
     s.proj.push({
-      id: s.nid++, x: c.x, y: c.y, px: c.x, py: c.y, vx: aim.dx * o.speed, vy: aim.dy * o.speed, left: o.range, w: o.w,
+      id: s.nid++, x: c.x, y: c.y, px: c.x, py: c.y, vx: aim.dx * o.speed, vy: aim.dy * o.speed, left: rayWall(c.x, c.y, aim.dx, aim.dy, o.range), wall: rayWall(c.x, c.y, aim.dx, aim.dy, o.range) < o.range - 1, w: o.w,
       team: c.team, owner: c, fx: o.fx, pierce: o.pierce, hits: new Set(), filter: o.filter || 'units', hit: o.hit, skill: true, counted: false, age: 0,
     });
     s.ev.push({ e: 'cast', u: c.id, fx: o.fx });
   }
-  function dashDir(c, dx, dy, d, speed, o = {}) { c.dash = Object.assign({ vx: dx * speed, vy: dy * speed, t: d / speed, hits: new Set() }, o); }
+  function dashDir(c, dx, dy, d, speed, o = {}) { const len = Math.max(0, Math.min(d, rayWall(c.x, c.y, dx, dy, d + c.r) - c.r)); c.dash = Object.assign({ vx: dx * speed, vy: dy * speed, t: len / speed, hits: new Set() }, o); }
   function blast(s, c, x, y, r, delay, fn, fx) { s.zones.push({ id: s.nid++, kind: 'blast', x, y, r, t: delay, total: delay, team: c.team, owner: c, fn, fx, counted: false }); }
   function eachEnemy(s, c, x, y, r, fn, withMinions = true) {
     let n = 0; const test = u => { if (u.alive && !u.air && u.team !== c.team && Math.hypot(u.x - x, u.y - y) <= r + u.r) { fn(u); n++; } };
@@ -119,7 +152,7 @@ const Sim = (() => {
   const KITS = {
     vesper: {
       name: 'Vesper', role: 'Sniper', blurb: 'Charge your shot while they try to read it.',
-      hp: 520, hpG: 72, dmg: 56, dmgG: 7, armor: 16, armG: 3, range: 520, as: 1.0, ms: 305, forge: ['edge', 'haste', 'guard'], pref: 480, fit: { top: 1, jungle: 0, bottom: 3, support: 0 },
+      sight: 950, hp: 520, hpG: 72, dmg: 56, dmgG: 7, armor: 16, armG: 3, range: 520, as: 1.0, ms: 305, forge: ['edge', 'haste', 'guard'], pref: 480, fit: { top: 1, jungle: 0, bottom: 3, support: 0 },
       kit: [
         { name: 'Long Shot', d: 'Hold to charge. A full charge pierces.', cd: 6, range: 800, minRange: 500, shape: 'line', w: 34, charge: 1.1,
           cast(s, c, a) {
@@ -133,7 +166,7 @@ const Sim = (() => {
         },
         { name: 'Deadeye', d: 'The longest shot in the game. Everyone sees it coming.', cd: 50, range: 1050, shape: 'line', w: 50, windup: true,
           cast(s, c, a) {
-            c.chan = { t: .85, total: .85, kind: 'line', slot: 2, dx: a.dx, dy: a.dy, len: 1050, w: 50, fn(s, c) {
+            c.chan = { t: .85, total: .85, kind: 'line', slot: 2, dx: a.dx, dy: a.dy, len: rayWall(c.x, c.y, a.dx, a.dy, 1050), w: 50, fn(s, c) {
               fire(s, c, a, { speed: 2600, range: 1050, w: 50, fx: 'deadeye', filter: 'champ', hit(s, c, t, p) { hurt(s, c, t, 260 * pow(c), { skill: 1 }); skillHit(c, p); p.left = 0; } });
             } };
           },
@@ -142,7 +175,7 @@ const Sim = (() => {
     },
     kade: {
       name: 'Kade', role: 'Duelist', blurb: 'Time the parry and the fight is yours.',
-      hp: 640, hpG: 95, dmg: 64, dmgG: 8, armor: 28, armG: 4, range: 165, as: .95, ms: 325, forge: ['edge', 'guard', 'haste'], pref: 125, melee: true, fit: { top: 3, jungle: 2, bottom: 0, support: 0 },
+      sight: 720, hp: 640, hpG: 95, dmg: 64, dmgG: 8, armor: 28, armG: 4, range: 165, as: .95, ms: 325, forge: ['edge', 'guard', 'haste'], pref: 125, melee: true, fit: { top: 3, jungle: 2, bottom: 0, support: 0 },
       kit: [
         { name: 'Lunge', d: 'Dash through a line. Hit a champion and you can dash again.', cd: 7, range: 290, shape: 'dash', w: 80, pd: [290, 1100], pdr: [260, 1100],
           cast(s, c, a) { const car = {}; dashDir(c, a.dx, a.dy, 290, 1100, { dmg: 62, onHit(s, c, t) { hurt(s, c, t, 62 * pow(c), { skill: 1 }); if (t.kind === 'champ') { skillHit(c, car); c.recast[0] = 2.5; } } }); s.ev.push({ e: 'cast', u: c.id, fx: 'dash' }); },
@@ -151,7 +184,7 @@ const Sim = (() => {
         { name: 'Parry', d: 'Half a second of perfect block. Catch a hit to stun the attacker.', cd: 11, range: 0, shape: 'self', instant: true,
           cast(s, c) { c.parryT = .5; s.ev.push({ e: 'cast', u: c.id, fx: 'parry' }); },
         },
-        { name: 'Crash', d: 'Leap, untouchable, and land with a stun at the centre.', cd: 45, range: 520, shape: 'circle', r: 190,
+        { name: 'Crash', d: 'Leap, untouchable, and land with a stun at the centre.', cd: 45, range: 520, shape: 'circle', r: 190, over: true,
           cast(s, c, a) {
             c.air = .55; c.leap = { sx: c.x, sy: c.y, tx: a.tx, ty: a.ty, t: 0, total: .55, fn(s, c) {
               s.ev.push({ e: 'boom', x: c.x, y: c.y, r: 190, fx: 'crash' });
@@ -165,7 +198,7 @@ const Sim = (() => {
     },
     ione: {
       name: 'Ione', role: 'Mage', blurb: 'Mark them, then break the mark.',
-      hp: 500, hpG: 68, dmg: 50, dmgG: 5, armor: 14, armG: 3, range: 440, as: .85, ms: 300, forge: ['edge', 'haste', 'guard'], pref: 405, fit: { top: 1, jungle: 0, bottom: 2, support: 2 },
+      sight: 850, hp: 500, hpG: 68, dmg: 50, dmgG: 5, armor: 14, armG: 3, range: 440, as: .85, ms: 300, forge: ['edge', 'haste', 'guard'], pref: 405, fit: { top: 1, jungle: 0, bottom: 2, support: 2 },
       kit: [
         { name: 'Sigil Orb', d: 'Marks the first enemy it hits.', cd: 4, range: 640, shape: 'line', w: 42,
           cast(s, c, a) { fire(s, c, a, { speed: 950, range: 640, w: 42, fx: 'orb', filter: 'units', hit(s, c, t, p) { hurt(s, c, t, 82 * pow(c), { skill: 1 }); t.markT = 4; s.ev.push({ e: 'mark', u: t.id }); if (t.kind === 'champ') skillHit(c, p); p.left = 0; } }); },
@@ -174,13 +207,13 @@ const Sim = (() => {
           cast(s, c, a) { const car = {}; blast(s, c, a.tx, a.ty, 115, .55, (s, z) => { eachEnemy(s, c, z.x, z.y, 115, t => { const m = t.markT > 0; hurt(s, c, t, (m ? 165 : 75) * pow(c), { skill: 1 }); if (m) { t.markT = 0; if (t.kind === 'champ') stun(s, t, 1); s.ev.push({ e: 'boom', x: t.x, y: t.y, r: 60, fx: 'break' }); } if (t.kind === 'champ') skillHit(c, car); }); }, 'rupture'); },
         },
         { name: 'Cascade', d: 'Three blasts walk forward. Each one marks.', cd: 46, range: 640, shape: 'line', w: 200,
-          cast(s, c, a) { [.42, .72, 1.02].forEach((dl, i) => { const k = 220 + i * 200, car = {}; blast(s, c, c.x + a.dx * k, c.y + a.dy * k, 135, dl, (s, z) => { eachEnemy(s, c, z.x, z.y, 135, t => { hurt(s, c, t, 115 * pow(c), { skill: 1 }); t.markT = 4; if (t.kind === 'champ') skillHit(c, car); }); }, 'rupture'); }); },
+          cast(s, c, a) { const reach = rayWall(c.x, c.y, a.dx, a.dy, 640); [.42, .72, 1.02].forEach((dl, i) => { const k = 220 + i * 200, car = {}; if (k > reach + 60) return; blast(s, c, c.x + a.dx * k, c.y + a.dy * k, 135, dl, (s, z) => { eachEnemy(s, c, z.x, z.y, 135, t => { hurt(s, c, t, 115 * pow(c), { skill: 1 }); t.markT = 4; if (t.kind === 'champ') skillHit(c, car); }); }, 'rupture'); }); },
         },
       ],
     },
     solenne: {
       name: 'Solenne', role: 'Support', blurb: 'Every heal is a shot you can miss.',
-      hp: 540, hpG: 76, dmg: 46, dmgG: 5, armor: 20, armG: 3.5, range: 400, as: .85, ms: 310, forge: ['haste', 'guard', 'edge'], pref: 370, support: true, fit: { top: 0, jungle: 0, bottom: 1, support: 3 },
+      sight: 850, hp: 540, hpG: 76, dmg: 46, dmgG: 5, armor: 20, armG: 3.5, range: 400, as: .85, ms: 310, forge: ['haste', 'guard', 'edge'], pref: 370, support: true, fit: { top: 0, jungle: 0, bottom: 1, support: 3 },
       kit: [
         { name: 'Mending Ray', d: 'Heals the first ally it hits, or burns the first enemy.', cd: 5, range: 680, shape: 'line', w: 46,
           cast(s, c, a) { fire(s, c, a, { speed: 1150, range: 680, w: 46, fx: 'ray', filter: 'allchamp', hit(s, c, t, p) { if (t.team === c.team) { heal(s, c, t, 120 * pow(c)); } else { hurt(s, c, t, 72 * pow(c), { skill: 1 }); slow(t, .3, 1.5); } skillHit(c, p); p.left = 0; } }); },
@@ -201,25 +234,25 @@ const Sim = (() => {
     },
     sable: {
       name: 'Sable', role: 'Assassin', blurb: 'Strike from behind, then be somewhere else.',
-      hp: 510, hpG: 74, dmg: 66, dmgG: 8, armor: 18, armG: 3, range: 135, as: 1.05, ms: 335, forge: ['edge', 'haste', 'guard'], pref: 100, melee: true, fit: { top: 2, jungle: 3, bottom: 0, support: 0 },
+      sight: 720, hp: 510, hpG: 74, dmg: 66, dmgG: 8, armor: 18, armG: 3, range: 135, as: 1.05, ms: 335, forge: ['edge', 'haste', 'guard'], pref: 100, melee: true, fit: { top: 2, jungle: 3, bottom: 0, support: 0 },
       kit: [
         { name: 'Rend', d: 'Short slash. Hits half again as hard from behind.', cd: 3.5, range: 240, shape: 'cone', w: 180,
           cast(s, c, a) { let hit = false; s.ev.push({ e: 'cast', u: c.id, fx: 'slash', dx: a.dx, dy: a.dy });
-            eachEnemy(s, c, c.x, c.y, 240, t => { const n = norm(t.x - c.x, t.y - c.y); if (n.x * a.dx + n.y * a.dy < .72) return; const back = (t.fx || 0) * -n.x + (t.fy || 0) * -n.y < -.25; hurt(s, c, t, 92 * pow(c) * (back ? 1.5 : 1), { skill: 1, crit: back }); if (t.kind === 'champ') hit = true; });
+            eachEnemy(s, c, c.x, c.y, 240, t => { const n = norm(t.x - c.x, t.y - c.y); if (n.x * a.dx + n.y * a.dy < .72 || !hasLOS(c.x, c.y, t.x, t.y)) return; const back = (t.fx || 0) * -n.x + (t.fy || 0) * -n.y < -.25; hurt(s, c, t, 92 * pow(c) * (back ? 1.5 : 1), { skill: 1, crit: back }); if (t.kind === 'champ') hit = true; });
             if (hit) c.stats.skillHits++; },
         },
-        { name: 'Echo', d: 'Blink away and leave an echo. Cast again to snap back.', cd: 10, range: 320, shape: 'dash', w: 60,
+        { name: 'Echo', d: 'Blink away and leave an echo. Cast again to snap back.', cd: 10, range: 320, shape: 'dash', w: 60, over: true,
           cast(s, c, a) { c.echo = { x: c.x, y: c.y }; const f = nearestFree(s.map, a.tx, a.ty); s.ev.push({ e: 'blink', x: c.x, y: c.y }); c.x = f.x; c.y = f.y; c.recast[1] = 3.5; s.ev.push({ e: 'blink', x: c.x, y: c.y }); },
           recast(s, c) { if (!c.echo) return; s.ev.push({ e: 'blink', x: c.x, y: c.y }); c.x = c.echo.x; c.y = c.echo.y; c.echo = null; s.ev.push({ e: 'blink', x: c.x, y: c.y }); },
         },
-        { name: 'Reap', d: 'Blink behind a champion. Execute damage. A kill resets it.', cd: 40, range: 480, shape: 'circle', r: 90,
+        { name: 'Reap', d: 'Blink behind a champion. Execute damage. A kill resets it.', cd: 40, range: 480, shape: 'circle', r: 90, over: true,
           cast(s, c, a) { const t = nearChamp(s, c, a.tx, a.ty, 220); if (!t || dist(c, t) > 540) return false; const n = { x: t.fx || 1, y: t.fy || 0 }; s.ev.push({ e: 'blink', x: c.x, y: c.y }); const f = nearestFree(s.map, t.x - n.x * 90, t.y - n.y * 90); c.x = f.x; c.y = f.y; c.fx = n.x; c.fy = n.y; c.reap = { id: t.id, t: 2 }; hurt(s, c, t, (125 * pow(c)) + (t.maxHp - t.hp) * .35, { skill: 1, crit: 1 }); c.stats.skillHits++; s.ev.push({ e: 'blink', x: c.x, y: c.y }); },
         },
       ],
     },
     gravel: {
       name: 'Gravel', role: 'Tank', blurb: 'One good hook moves the whole fight.',
-      hp: 720, hpG: 112, dmg: 54, dmgG: 6, armor: 34, armG: 5, range: 190, as: .8, ms: 305, forge: ['guard', 'haste', 'edge'], pref: 150, melee: true, fit: { top: 2, jungle: 2, bottom: 0, support: 3 },
+      sight: 680, hp: 720, hpG: 112, dmg: 54, dmgG: 6, armor: 34, armG: 5, range: 190, as: .8, ms: 305, forge: ['guard', 'haste', 'edge'], pref: 150, melee: true, fit: { top: 2, jungle: 2, bottom: 0, support: 3 },
       kit: [
         { name: 'Chain', d: 'Hook the first enemy it hits and drag them to you.', cd: 9, range: 620, shape: 'line', w: 50,
           cast(s, c, a) { fire(s, c, a, { speed: 1050, range: 620, w: 50, fx: 'chain', filter: 'chainable', hit(s, c, t, p) { hurt(s, c, t, 64 * pow(c), { skill: 1 }); const n = norm(c.x - t.x, c.y - t.y), l = Math.max(0, n.l - 90); dashDir(t, n.x, n.y, l, 1300, { forced: true }); t.stunT = Math.max(t.stunT || 0, l / 1300 + .15); if (t.kind === 'champ') skillHit(c, p); p.left = 0; } }); },
@@ -278,14 +311,6 @@ const Sim = (() => {
   }
 
   // ---------- match ----------
-  function makeBot(s, c) {
-    const i = c.slot;
-    return {
-      sk: DIFF[s.diff], mask: navMask(c.team), lane: c.role === 'top' ? 0 : 1, next: i * .05 + .02, foes: [], tid: 0, closest: 1e9, ratio: 1, noise: 0, noiseAt: 0, strafe: i % 2 ? 1 : -1,
-      gx: c.x, gy: c.y, ga: 20, hasGoal: false, vx: 0, vy: 0, vecT: 0, ex: 0, ey: 0, evadeT: 0, path: null, pi: 0, pgx: 0, pgy: 0, needPath: false, sx: c.x, sy: c.y, stuck: 0, still: false, diveOk: false,
-      et: null, etTanks: 0, castAt: 0, chargeHold: 1.12, threatT: 9, parry: false, low: false, fighting: false, lhSoon: false, lastHome: 0, gank: null, gankCd: 0, deaths: [], siegeT: 0,
-    };
-  }
   // Hands a seat to a bot or back to a person, mid-match. Used when a networked friend drops or returns.
   function setBot(s, c, on) {
     c.q.length = 0; c.mv.x = c.mv.y = 0; c.atk = false; c.atkPref = 0; c.preferTower = false;
@@ -296,28 +321,28 @@ const Sim = (() => {
   function createMatch(cfg) {
     const s = {
       t: 0, tick: 0, nid: 1, rand: rng(cfg.seed || 7), map: buildMap(), champs: [], minions: [], towers: [], monsters: [], proj: [], zones: [], ev: [], over: null,
-      diff: cfg.diff || 'normal', nextWave: 8, wave: 0, bossAt: 240, kills: [0, 0], buff: [0, 0], camps: [], gaps: {}, navLeft: 2, hope: 50, hopeTeam: -1, sites: [],
+      nextWave: 8, wave: 0, bossAt: 240, kills: [0, 0], buff: [0, 0], camps: [], gaps: {}, navLeft: 2, hope: 50, hopeTeam: -1, sites: [],
       laneInfo: [[{}, {}], [{}, {}]],
       ai: [0, 1].map(() => ({ defend: null, hoard: null, hoardGo: false, push: null, pushUntil: 0, thp: {}, sites: {}, help: {}, focus: 0 })),
     };
-    const fountains = [{ x: 95, y: 950 }, { x: W - 95, y: 950 }]; s.fountains = fountains;
+    s.fountains = s.map.fountains;
     const mir = (x, team) => team ? W - x : x;
     [0, 1].forEach(team => {
       const mk = (x, y, kind, lane, tier) => {
-        const hp = kind === 'core' ? 3400 : tier === 0 ? 1600 : 2100;
-        s.towers.push({ id: s.nid++, kind: 'tower', sub: kind, team, x: mir(x, team), y, px: mir(x, team), py: y, r: kind === 'core' ? 70 : 46, hp, maxHp: hp, armor: 30, range: kind === 'core' ? 400 : 370, alive: true, cd: 0, lane, tier, stack: 0, last: null, vx: 0, vy: 0 });
+        const hp = kind === 'core' ? 3000 : tier === 0 ? 1450 : 1850;
+        s.towers.push({ id: s.nid++, kind: 'tower', sub: kind, team, x: mir(x, team), y, px: mir(x, team), py: y, r: kind === 'core' ? 54 : 36, hp, maxHp: hp, armor: 30, range: kind === 'core' ? 420 : 380, sight: 750, alive: true, cd: 0, lane, tier, stack: 0, last: null, vx: 0, vy: 0 });
       };
-      for (const lane of [0, 1]) { const f = y => lane ? H - y : y; mk(1130, f(320), 'tower', lane, 0); mk(640, f(432), 'tower', lane, 1); }
-      mk(250, 950, 'core', -1, 2);
+      for (const lane of [0, 1]) { const f = y => lane ? H - y : y; mk(1480, f(402), 'tower', lane, 0); mk(800, f(640), 'tower', lane, 1); }
+      mk(340, H / 2, 'core', -1, 2);
     });
     // Jungle: four quadrants, each with a small trio and one heavy
     for (const [mx, my] of [[0, 0], [1, 0], [0, 1], [1, 1]]) {
       const px = x => mx ? W - x : x, py = y => my ? H - y : y;
-      s.camps.push({ id: s.camps.length, x: px(850), y: py(780), big: false, at: 30, alive: false, side: mx });
-      s.camps.push({ id: s.camps.length, x: px(1210), y: py(615), big: true, at: 45, alive: false, side: mx });
+      s.camps.push({ id: s.camps.length, x: px(1130), y: py(810), big: false, at: 30, alive: false, side: mx });
+      s.camps.push({ id: s.camps.length, x: px(1640), y: py(810), big: true, at: 45, alive: false, side: mx });
     }
     // Civilian sites: two per quadrant, nudged onto open ground if a position is walled.
-    for (const [mx, my] of [[0, 0], [1, 0], [0, 1], [1, 1]]) for (const [x, y] of [[1000, 620], [1370, 850]]) {
+    for (const [mx, my] of [[0, 0], [1, 0], [0, 1], [1, 1]]) for (const [x, y] of [[1400, 810], [1880, 810]]) {
       const f = nearestFree(s.map, mx ? W - x : x, my ? H - y : y);
       s.sites.push({ id: s.sites.length, x: f.x, y: f.y, alive: true, at: 0, prog: [0, 0], need: 2.5, con: {} });
     }
@@ -325,8 +350,8 @@ const Sim = (() => {
     cfg.teams.forEach((list, team) => { const roles = teamRoles(list); list.forEach((p, i) => {
       const k = KITS[p.champ], role = roles[i];
       const c = {
-        id: s.nid++, kind: 'champ', team, slot: i, role, solo: false, atkPref: 0, champ: p.champ, pname: p.name, tier: p.tier || 0, human: !!p.human, remote: !!p.remote,
-        x: mir(135, team), y: 880 + i * 46, r: 34, lvl: 1, xp: 0, gold: 300, up: { edge: 0, guard: 0, haste: 0 },
+        id: s.nid++, kind: 'champ', team, slot: i, role, solo: false, atkPref: 0, champ: p.champ, pname: p.name, tier: p.tier || 0, human: !!p.human, remote: !!p.remote, skill: p.skill,
+        x: mir(180, team), y: H / 2 + (i - 1.5) * 46, r: 26, sight: k.sight, lvl: 1, xp: 0, gold: 300, up: { edge: 0, guard: 0, haste: 0 },
         hp: k.hp, maxHp: k.hp, armor: k.armor, dmgBase: k.dmg, range: k.range, msBase: k.ms, as: k.as, kit: k.kit,
         alive: true, respawn: 0, atkCd: 0, lock: 0, fx: team ? -1 : 1, fy: 0, cd: [0, 0, 0], recast: [0, 0, 0], q: [], mv: { x: 0, y: 0 }, atk: false,
         stunT: 0, slowT: 0, slowA: 0, markT: 0, parryT: 0, drT: 0, air: 0, buffT: 0, empowerT: 0, revealT: 0, vx: 0, vy: 0, assist: {}, charge: null, chan: null, dash: null, leap: null, inBrush: -1, recentHit: 0,
@@ -345,9 +370,21 @@ const Sim = (() => {
     return true;
   };
 
+  // Fog of war. Sources are rebuilt once per tick and work the same on a guest's reconstructed state.
+  function visionSources(s, team) {
+    const cache = s.vis || (s.vis = { tick: -1, list: [null, null] });
+    if (cache.tick !== s.tick) { cache.tick = s.tick; cache.list[0] = cache.list[1] = null; }
+    if (cache.list[team]) return cache.list[team];
+    const out = [];
+    for (const c of s.champs) if (c.team === team && c.alive) out.push({ x: c.x, y: c.y, r: c.sight || 800 });
+    for (const t of s.towers) if (t.team === team && t.alive) out.push({ x: t.x, y: t.y, r: t.sight || 750 });
+    for (const m of s.minions) if (m.team === team && m.alive && !(m.delay > 0)) out.push({ x: m.x, y: m.y, r: m.sight || 500 });
+    return cache.list[team] = out;
+  }
   function canSee(s, team, u) {
-    if (u.team === team || u.inBrush === undefined || u.inBrush < 0 || u.revealT > 0) return true;
-    for (const c of s.champs) if (c.team === team && c.alive && c.inBrush === u.inBrush) return true;
+    if (u.team === team || u.kind === 'tower' || u.revealT > 0) return true;
+    if (u.inBrush !== undefined && u.inBrush >= 0 && !s.champs.some(c => c.team === team && c.alive && c.inBrush === u.inBrush)) return false;
+    for (const v of visionSources(s, team)) if ((v.x - u.x) * (v.x - u.x) + (v.y - u.y) * (v.y - u.y) < v.r * v.r) return true;
     return false;
   }
 
@@ -365,7 +402,7 @@ const Sim = (() => {
     if (t.drT > 0) a *= .7;
     for (const z of s.zones) if (z.kind === 'dome' && z.team === t.team && Math.hypot(z.x - t.x, z.y - t.y) < z.r) { a *= 1 - .25 * (1 + .15 * roleK(z.owner, 'support')); break; }
     // Structures weaken late so a match always reaches an ending.
-    if (t.kind === 'tower') a *= s.t < 480 ? .7 + Math.max(0, s.t - 300) / 600 : 1 + (s.t - 480) / 170;
+    if (t.kind === 'tower') a *= s.t < 360 ? .8 + Math.max(0, s.t - 240) / 600 : 1 + (s.t - 360) / 130;
     if (src && src.kind === 'champ' && src.team === s.hopeTeam) a *= 1.08;
     if (t.kind === 'monster' && src && src.kind === 'champ') { t.hitAt = s.t; if (!t.tgt) t.tgt = src; a *= 1 + .35 * roleK(src, 'jungle'); }
     t.hp -= a;
@@ -438,20 +475,21 @@ const Sim = (() => {
       const path = team ? [...s.map.lanes[lane]].reverse() : s.map.lanes[lane];
       const ranged = i === 3, x = path[0][0] + (s.rand() - .5) * 30, y = path[0][1] + (s.rand() - .5) * 30 + i * 8;
       const hp = (ranged ? 270 : 400) * scale;
-      s.minions.push({ id: s.nid++, kind: 'minion', team, lane, x, y, px: x, py: y, r: ranged ? 18 : 22, hp, maxHp: hp, armor: 10, dmg: (ranged ? 28 : 22) * scale, range: ranged ? 300 : 95, ranged, ms: 215, as: .9, alive: true, cd: 0, wp: 1, path, stunT: 0, slowT: 0, slowA: 0, markT: 0, vx: 0, vy: 0, delay: i * .45, fx: team ? -1 : 1, fy: 0 });
+      s.minions.push({ id: s.nid++, kind: 'minion', team, lane, x, y, px: x, py: y, r: ranged ? 14 : 17, sight: 500, hp, maxHp: hp, armor: 10, dmg: (ranged ? 28 : 22) * scale, range: ranged ? 300 : 95, ranged, ms: 215, as: .9, alive: true, cd: 0, wp: 1, path, stunT: 0, slowT: 0, slowA: 0, markT: 0, vx: 0, vy: 0, delay: i * .45, fx: team ? -1 : 1, fy: 0 });
     }
   }
+  const CAMP_LEASH = 280, BOSS_LEASH = 350;
   function spawnCamp(s, camp) {
     camp.alive = true; const n = camp.big ? 1 : 3; camp.left = n;
     for (let i = 0; i < n; i++) {
       const a = i * 2.1, off = camp.big ? 0 : 55, hp = (camp.big ? 1050 : 400) * (1 + s.t / 900);
       const x = camp.x + Math.cos(a) * off, y = camp.y + Math.sin(a) * off;
-      s.monsters.push({ id: s.nid++, kind: 'monster', team: 2, camp: camp.id, big: camp.big, x, y, px: x, py: y, hx: x, hy: y, r: camp.big ? 42 : 24, hp, maxHp: hp, armor: 18, dmg: (camp.big ? 52 : 24) * (1 + s.t / 900), range: 110, ms: 260, as: .9, alive: true, cd: 0, tgt: null, stunT: 0, slowT: 0, slowA: 0, markT: 0, vx: 0, vy: 0, fx: 1, fy: 0 });
+      s.monsters.push({ id: s.nid++, kind: 'monster', team: 2, camp: camp.id, big: camp.big, x, y, px: x, py: y, hx: x, hy: y, r: camp.big ? 32 : 19, leash: CAMP_LEASH, hp, maxHp: hp, armor: 18, dmg: (camp.big ? 44 : 20) * (1 + s.t / 900), range: 110, ms: 260, as: .9, alive: true, cd: 0, tgt: null, stunT: 0, slowT: 0, slowA: 0, markT: 0, vx: 0, vy: 0, fx: 1, fy: 0 });
     }
   }
   function spawnBoss(s) {
     const hp = 7000 * (1 + s.t / 1200), x = W / 2, y = H / 2;
-    s.monsters.push({ id: s.nid++, kind: 'monster', team: 2, boss: true, x, y, px: x, py: y, hx: x, hy: y, r: 74, hp, maxHp: hp, armor: 45, dmg: 150, range: 170, ms: 170, as: .7, alive: true, cd: 0, slam: 3, tgt: null, stunT: 0, slowT: 0, slowA: 0, markT: 0, vx: 0, vy: 0, fx: 1, fy: 0 });
+    s.monsters.push({ id: s.nid++, kind: 'monster', team: 2, boss: true, x, y, px: x, py: y, hx: x, hy: y, r: 58, leash: BOSS_LEASH, hp, maxHp: hp, armor: 45, dmg: 150, range: 170, ms: 170, as: .7, alive: true, cd: 0, slam: 3, tgt: null, stunT: 0, slowT: 0, slowA: 0, markT: 0, vx: 0, vy: 0, fx: 1, fy: 0 });
     s.bossUp = true; s.ev.push({ e: 'bossup' });
   }
 
@@ -507,7 +545,7 @@ const Sim = (() => {
       if (!e.alive || e.air || e.team === u.team || (e.kind === 'champ' && !canSee(s, u.team, e))) continue;
       if (e.kind === 'tower' && !towerOpen(s, e)) continue;
       const d = dist(u, e) - e.r;
-      if (d < bd) { bd = d; best = e; }
+      if (d < bd && (!opts.los || hasLOS(u.x, u.y, e.x, e.y))) { bd = d; best = e; }
     }
     return best;
   }
@@ -517,12 +555,12 @@ const Sim = (() => {
     const r = c.range;
     if (c.atkPref) {
       const p = [s.minions, s.monsters, s.champs, s.towers].map(l => l.find(u => u.id === c.atkPref)).find(Boolean);
-      if (p && p.alive && !p.air && p.team !== c.team && dist(c, p) - p.r < r && (p.kind !== 'tower' || towerOpen(s, p)) && (p.kind !== 'champ' || canSee(s, c.team, p))) return p;
+      if (p && p.alive && !p.air && p.team !== c.team && dist(c, p) - p.r < r && (p.kind !== 'tower' || towerOpen(s, p)) && (p.kind !== 'champ' || canSee(s, c.team, p)) && hasLOS(c.x, c.y, p.x, p.y)) return p;
     }
-    const structure = () => { let b = null, bd = r; for (const t of s.towers) if (t.alive && t.team !== c.team && towerOpen(s, t)) { const d = dist(c, t) - t.r; if (d < bd) { bd = d; b = t; } } return b; };
-    const champ = nearestFoe(s, c, r, { champsOnly: true }); if (champ) return champ;
+    const structure = () => { let b = null, bd = r; for (const t of s.towers) if (t.alive && t.team !== c.team && towerOpen(s, t)) { const d = dist(c, t) - t.r; if (d < bd && hasLOS(c.x, c.y, t.x, t.y)) { bd = d; b = t; } } return b; };
+    const champ = nearestFoe(s, c, r, { champsOnly: true, los: true }); if (champ) return champ;
     if (c.preferTower) { const t = structure(); if (t) return t; }
-    return nearestFoe(s, c, r, { noChamps: true }) || structure();
+    return nearestFoe(s, c, r, { noChamps: true, los: true }) || structure();
   }
 
   function tryCast(s, c, q) {
@@ -536,6 +574,8 @@ const Sim = (() => {
     const r = a.range || 0; const d = Math.min(n.l, r || 0);
     const aim = { dx, dy, tx: r ? c.x + dx * d : c.x, ty: r ? c.y + dy * d : c.y, d };
     if (a.shape === 'dash' || a.shape === 'line') { aim.tx = c.x + dx * r; aim.ty = c.y + dy * r; }
+    // Ground-targeted circles need line of sight and land at the last visible point.
+    if (a.shape === 'circle' && !a.over && aim.d > 0) { aim.d = rayWall(c.x, c.y, dx, dy, aim.d); aim.tx = c.x + dx * aim.d; aim.ty = c.y + dy * aim.d; }
     if (c.recast[q.slot] > 0 && a.recast) { a.recast(s, c, aim); c.recast[q.slot] = 0; c.fx = dx; c.fy = dy; return; }
     if (c.cd[q.slot] > 0) return;
     if (a.cast(s, c, aim) === false) return;
@@ -561,6 +601,8 @@ const Sim = (() => {
   function stepChamp(s, c) {
     c.px = c.x; c.py = c.y;
     if (!c.alive) {
+      // The only command a dead champion can use is the forge.
+      while (c.q.length) { const q = c.q.shift(); if (q.t === 'forge') forge(s, c, q.track); }
       c.respawn -= DT;
       if (c.respawn <= 0) {
         c.alive = true; c.hp = c.maxHp; c.spawnT = s.t; const f = s.fountains[c.team]; c.x = c.px = f.x + (c.team ? -50 : 50); c.y = c.py = f.y + (c.slot - 1.5) * 40; c.q.length = 0; c.stunT = c.slowT = c.markT = 0; s.ev.push({ e: 'spawn', u: c.id });
@@ -618,8 +660,8 @@ const Sim = (() => {
     }
 
     // fountain
-    const f = s.fountains[c.team]; if (dist(c, f) < 300) { c.hp = Math.min(c.maxHp, c.hp + c.maxHp * .14 * DT); }
-    const ef = s.fountains[1 - c.team]; if (dist(c, ef) < 340 && !c.air) { hurt(s, null, c, 900 * DT); }
+    const f = s.fountains[c.team]; if (dist(c, f) < FOUNTAIN_HEAL_R) { c.hp = Math.min(c.maxHp, c.hp + c.maxHp * .45 * DT); }
+    const ef = s.fountains[1 - c.team]; if (dist(c, ef) < FOUNTAIN_BURN_R && !c.air) { hurt(s, null, c, 900 * DT); }
     c.hp = Math.min(c.maxHp, c.hp + (c.maxHp * .004) * DT);
 
     // brush
@@ -631,21 +673,22 @@ const Sim = (() => {
   function forge(s, c, track) {
     const n = c.up[track]; if (n === undefined || n >= 3) return false;
     const cost = FORGE_COST[n]; if (c.gold < cost) return false;
-    c.gold -= cost; c.up[track]++; applyStats(c, true); if (track === 'guard') c.hp = Math.min(c.maxHp, c.hp + 180);
+    c.gold -= cost; c.up[track]++; applyStats(c, true);
+    if (!c.alive) c.hp = 0; else if (track === 'guard') c.hp = Math.min(c.maxHp, c.hp + 180);
     s.ev.push({ e: 'forge', u: c.id, track }); return true;
   }
 
   function stepMinion(s, m) {
     m.px = m.x; m.py = m.y; if (m.delay > 0) { m.delay -= DT; return; }
     if (m.stunT > 0) m.stunT -= DT; if (m.slowT > 0) m.slowT -= DT; if (m.markT > 0) m.markT -= DT; if (m.cd > 0) m.cd -= DT;
-    if (m.dash) { const D = m.dash; const st = Math.min(DT, D.t); m.x += D.vx * st; m.y += D.vy * st; D.t -= DT; if (D.t <= 0) m.dash = null; return; }
+    if (m.dash) { const D = m.dash; const st = Math.min(DT, D.t); m.x += D.vx * st; m.y += D.vy * st; D.t -= DT; if (D.t <= 0) m.dash = null; pushOut(s.map, m); return; }
     if (m.stunT > 0) return;
     let t = null, bd = 340;
     // protect allied champions that are being hit by enemy champions
-    for (const e of s.champs) if (e.alive && !e.air && e.team !== m.team && e.recentHit && s.t - e.recentHit < 1.5 && canSee(s, m.team, e)) { const d = dist(m, e); if (d < 420) { t = e; break; } }
-    if (!t) for (const e of s.minions) if (e.alive && e.team !== m.team && e.delay <= 0) { const d = dist(m, e) - e.r; if (d < bd) { bd = d; t = e; } }
-    if (!t) for (const e of s.towers) if (e.alive && e.team !== m.team && towerOpen(s, e)) { const d = dist(m, e) - e.r; if (d < bd + 40) { bd = d; t = e; } }
-    if (!t) for (const e of s.champs) if (e.alive && !e.air && e.team !== m.team && canSee(s, m.team, e)) { const d = dist(m, e) - e.r; if (d < bd * .7) { bd = d; t = e; } }
+    for (const e of s.champs) if (e.alive && !e.air && e.team !== m.team && e.recentHit && s.t - e.recentHit < 1.5 && canSee(s, m.team, e)) { const d = dist(m, e); if (d < 420 && hasLOS(m.x, m.y, e.x, e.y)) { t = e; break; } }
+    if (!t) for (const e of s.minions) if (e.alive && e.team !== m.team && e.delay <= 0) { const d = dist(m, e) - e.r; if (d < bd && hasLOS(m.x, m.y, e.x, e.y)) { bd = d; t = e; } }
+    if (!t) for (const e of s.towers) if (e.alive && e.team !== m.team && towerOpen(s, e)) { const d = dist(m, e) - e.r; if (d < bd + 40 && hasLOS(m.x, m.y, e.x, e.y)) { bd = d; t = e; } }
+    if (!t) for (const e of s.champs) if (e.alive && !e.air && e.team !== m.team && canSee(s, m.team, e)) { const d = dist(m, e) - e.r; if (d < bd * .7 && hasLOS(m.x, m.y, e.x, e.y)) { bd = d; t = e; } }
     const sp = m.ms * (m.slowT > 0 ? 1 - m.slowA : 1);
     if (t) {
       const d = dist(m, t) - t.r;
@@ -655,31 +698,39 @@ const Sim = (() => {
       const [wx, wy] = m.path[m.wp]; const n = norm(wx - m.x, wy - m.y);
       if (n.l < 40) m.wp++; else { m.x += n.x * sp * DT; m.y += n.y * sp * DT; m.fx = n.x; m.fy = n.y; }
     }
+    pushOut(s.map, m);
     m.vx = (m.x - m.px) / DT; m.vy = (m.y - m.py) / DT;
   }
 
   function stepMonster(s, m) {
     m.px = m.x; m.py = m.y; if (m.stunT > 0) { m.stunT -= DT; return; } if (m.slowT > 0) m.slowT -= DT; if (m.markT > 0) m.markT -= DT; if (m.cd > 0) m.cd -= DT;
+    // A monster never fights outside its own patch: past the leash it drops its target and walks home.
+    const leash = m.leash, homeD = o => Math.hypot(o.x - m.hx, o.y - m.hy);
     let t = m.tgt;
-    if (t && (!t.alive || t.air || Math.hypot(t.x - m.hx, t.y - m.hy) > 620)) t = m.tgt = null;
-    if (!t) {
+    if (t && (!t.alive || t.air || homeD(t) > leash || homeD(m) > leash)) t = m.tgt = null;
+    if (!t && homeD(m) <= leash) {
       // Monsters wake when hit by anyone standing close.
-      const last = s.champs.filter(c => c.alive && dist(c, m) < 300 && s.t - (m.hitAt || -9) < 2)[0];
+      const last = s.champs.filter(c => c.alive && dist(c, m) < 300 && homeD(c) <= leash && s.t - (m.hitAt || -9) < 2)[0];
       if (last) t = m.tgt = last;
     }
     if (m.boss && t) {
       m.slam -= DT;
-      if (m.slam <= 0) { m.slam = 4; const fake = { team: 2, id: m.id }; const tx = t.x, ty = t.y; s.zones.push({ id: s.nid++, kind: 'blast', x: tx, y: ty, r: 170, t: 1, total: 1, team: 2, owner: m, fx: 'crash', fn(s, z) { for (const e of s.champs) if (e.alive && !e.air && Math.hypot(e.x - z.x, e.y - z.y) < 170 + e.r) { hurt(s, m, e, 200); slow(e, .35, 1); } s.ev.push({ e: 'boom', x: z.x, y: z.y, r: 170, fx: 'crash' }); } }); }
+      if (m.slam <= 0) { m.slam = 4; const tx = t.x, ty = t.y; s.zones.push({ id: s.nid++, kind: 'blast', x: tx, y: ty, r: 170, t: 1, total: 1, team: 2, owner: m, fx: 'crash', fn(s, z) { for (const e of s.champs) if (e.alive && !e.air && Math.hypot(e.x - z.x, e.y - z.y) < 170 + e.r) { hurt(s, m, e, 200); slow(e, .35, 1); } s.ev.push({ e: 'boom', x: z.x, y: z.y, r: 170, fx: 'crash' }); } }); }
     }
     if (t) {
-      const d = dist(m, t) - t.r; if (d > m.range - 8) { const n = norm(t.x - m.x, t.y - m.y); m.x += n.x * m.ms * DT; m.y += n.y * m.ms * DT; m.fx = n.x; m.fy = n.y; }
-      else if (m.cd <= 0) { m.cd = 1 / m.as; hurt(s, m, t, m.dmg); s.ev.push({ e: 'matk', u: m.id }); }
+      const d = dist(m, t) - t.r;
+      if (d > m.range - 8 || !hasLOS(m.x, m.y, t.x, t.y)) {
+        const n = norm(t.x - m.x, t.y - m.y); m.x += n.x * m.ms * DT; m.y += n.y * m.ms * DT; m.fx = n.x; m.fy = n.y;
+        pushOut(s.map, m);
+        if (homeD(m) > leash) { const h = norm(m.x - m.hx, m.y - m.hy); m.x = m.hx + h.x * leash; m.y = m.hy + h.y * leash; pushOut(s.map, m); m.tgt = null; }
+      } else if (m.cd <= 0) { m.cd = 1 / m.as; hurt(s, m, t, m.dmg); s.ev.push({ e: 'matk', u: m.id }); }
     } else {
-      const n = norm(m.hx - m.x, m.hy - m.y); if (n.l > 8) { m.x += n.x * 320 * DT; m.y += n.y * 320 * DT; } else m.hp = Math.min(m.maxHp, m.hp + m.maxHp * .25 * DT);
+      const n = norm(m.hx - m.x, m.hy - m.y); if (n.l > 8) { m.x += n.x * 320 * DT; m.y += n.y * 320 * DT; pushOut(s.map, m); } else m.hp = Math.min(m.maxHp, m.hp + m.maxHp * .25 * DT);
     }
     m.vx = (m.x - m.px) / DT; m.vy = (m.y - m.py) / DT;
   }
 
+  const TOWER_BASE = 160, TOWER_RAMP = .24;
   function stepTower(s, t) {
     if (t.cd > 0) t.cd -= DT; if (t.cd > 0) return;
     let target = null, bd = t.range;
@@ -687,10 +738,12 @@ const Sim = (() => {
     if (!target) for (const m of s.minions) if (m.alive && m.team !== t.team && m.delay <= 0) { const d = dist(m, t); if (d < bd) { bd = d; target = m; } }
     if (!target) { bd = t.range; for (const c of s.champs) if (c.alive && !c.air && c.team !== t.team) { const d = dist(c, t); if (d < bd) { bd = d; target = c; } } }
     if (!target) { t.last = null; t.stack = 0; return; }
-    t.stack = t.last === target.id ? Math.min(4, t.stack + 1) : 0; t.last = target.id; t.cd = 1.1;
-    const base = target.kind === 'champ' ? (110 + s.t * .12) * (1 + t.stack * .3) : target.maxHp * .42 * (1 + (target.armor || 0) / 100);
+    t.stack = t.last === target.id ? t.stack + 1 : 0; t.last = target.id; t.cd = 1.1;
+    // Each consecutive shot on the same target hits 45% harder, compounding, capped at 4x.
+    const ramp = Math.min(4, Math.pow(1.45, t.stack));
+    const base = target.kind === 'champ' ? (TOWER_BASE + s.t * TOWER_RAMP) * ramp : target.maxHp * .42 * (1 + (target.armor || 0) / 100);
     homing(s, t, target, base, 1000, 'tower');
-    s.ev.push({ e: 'tshot', u: t.id, t: target.id });
+    s.ev.push({ e: 'tshot', u: t.id, t: target.id, n: t.stack });
   }
 
   function stepProj(s) {
@@ -709,7 +762,7 @@ const Sim = (() => {
         }
         p.x += n.x * st; p.y += n.y * st;
       } else {
-        p.x += p.vx * DT; p.y += p.vy * DT; p.left -= Math.hypot(p.vx, p.vy) * DT;
+        const st = Math.hypot(p.vx, p.vy) * DT, k = st > p.left ? p.left / st : 1; p.x += p.vx * DT * k; p.y += p.vy * DT * k; p.left -= st;
         const test = t => {
           if (p.dead || !t.alive || t.air || t === p.owner || p.hits.has(t.id)) return;
           if (p.filter !== 'allchamp' && t.team === p.team) return;
@@ -722,7 +775,7 @@ const Sim = (() => {
         };
         s.champs.forEach(test);
         if (p.filter === 'units' || p.filter === 'chainable') { s.minions.forEach(test); if (p.filter === 'units') s.monsters.forEach(test); }
-        if (p.left <= 0) p.dead = true;
+        if (p.left <= 0) { p.dead = true; if (p.wall) s.ev.push({ e: 'phit', x: p.x, y: p.y, fx: p.fx }); }
       }
       if (!p.dead && p.owner.kind !== 'tower') for (const z of s.zones) if (z.kind === 'dome' && z.team !== p.team && Math.hypot(z.x - p.x, z.y - p.y) < z.r) { p.dead = true; s.ev.push({ e: 'phit', x: p.x, y: p.y, fx: 'dome' }); break; }
     }
@@ -740,18 +793,68 @@ const Sim = (() => {
     s.zones = s.zones.filter(z => !z.dead);
   }
 
+  // Bot brains. Concatenated into the Sim closure by build.py at the marker in game.js, so it shares all of Sim's private helpers.
+// Flipside 4.0: bots act only through the same inputs a person has. They know only what their
+// team can see (Sim.canSee), remember last-seen positions with fading confidence, and every
+// decision scales with one continuous skill value 0..1 per bot.
+
+  // ---------- skill: one number, 0 (beginner) to 1 (superb) ----------
+  function skillProfile(v) {
+    v = clamp(v === undefined || v === null || isNaN(v) ? .5 : v, 0, 1);
+    const L = (a, b) => a + (b - a) * v, P = (a, b, e) => b + (a - b) * Math.pow(1 - v, e);
+    return {
+      v,
+      think: L(.3, .085),            // seconds between decisions
+      react: L(.62, .09),            // seconds to notice a telegraph
+      err: P(.3, .012, 1.6),         // aim error in radians
+      lead: L(.42, 1.05),            // how far ahead of a moving target it leads
+      dodge: Math.pow(v, 1.4),       // chance of even trying to dodge a given shot
+      wrongWay: (1 - v) * .45,       // chance a dodge goes the wrong way
+      gap: L(1.15, .12),             // seconds between abilities
+      lh: P(.2, .98, 1.25),          // chance a killable minion is even noticed
+      lhErr: P(.32, .008, 1.5),      // last-hit timing error, in fractions of a hit
+      judge: L(.55, .03),            // noise on fight judgement
+      iq: v,                         // general decision quality
+      macro: v,                      // objective, rotation and recall quality
+      combo: Math.pow(v, 1.2),       // chance a combo is sequenced properly rather than mashed
+      aggr: 1,
+      low: L(.2, .36),               // health fraction that sends it home
+      see: L(620, 1150),             // tunnel vision: how far away it notices targets
+      mem: L(3, 20),                 // seconds a remembered enemy position stays useful
+      guard: L(.25, 1),              // how strongly recent deaths make it play safe
+    };
+  }
+
+  const CLASS = { vesper: 'back', ione: 'back', solenne: 'peel', kade: 'front', gravel: 'front', sable: 'flank' };
+  function makeBot(s, c, skill) {
+    const i = c.slot, b = {
+      skill: 0, sk: null, lane: c.role === 'top' ? 0 : 1, cls: CLASS[c.champ] || 'front', mask: navMask(c.team), next: i * .05 + .02, foes: [], tid: 0, closest: 1e9, ratio: 1, noise: 0, noiseAt: 0, strafe: i % 2 ? 1 : -1,
+      gx: c.x, gy: c.y, ga: 20, hasGoal: false, vx: 0, vy: 0, vecT: 0, ex: 0, ey: 0, evadeT: 0, dodgeAt: 0, dodgeSeen: 0, path: null, pi: 0, pgx: 0, pgy: 0, needPath: false, sx: c.x, sy: c.y, stuck: 0, still: false, diveOk: false,
+      et: null, etTanks: 0, castAt: 0, chargeHold: 1.12, threatT: 9, parry: false, low: false, fighting: false, lhSoon: false, lastHome: 0, gank: null, gankCd: 0, deaths: [], siegeT: 0,
+      route: null, routeI: 0, cycles: 0, gankReady: false, chase: 0, noChase: 0, tradeT: 0, task: 'spawn', safeUntil: 0,
+      setSkill(x) { b.skill = clamp(x, 0, 1); b.sk = skillProfile(b.skill); },
+    };
+    b.setSkill(skill !== undefined ? skill : c.skill !== undefined ? c.skill : .5);
+    return b;
+  }
+
   // ---------- bots: navigation ----------
   // The nav grid sits beside the collision grid. Each cell holds bits: walls, standing
   // towers, a fountain a team must not enter, and tower range (costly, not forbidden).
   const NAV_WALL = 1, NAV_TOWER = 2, NAV_NO0 = 4, NAV_NO1 = 8, NAV_T0 = 16, NAV_T1 = 32;
-  const NAV_N = Math.ceil(W / 40) * Math.ceil(H / 40);
-  const navG = new Float32Array(NAV_N), navFrom = new Int32Array(NAV_N), navSeen = new Uint32Array(NAV_N), navDone = new Uint32Array(NAV_N);
-  const heapK = new Int32Array(NAV_N * 8), heapF = new Float32Array(NAV_N * 8);
+  // Search buffers are sized from the first map, whatever its dimensions are.
+  let navG = null, navFrom = null, navSeen = null, navDone = null, heapK = null, heapF = null, navCap = 0;
   let navRun = 0;
+  function navBuffers(m) {
+    const n = m.cols * m.rows; if (n <= navCap) return;
+    navCap = n; navG = new Float32Array(n); navFrom = new Int32Array(n); navSeen = new Uint32Array(n); navDone = new Uint32Array(n);
+    heapK = new Int32Array(n * 8); heapF = new Float32Array(n * 8);
+  }
   const navMask = team => NAV_WALL | NAV_TOWER | (team ? NAV_NO1 : NAV_NO0);
 
   function rebuildNav(s) {
     const m = s.map, c = m.cols, r = m.rows;
+    navBuffers(m);
     const nav = m.nav || (m.nav = new Uint8Array(c * r)), clr = m.clr || (m.clr = new Uint8Array(c * r));
     const [f0, f1] = s.fountains;
     for (let j = 0; j < r; j++) for (let i = 0; i < c; i++) {
@@ -774,6 +877,8 @@ const Sim = (() => {
       for (let y = Math.max(0, j - 1); y <= Math.min(r - 1, j + 1) && !near; y++) for (let x = Math.max(0, i - 1); x <= Math.min(c - 1, i + 1); x++) if (clr[y * c + x] === d - 1) { near = true; break; }
       if (near) clr[k] = d;
     }
+    // Cached lane geometry for corridor checks, and a map-derived centre.
+    m.laneLen = m.lanes.map(L => { let d = 0; for (let i = 0; i + 1 < L.length; i++) d += Math.hypot(L[i + 1][0] - L[i][0], L[i + 1][1] - L[i][1]); return d; });
   }
 
   function navCell(m, mask, x, y) {
@@ -804,7 +909,7 @@ const Sim = (() => {
 
   // A* on typed arrays, so a search allocates almost nothing.
   function navPath(m, team, ax, ay, bx, by) {
-    const c = m.cols, r = m.rows, nav = m.nav, clr = m.clr, mask = navMask(team), danger = team ? NAV_T0 : NAV_T1;
+    const c = m.cols, r = m.rows, nav = m.nav, clr = m.clr, mask = navMask(team), danger = team ? NAV_T0 : NAV_T1, N = c * r;
     const st = navCell(m, mask, ax, ay), en = navCell(m, mask, bx, by);
     if (st < 0 || en < 0) return null;
     const ex = en % c, ey = en / c | 0;
@@ -826,7 +931,7 @@ const Sim = (() => {
       return top;
     };
     navG[st] = 0; navFrom[st] = -1; navSeen[st] = navRun; push(st, 0);
-    while (hs && !found && guard++ < NAV_N) {
+    while (hs && !found && guard++ < N) {
       const n = pop(); if (navDone[n] === navRun) continue; navDone[n] = navRun;
       if (n === en) { found = true; break; }
       const x = n % c, y = n / c | 0;
@@ -921,12 +1026,15 @@ const Sim = (() => {
       }
       const n = norm(tx - c.x, ty - c.y); vx = n.x; vy = n.y;
     }
-    // Keep out of enemy tower range unless the wave is tanking or the dive is a safe kill.
+    // Keep out of enemy tower range unless two or more of our minions are tanking, or the dive is a sure kill.
+    // A tower already shooting this bot (its shots compound) means get out now regardless.
     if (!b.diveOk) for (const t of s.towers) {
-      if (!t.alive || t.team === c.team || (t === b.et && b.etTanks > 0)) continue;
+      if (!t.alive || t.team === c.team) continue;
+      const tanked = t === b.et && b.etTanks >= 2 && t.last !== c.id;
+      if (tanked) continue;
       const dx = t.x - c.x, dy = t.y - c.y, d = Math.hypot(dx, dy); if (d > t.range + 36) continue;
       const nx = dx / d, ny = dy / d, inw = vx * nx + vy * ny;
-      if (d < t.range - 6) { if (inw > -.4 && (vx || vy || b.hasGoal)) { vx = -nx; vy = -ny; onPath = false; } }
+      if (d < t.range - 6) { if (t.last === c.id || inw > -.4 && (vx || vy || b.hasGoal)) { vx = -nx; vy = -ny; onPath = false; } }
       else if (inw > 0) { vx -= nx * inw; vy -= ny * inw; if (Math.hypot(vx, vy) < .15) { vx = vy = 0; onPath = false; } }
     }
     // Spread out from allies. Dropped if it would push the bot at a wall.
@@ -957,15 +1065,34 @@ const Sim = (() => {
   }
 
   // ---------- bots: shared knowledge ----------
+  const LANE_END = 360, LATE_AT = 660; // laning phase, then roaming mid game, then grouped late game
   const hash01 = (a, b) => { let h = Math.imul(a * 73856093 ^ b * 19349663, 0x9E3779B1); h ^= h >>> 15; return (h >>> 0) / 4294967296; };
   const cast = (c, slot, tx, ty) => c.q.push({ t: 'cast', slot, tx, ty });
   const rdy = (c, i) => c.cd[i] <= 0 && (i < 2 || c.lvl >= 3);
   const frac = u => u.hp / u.maxHp;
+  const mapCenter = s => s.map.center || { x: W / 2, y: H / 2 };
+  const ensureAi = ai => { if (!ai.mem) { ai.mem = {}; ai.cover = {}; ai.phase = 'lane'; ai.hum = {}; ai.split = 0; } };
+  const roleLane = c => c.role === 'top' ? 0 : c.role === 'jungle' ? -1 : 1;
+
+  // Distance to, and closest point on, a lane's centre line.
+  function laneNearest(s, lane, x, y) {
+    const L = s.map.lanes[lane]; let bd = 1e9, bx = x, by = y;
+    for (let i = 0; i + 1 < L.length; i++) {
+      const ax = L[i][0], ay = L[i][1], dx = L[i + 1][0] - ax, dy = L[i + 1][1] - ay, l2 = dx * dx + dy * dy || 1;
+      const t = clamp(((x - ax) * dx + (y - ay) * dy) / l2, 0, 1), px = ax + dx * t, py = ay + dy * t, d = Math.hypot(x - px, y - py);
+      if (d < bd) { bd = d; bx = px; by = py; }
+    }
+    return { x: bx, y: by, d: bd };
+  }
+  const laneDist = (s, lane, x, y) => laneNearest(s, lane, x, y).d;
+
+  // Walls block lines, dashes, attacks and casts. Uses the game's own ray test.
+  const losClear = (s, ax, ay, bx, by) => hasLOS(ax, ay, bx, by);
 
   function lead(s, c, b, t, speed, delay = 0) {
-    const tt = (speed ? dist(c, t) / speed : 0) + delay, f = b.sk.lead * (.75 + s.rand() * .25);
+    const tt = (speed ? dist(c, t) / speed : 0) + delay, f = b.sk.lead * (.8 + s.rand() * .2);
     const x = t.x + t.vx * tt * f, y = t.y + t.vy * tt * f;
-    const a = Math.atan2(y - c.y, x - c.x) + (s.rand() - .5) * b.sk.err, l = Math.hypot(x - c.x, y - c.y);
+    const a = Math.atan2(y - c.y, x - c.x) + (s.rand() - .5) * b.sk.err * 2, l = Math.hypot(x - c.x, y - c.y);
     return { tx: c.x + Math.cos(a) * l, ty: c.y + Math.sin(a) * l };
   }
   function firstTower(s, team, lane) {
@@ -989,66 +1116,133 @@ const Sim = (() => {
     }
   }
 
-  // Rough worth of a champion in a fight.
-  function strength(u) {
-    let p = (1 + u.lvl * .13 + (u.up.edge + u.up.guard + u.up.haste) * .1) * (.3 + frac(u) * .7);
-    if (u.lvl >= 3 && u.cd[2] <= 0) p *= 1.2;
-    if (u.stunT > 0) p *= .7;
-    if (u.buffT > 0) p *= 1.15;
-    return p;
-  }
-  // Damage of each ability, used to judge kills. Vesper's assumes a full charge.
+  // Effective health times damage, square-rooted so a team's power adds up the Lanchester way.
+  // A team knows its own cooldowns; enemy cooldowns are assumed up.
   const BURST = { vesper: [190, 0, 260], kade: [124, 0, 185], ione: [82, 165, 345], solenne: [72, 0, 90], sable: [138, 0, 180], gravel: [64, 62, 165] };
+  function power(u, foe) {
+    const B = BURST[u.champ], pw = pow(u); let burst = 0;
+    for (let i = 0; i < 3; i++) if (i < 2 || u.lvl >= 3) burst += (foe || u.cd[i] <= 1.5 ? 1 : .15) * B[i] * pw / (u.kit[i].cd || 6);
+    const eh = Math.max(1, u.hp) * (100 + u.armor) / 100; let dps = u.dmgBase * u.as * (u.buffT > 0 ? 1.2 : 1) + burst;
+    if (u.stunT > 0) dps *= .6;
+    return Math.sqrt(eh * dps);
+  }
   function burstOn(c, t) {
     let v = c.dmgBase * 2; const B = BURST[c.champ];
     for (let i = 0; i < 3; i++) if (rdy(c, i)) v += B[i] * pow(c);
     return v * 100 / (100 + t.armor);
   }
-  // Who a support looks after: a person on the team when there is one, otherwise the bottom laner.
-  const carryOf = (s, c) => s.champs.find(a => a.team === c.team && a !== c && !a.bot && a.alive && a.role !== 'support') || s.champs.find(a => a.team === c.team && a.role === 'bottom' && a.alive);
+  // Who a support looks after. During the laning phase that is simply its bottom laner.
+  function carryOf(s, c, ai) {
+    const bot = s.champs.find(a => a.team === c.team && a !== c && a.alive && a.role === 'bottom');
+    if (ai.phase === 'lane') return bot || null;
+    return s.champs.find(a => a.team === c.team && a !== c && !a.bot && a.alive && a.role !== 'support') || bot || s.champs.find(a => a.team === c.team && a !== c && a.alive) || null;
+  }
   const CARRY = { vesper: 1, ione: .9, sable: .7, kade: .4, solenne: .3, gravel: 0 };
 
-  function nextBuy(c) {
-    let best = null, bv = 1e9;
-    KITS[c.champ].forge.forEach((track, i) => { const n = c.up[track]; if (n < 3 && n + i * .6 < bv) { bv = n + i * .6; best = track; } });
+  // Rough tower damage for the next shots at the current time, with compounding.
+  const towerShot = (s, stack) => (160 + s.t * .24) * Math.min(4, Math.pow(1.45, stack));
+
+  // Knowledge of enemies no longer in view: confidence fades, and the circle they could be in grows.
+  function memThreat(s, c, b, ai, x, y, r) {
+    let n = 0;
+    for (const e of s.champs) {
+      if (e.team === c.team || !e.alive) continue;
+      const m = ai.mem[e.id]; if (!m) continue;
+      const age = s.t - m.t; if (age < .7) continue; // in view now; counted from sight
+      const conf = Math.exp(-age / b.sk.mem); if (conf < .18) continue;
+      if (Math.hypot(m.x - x, m.y - y) - e.msBase * age * .45 < r) n += conf;
+    }
+    return n;
+  }
+
+  function nextBuy(s, c, ai) {
+    let best = null, bv = -1e9;
+    const cls = CLASS[c.champ], deaths = c.stats.deaths, kills = c.stats.kills;
+    for (const track of KITS[c.champ].forge) {
+      const n = c.up[track]; if (n >= 3) continue;
+      const i = KITS[c.champ].forge.indexOf(track), macro = c.bot.sk.macro;
+      // Kit order is the beginner's whole plan; a sharper player also reads the game.
+      let v = 3 - n * 1.1 + [2.2, 1, 0][i], sit = 0;
+      if (track === 'edge') sit += (cls === 'back' || cls === 'flank' ? 1.5 : 0) + (kills > deaths + 2 ? 1 : 0);
+      if (track === 'guard') sit += (cls === 'front' ? 1.8 : 0) + (deaths > kills + 2 ? 1.6 : 0) + (ai.phase !== 'lane' && cls === 'peel' ? 1 : 0);
+      if (track === 'haste') sit += (c.role === 'support' ? 1.2 : 0) + (c.role === 'jungle' ? .7 : 0);
+      v += sit * macro;
+      if (v > bv) { bv = v; best = track; }
+    }
     return best ? { track: best, cost: FORGE_COST[c.up[best]] } : null;
   }
 
   // ---------- bots: team plan, shared by every bot on a side ----------
   function teamThink(s, team) {
-    const ai = s.ai[team], mine = s.champs.filter(c => c.team === team && c.alive);
-    const foes = s.champs.filter(e => e.team !== team && e.alive && canSee(s, team, e));
-    const foesAlive = s.champs.filter(e => e.team !== team && e.alive).length;
-    // Defend the tower that needs it most.
-    let call = null, top = 2.4;
+    const ai = s.ai[team]; ensureAi(ai);
+    const mine = s.champs.filter(c => c.team === team && c.alive);
+    const foes = []; let foesAlive = 0;
+    for (const e of s.champs) {
+      if (e.team === team || !e.alive) continue;
+      foesAlive++;
+      if (!e.air && canSee(s, team, e)) { foes.push(e); ai.mem[e.id] = { x: e.x, y: e.y, t: s.t }; }
+    }
+    ai.phase = s.t < LANE_END ? 'lane' : s.t < LATE_AT ? 'mid' : 'late';
+    const laning = ai.phase === 'lane';
+
+    // Which lane each seat holds. A human who has left a lane open gets covered by the jungler only,
+    // so a lane is never filled by accident and never by more than one body.
+    ai.cover = {};
+    if (laning) for (const lane of [0, 1]) {
+      const seats = s.champs.filter(o => o.team === team && roleLane(o) === lane);
+      let held = false;
+      for (const o of seats) {
+        if (o.bot) { held = held || o.alive; continue; }
+        const here = !o.alive || (dist(o, s.fountains[team]) > 520 && laneDist(s, lane, o.x, o.y) < 400);
+        if (here) ai.hum[o.id] = s.t;
+        if (ai.hum[o.id] === undefined) ai.hum[o.id] = 0;
+        if (s.t < 45 || s.t - ai.hum[o.id] < 24) held = true;
+      }
+      // A dead laner's jungler only comes when its wave is actually threatening the lane's tower.
+      const guard = firstTower(s, team, lane);
+      if (held || !s.minions.some(m => m.team !== team && m.lane === lane && m.delay <= 0 && dist(m, guard) < guard.range + 500)) continue;
+      const jg = mine.find(c => c.bot && c.role === 'jungle' && frac(c) > .4);
+      if (jg) ai.cover[jg.id] = lane;
+    }
+
+    // Defend the tower that needs it most. During laning only that lane's seats and the jungler answer.
+    let call = null, top = 2.4, callWave = false;
     for (const t of s.towers) {
       if (!t.alive || t.team !== team) continue;
       const lost = (ai.thp[t.id] === undefined ? t.hp : ai.thp[t.id]) - t.hp; ai.thp[t.id] = t.hp;
       let champs = 0, wave = 0;
       for (const e of foes) if (dist(e, t) < t.range + 180) champs++;
       for (const m of s.minions) if (m.alive && m.team !== team && dist(m, t) < t.range + 40) wave++;
-      const v = (t.sub === 'core' ? 3 : 1 + t.tier * .5) * (champs * 2 + (lost > 0 ? 1.5 : 0)) + (wave >= 3 && !champs ? .5 : 0);
-      if (v > top) { top = v; call = t; }
+      let v = (t.sub === 'core' ? 3 : 1 + t.tier * .5) * (champs * 2 + (lost > 0 ? 1.5 : 0));
+      // A wave chewing on a tower is urgent: minions alone can take a tower, and a core late on.
+      if (wave >= 3 && !champs) v = Math.max(v, (lost > 0 ? 4.5 : 2.6) + (t.sub === 'core' ? 3 : t.tier));
+      if (v > top) { top = v; call = t; callWave = !champs; }
     }
     ai.defend = null;
     if (call) {
-      const need = call.sub === 'core' ? 4 : 2, ids = mine.filter(c => c.bot && frac(c) > .4).sort((a, b) => dist(a, call) - dist(b, call)).slice(0, need).map(c => c.id);
+      let pool = mine.filter(c => c.bot && frac(c) > .4);
+      if (laning && call.sub !== 'core') pool = pool.filter(c => c.role === 'jungle' || roleLane(c) === call.lane);
+      const need = callWave ? (call.sub === 'core' ? 2 : 1) : call.sub === 'core' ? 4 : 2, ids = pool.sort((a, b) => dist(a, call) - dist(b, call)).slice(0, need).map(c => c.id);
       const n = norm(s.fountains[team].x - call.x, s.fountains[team].y - call.y);
-      ai.defend = { id: call.id, x: call.x + n.x * 110, y: call.y + n.y * 110, ids };
+      if (ids.length) ai.defend = { id: call.id, x: call.x + n.x * 110, y: call.y + n.y * 110, ids, wave: callWave, lane: call.lane };
     }
-    // Group for the Colossus when the local odds are good.
-    const boss = s.monsters.find(m => m.boss && m.alive);
-    if (!boss) { ai.hoard = null; ai.hoardGo = false; }
+
+    // The Colossus: never during laning. Gather a little before it is due, take it when the side is able.
+    const boss = s.monsters.find(m => m.boss && m.alive), bossSoon = !boss && s.bossAt - s.t < 16;
+    if (laning || (!boss && !bossSoon)) { ai.hoard = null; ai.hoardGo = false; }
     else {
+      const center = mapCenter(s), home = s.fountains[team], n = norm(home.x - center.x, home.y - center.y);
       let minePow = 0, foePow = 0, close = 0;
-      for (const c of mine) { minePow += strength(c); if (dist(c, boss) < 780) close++; }
-      for (const e of foes) if (dist(e, boss) < 1150) foePow += strength(e);
+      const bossAt = boss || center;
+      for (const c of mine) { minePow += power(c); if (dist(c, bossAt) < 780) close++; }
+      for (const e of foes) if (dist(e, bossAt) < 1150) foePow += power(e, true);
       const enough = mine.length >= Math.min(3, s.champs.filter(c => c.team === team).length) || foesAlive <= 1;
       if (enough && foePow < minePow * .95 && !(call && call.sub === 'core')) {
-        ai.hoard = { x: W / 2 + (team ? 520 : -520), y: H / 2 };
-        if (close >= Math.min(3, mine.length)) ai.hoardGo = true;
+        ai.hoard = { x: center.x + n.x * 520, y: center.y + n.y * 120 + (team ? 40 : -40) };
+        if (boss && close >= Math.min(3, mine.length)) ai.hoardGo = true;
       } else { ai.hoard = null; ai.hoardGo = false; }
     }
+
     // Pick one enemy for the side to pile on: close to several allies, hurt, or already stunned.
     let focus = null, fv = 0;
     for (const e of foes) {
@@ -1058,9 +1252,9 @@ const Sim = (() => {
       if (v > fv) { fv = v; focus = e; }
     }
     ai.focus = focus ? focus.id : 0;
-    // Answer an ally who is being beaten on, people first. Nearby bots drop what they're doing.
+    // Answer an ally who is being beaten on, people first. In laning only the jungler rotates.
     ai.help = {};
-    const helpers = mine.filter(c => c.bot && !c.bot.low && frac(c) > .4 && !(ai.defend && ai.defend.ids.includes(c.id)));
+    const helpers = mine.filter(c => c.bot && !c.bot.low && frac(c) > .4 && !(ai.defend && ai.defend.ids.includes(c.id)) && (!laning || c.role === 'jungle'));
     const hurtAllies = mine.filter(a => Object.keys(a.assist).some(id => s.t - a.assist[id] < 2.6 && s.champs.some(e => e.id === +id && e.alive))).sort((a, b) => (a.bot ? 1 : 0) - (b.bot ? 1 : 0));
     for (const a of hurtAllies) {
       const person = !a.bot, reach = person ? 1500 : 1000, want = person ? 2 : 1, near = helpers.filter(c => c !== a && dist(c, a) < 520).length;
@@ -1072,10 +1266,10 @@ const Sim = (() => {
         ai.help[c.id] = a; need--;
       }
     }
-    // Sites: answer an enemy capture first, then jungle and support roam to open ones.
+    // Sites: answer an enemy capture first, then roam to open ones. Laners hold their lanes while laning.
     ai.sites = {};
     const open = s.sites.filter(z => z.alive && !towerOver(s, team, z.x, z.y, 0)), taken = new Set();
-    const free = mine.filter(c => c.bot && !c.bot.low && frac(c) > .45 && !ai.help[c.id]);
+    const free = mine.filter(c => c.bot && !c.bot.low && frac(c) > .45 && !ai.help[c.id] && (!laning || c.role === 'jungle'));
     const count = (list, z) => { let n = 0; for (const u of list) if (dist(u, z) < 450) n++; return n; };
     for (const z of open) {
       if (z.prog[1 - team] < .3) continue;
@@ -1083,30 +1277,37 @@ const Sim = (() => {
       for (const c of free) if (!ai.sites[c.id] && dist(c, z) < bd) { bd = dist(c, z); best = c; }
       if (best) { ai.sites[best.id] = z; taken.add(z.id); }
     }
+    const routeBusy = c => { const b = c.bot; if (!b.route) return true; const k = b.route[b.routeI]; return k && (k.alive || k.at - s.t < 8); };
     for (const role of ['jungle', 'support', 'top', 'bottom']) for (const c of free) {
       if (c.role !== role || ai.sites[c.id]) continue;
+      if (laning && role === 'jungle' && routeBusy(c)) continue;
       const laner = role === 'top' || role === 'bottom';
       if (laner && foes.some(e => dist(e, c) < 700)) continue;
-      if (role === 'support') { const carry = carryOf(s, c); if (carry && foes.some(e => dist(e, carry) < 650)) continue; }
-      let reach = role === 'jungle' ? 1500 : role === 'support' ? 750 : 420;
+      if (role === 'support') { const carry = carryOf(s, c, ai); if (carry && foes.some(e => dist(e, carry) < 650)) continue; }
+      let reach = role === 'jungle' ? (laning ? 900 : 1500) : role === 'support' ? 750 : 420;
       if (ai.push !== null) reach = Math.min(reach, 600);
       let best = null, bd = reach;
       for (const z of open) if (!taken.has(z.id) && dist(c, z) < bd && count(foes, z) <= count(mine, z)) { bd = dist(c, z); best = z; }
       if (best) { ai.sites[c.id] = best; taken.add(best.id); }
     }
-    // After about five minutes the side groups up and pushes one lane.
-    if (s.t >= 360 && mine.length >= foesAlive - 1) {
+    // Later the side groups and pushes one lane, leaving a strong top laner to split the other.
+    ai.split = 0;
+    const late = ai.phase === 'late', ahead = s.t >= 500 && (s.kills[team] - s.kills[1 - team] >= 6 || foesAlive <= mine.length - 3 || s.champs.some(c => c.team === team && c.buffT > 0));
+    if (!laning && mine.length >= foesAlive - 1 && (late || ahead)) {
       if (s.t >= ai.pushUntil || ai.push === null) {
         const left = [0, 1].map(l => s.towers.filter(t => t.alive && t.team !== team && t.lane === l).length);
         const adv = [0, 1].map(l => s.laneInfo[team][l].best);
         ai.push = left[0] !== left[1] ? (left[0] < left[1] ? 0 : 1) : (adv[0] >= adv[1] ? 0 : 1);
         ai.pushUntil = s.t + 35;
       }
+      const top = mine.find(c => c.bot && c.role === 'top' && frac(c) > .6);
+      if (top && mine.length >= foesAlive) ai.split = top.id;
     } else ai.push = null;
   }
 
   // ---------- bots: abilities, one short script per champion ----------
   function lineBlocked(s, c, b, x, y, w) {
+    if (!losClear(s, c.x, c.y, x, y)) return true;
     if (b.sk.iq < .4) return false;
     for (const m of s.minions) if (m.alive && m.team !== c.team && segDist(m.x, m.y, c.x, c.y, x, y) < m.r + w / 2) return true;
     return false;
@@ -1130,17 +1331,26 @@ const Sim = (() => {
     }
     return null;
   }
+  // An ultimate is worth casting for a kill, a group, or a real fight; a beginner just throws it.
+  function ultWorth(s, c, b, t) {
+    if (!t) return false;
+    if (b.sk.iq < .3) return s.rand() < .5;
+    let near = 0; for (const e of b.foes) if (dist(e, t) < 360) near++;
+    return t.hp <= burstOn(c, t) || near >= 2 || (b.ratio > .9 && frac(t) < .7 && (b.sk.iq > .5 || s.rand() < .6));
+  }
 
   const COMBO = {
     vesper(s, c, b, t, d, mode) {
       if (!t) return false;
       if (rdy(c, 1) && (mode === 'retreat' || d < 260)) { const a = awayPoint(s, c, t, 270); cast(c, 1, a.x, a.y); return true; }
-      if (mode === 'fight' && rdy(c, 2) && d < 1000 && (frac(t) < .5 || t.hp <= burstOn(c, t)) && (t.stunT > 0 || Math.hypot(t.vx, t.vy) < 200 || b.sk.iq < .5)) {
-        const p = lead(s, c, b, t, 2600, .85); cast(c, 2, p.tx, p.ty); return true;
+      if (mode === 'fight' && rdy(c, 2) && d < 1020 && losClear(s, c.x, c.y, t.x, t.y)) {
+        // Deadeye is the longest, slowest wind-up. Save it for a stunned, slowed or dying target.
+        const pinned = t.stunT > 0 || t.slowT > 0 || Math.hypot(t.vx, t.vy) < 200 || t.chan || t.charge;
+        if ((pinned || b.sk.iq < .5) && (ultWorth(s, c, b, t) || frac(t) < .5)) { const p = lead(s, c, b, t, 2600, .85); cast(c, 2, p.tx, p.ty); return true; }
       }
       if (mode !== 'retreat' && rdy(c, 0) && d < 780 && !lineBlocked(s, c, b, t.x, t.y, 34)) {
         c.q.push({ t: 'charge', slot: 0 });
-        // Full charge when nothing is close. Easy bots let go at odd moments.
+        // Full charge when nothing is close. A beginner lets go at odd moments.
         b.chargeHold = b.sk.iq < .4 ? .3 + s.rand() * .9 : (b.closest > 360 && frac(c) > .4 ? 1.12 : .5);
         return true;
       }
@@ -1156,29 +1366,29 @@ const Sim = (() => {
       }
       if (mode === 'retreat') { if (rdy(c, 0) && d < 400) { const a = awayPoint(s, c, t, 290); cast(c, 0, a.x, a.y); return true; } return false; }
       if (mode !== 'fight') return false;
-      if (rdy(c, 2) && d > 200 && d < 520 && b.ratio >= .9) { const p = lead(s, c, b, t, 1100); cast(c, 2, p.tx, p.ty); return true; }
-      if (rdy(c, 0) && d < 300) { cast(c, 0, t.x, t.y); return true; }
+      if (rdy(c, 2) && d > 200 && d < 520 && b.ratio >= .9 && ultWorth(s, c, b, t)) { const p = lead(s, c, b, t, 1100); cast(c, 2, p.tx, p.ty); return true; }
+      if (rdy(c, 0) && d < 300 && losClear(s, c.x, c.y, t.x, t.y)) { cast(c, 0, t.x, t.y); return true; }
       return false;
     },
     ione(s, c, b, t, d, mode) {
       if (!t || mode === 'retreat') return false;
-      if (mode === 'fight' && rdy(c, 2) && d < 620) { cast(c, 2, t.x, t.y); return true; }
-      if (t.markT > 0 && rdy(c, 1) && d < 520) { const p = lead(s, c, b, t, 0, .55); cast(c, 1, p.tx, p.ty); return true; }
+      if (mode === 'fight' && rdy(c, 2) && d < 620 && losClear(s, c.x, c.y, t.x, t.y) && (ultWorth(s, c, b, t) || t.stunT > 0)) { cast(c, 2, t.x, t.y); return true; }
+      if (t.markT > 0 && rdy(c, 1) && d < 520 && losClear(s, c.x, c.y, t.x, t.y)) { const p = lead(s, c, b, t, 0, .55); cast(c, 1, p.tx, p.ty); return true; }
       if (rdy(c, 0) && d < 610 && !lineBlocked(s, c, b, t.x, t.y, 42)) { const p = lead(s, c, b, t, 950); cast(c, 0, p.tx, p.ty); return true; }
       // Without a mark coming, Rupture is only worth it on a stunned or careless target.
-      if (rdy(c, 1) && d < 520 && (b.sk.iq < .5 ? s.rand() < .5 : c.cd[0] > 2.5 && mode === 'fight')) { const p = lead(s, c, b, t, 0, .55); cast(c, 1, p.tx, p.ty); return true; }
+      if (rdy(c, 1) && d < 520 && losClear(s, c.x, c.y, t.x, t.y) && (b.sk.iq < .5 ? s.rand() < .5 : c.cd[0] > 2.5 && (mode === 'fight' || t.stunT > 0))) { const p = lead(s, c, b, t, 0, .55); cast(c, 1, p.tx, p.ty); return true; }
       return false;
     },
     solenne(s, c, b, t, d, mode) {
       if (rdy(c, 1)) { const a = threatenedAlly(s, c, b); if (a && (b.sk.iq > .4 || s.rand() < .3)) { cast(c, 1, a.x, a.y); return true; } }
       if (rdy(c, 2)) {
         let n = 0; for (const a of s.champs) if (a.alive && a.team === c.team && dist(a, c) < 320 && (frac(a) < .55 || a.stunT > 0)) n++;
-        if (n >= 1 && b.closest < 700) { cast(c, 2, c.x, c.y); return true; }
+        if (n >= 1 && b.closest < 700 && (b.sk.iq > .3 || s.rand() < .5)) { cast(c, 2, c.x, c.y); return true; }
       }
       if (rdy(c, 0)) {
         let ally = null, low = .82;
-        for (const a of s.champs) if (a !== c && a.alive && a.team === c.team && dist(a, c) < 650 && frac(a) < low) { low = frac(a); ally = a; }
-        if (ally) { const p = lead(s, c, b, ally, 1150); cast(c, 0, p.tx, p.ty); return true; }
+        for (const a of s.champs) if (a !== c && a.alive && a.team === c.team && dist(a, c) < 650 && frac(a) < low && losClear(s, c.x, c.y, a.x, a.y)) { low = frac(a); ally = a; }
+        if (ally && !b.foes.some(e => segDist(e.x, e.y, c.x, c.y, ally.x, ally.y) < e.r + 30)) { const p = lead(s, c, b, ally, 1150); cast(c, 0, p.tx, p.ty); return true; }
         if (t && mode !== 'retreat' && d < 650 && !lineBlocked(s, c, b, t.x, t.y, 46)) { const p = lead(s, c, b, t, 1150); cast(c, 0, p.tx, p.ty); return true; }
       }
       return false;
@@ -1195,7 +1405,7 @@ const Sim = (() => {
         // Blink always travels full range, so this lands behind the target.
         if (mode === 'fight' && d > 170 && d < 300) { cast(c, 1, t.x, t.y); return true; }
       }
-      if (mode !== 'retreat' && rdy(c, 0) && d < 225) { cast(c, 0, t.x, t.y); return true; }
+      if (mode !== 'retreat' && rdy(c, 0) && d < 225 && losClear(s, c.x, c.y, t.x, t.y)) { cast(c, 0, t.x, t.y); return true; }
       return false;
     },
     gravel(s, c, b, t, d, mode) {
@@ -1203,7 +1413,7 @@ const Sim = (() => {
       if (rdy(c, 1) && d < 225) { cast(c, 1, c.x, c.y); return true; }
       if (mode === 'retreat') return false;
       if (rdy(c, 0) && d > 170 && d < 590 && !lineBlocked(s, c, b, t.x, t.y, 50) && (mode === 'fight' || b.ratio >= 1)) { const p = lead(s, c, b, t, 1050); cast(c, 0, p.tx, p.ty); return true; }
-      if (mode === 'fight' && rdy(c, 2) && d < 580 && b.ratio >= .9) { const p = lead(s, c, b, t, 1000); cast(c, 2, p.tx, p.ty); return true; }
+      if (mode === 'fight' && rdy(c, 2) && d < 580 && b.ratio >= .9 && losClear(s, c.x, c.y, t.x, t.y) && ultWorth(s, c, b, t)) { const p = lead(s, c, b, t, 1000); cast(c, 2, p.tx, p.ty); return true; }
       return false;
     },
   };
@@ -1224,11 +1434,14 @@ const Sim = (() => {
     if (!t || d > 830) { c.q.push({ t: 'cancel' }); return; }
     const p = lead(s, c, b, t, 1600); c.q.push({ t: 'aim', tx: p.tx, ty: p.ty });
     const ct = c.charge.t, reach = 500 + 300 * clamp(ct / 1.1, 0, 1), hurry = b.closest < 300 || b.low;
-    if ((ct >= b.chargeHold || hurry) && reach >= d - 20) cast(c, 0, p.tx, p.ty);
+    if ((ct >= b.chargeHold || hurry) && reach >= d - 20 && losClear(s, c.x, c.y, p.tx, p.ty)) cast(c, 0, p.tx, p.ty);
     else if (ct >= 1.6) c.q.push({ t: 'cancel' });
   }
 
   // ---------- bots: senses ----------
+  // Dodging uses only what a player can see: a shot's line, a blast ring, a wind-up. Each shot gets
+  // one roll, a reaction delay, and a sidestep away from the line. A beginner often doesn't react
+  // and sometimes steps the wrong way.
   function senseThreats(s, c, b) {
     const sk = b.sk; let soon = 9, ex = 0, ey = 0, id = 0;
     const note = (tti, x, y, key) => { if (tti < soon) soon = tti; if (x || y) { ex = x; ey = y; id = key; } };
@@ -1258,33 +1471,46 @@ const Sim = (() => {
       if (KITS[e.champ].melee && e.atkCd < .15 && dist(e, c) < e.range + c.r + 6 && sk.iq > .5) note(.15, 0, 0, 0);
     }
     b.threatT = soon;
-    // Each shot gets one roll, so a low-skill bot misses it for good.
-    if (id && b.evadeT <= 0 && hash01(id, c.id) < sk.dodge) { b.ex = ex; b.ey = ey; b.evadeT = .3; }
+    if (id && id !== b.dodgeSeen) {
+      b.dodgeSeen = id;
+      if (hash01(id, c.id) < sk.dodge) {
+        const flip = hash01(id, c.id + 5) < sk.wrongWay ? -1 : 1;
+        b.pendEx = ex * flip; b.pendEy = ey * flip; b.pendT = s.t + sk.react * (.5 + s.rand() * .8);
+      }
+    }
+    if (b.pendT && s.t >= b.pendT) { b.pendT = 0; if (b.evadeT <= 0) { b.ex = b.pendEx; b.ey = b.pendEy; b.evadeT = .24 + s.rand() * .22; } }
     b.parry = soon < .3 && (sk.iq > .4 || s.rand() < .25);
   }
 
   function pickTarget(s, c, b, ai) {
-    const sk = b.sk, carry = c.role === 'support' ? carryOf(s, c) : null;
+    const sk = b.sk, carry = c.role === 'support' ? carryOf(s, c, ai) : null, front = b.cls === 'front';
     let best = null, bv = -1e9;
     for (const e of b.foes) {
       const d = dist(c, e); if (d > sk.see) continue;
       const kill = e.hp <= burstOn(c, e);
-      let v = 1.4 * (1 - d / 1000) + sk.iq * ((1 - frac(e)) * 1.1 + CARRY[e.champ] * .5 + (kill ? 1.2 : 0));
+      let v = (front ? 1.8 : 1.4) * (1 - d / 1000) + sk.iq * ((1 - frac(e)) * 1.1 + CARRY[e.champ] * (b.cls === 'flank' ? 1.2 : .5) + (kill ? 1.2 : 0));
       if (e.id === b.tid) v += .35;
       if (e.id === ai.focus) v += .3 + sk.iq * .3;
       if (carry && sk.iq > .4 && dist(e, carry) < 380) v += .8;
       if (sk.iq > .4 && !kill) { const tw = towerOver(s, c.team, e.x, e.y); if (tw && alliesTanking(s, c.team, tw) < 2) v -= 1.2; }
+      if (sk.iq > .3 && !losClear(s, c.x, c.y, e.x, e.y)) v -= .4;
       if (v > bv) { bv = v; best = e; }
     }
     return best;
   }
 
-  function assess(s, c, b) {
-    let mine = strength(c), theirs = 0;
-    for (const a of s.champs) if (a !== c && a.alive && a.team === c.team && dist(a, c) < 850) mine += strength(a);
-    for (const e of b.foes) if (dist(e, c) < 1000) theirs += strength(e);
-    for (const t of s.towers) if (t.alive && dist(c, t) < t.range) { if (t.team === c.team) mine += .55; else theirs += t === b.et && b.etTanks ? .2 : .9; }
-    return mine * b.sk.aggr * (1 + b.noise * b.sk.judge) / Math.max(theirs, .01);
+  function assess(s, c, b, ai) {
+    let mine = power(c), theirs = 0, foeN = 0;
+    for (const a of s.champs) if (a !== c && a.alive && a.team === c.team && dist(a, c) < 850) mine += power(a);
+    for (const e of b.foes) if (dist(e, c) < 1000) { theirs += power(e, true); foeN++; }
+    // Enemies last seen nearby still count, at the confidence the bot's memory allows.
+    const mem = memThreat(s, c, b, ai, c.x, c.y, 900);
+    if (mem > .1 && foeN) theirs += mem * (theirs / foeN) * .7;
+    // Being under a friendly tower is worth a lot; under an enemy one worse still unless the wave is tanking.
+    for (const t of s.towers) if (t.alive && dist(c, t) < t.range) { if (t.team === c.team) mine *= 1.3; else theirs = (theirs || power(c) * .6) * (t === b.et && b.etTanks >= 2 ? 1.15 : 1.8); }
+    let fn = 0, on = 0; for (const m of s.minions) if (m.alive && dist(m, c) < 420) { if (m.team === c.team) on++; else fn++; }
+    const waveK = clamp(1 + (on - fn) * .05, .75, 1.25);
+    return mine * waveK * b.sk.aggr * (1 + b.noise * b.sk.judge) / Math.max(theirs, .01);
   }
 
   function findLastHit(s, c, b) {
@@ -1294,8 +1520,10 @@ const Sim = (() => {
       if (!m.alive || m.team === c.team || m.delay > 0 || m.hp > hit * 2.6) continue;
       const d = dist(c, m) - m.r; if (d > c.range + 200) continue;
       b.lhSoon = true;
-      const tt = melee ? 0 : Math.max(0, d) / 1100; let inc = 0;
+      const tt = Math.max(0, c.atkCd) + (melee ? 0 : Math.max(0, d) / 1100); let inc = 0;
       for (const p of s.proj) if (p.homing && p.target === m && dist(p, m) / p.speed <= tt + .05) inc += p.dmg * 100 / 110;
+      // Allied melee minions already swinging at it land before a slow shot would.
+      if (tt > .4) for (const a of s.minions) if (a.alive && a.team === c.team && !a.ranged && a.cd < tt && dist(a, m) - m.r < a.range) inc += a.dmg * 100 / 110;
       const left = m.hp - inc;
       if (left <= 0 || left > hit * (1 + sk.lhErr * (hash01(m.id, c.id) * 2 - 1)) || hash01(m.id, c.id + 991) > sk.lh) continue;
       if (left < bh) { bh = left; best = m; }
@@ -1304,95 +1532,154 @@ const Sim = (() => {
   }
 
   // ---------- bots: jobs ----------
-  function fightMove(s, c, b, t, d) {
-    const k = KITS[c.champ];
+  function fightMove(s, c, b, t, d, ai) {
+    const k = KITS[c.champ], iq = b.sk.iq, cls = b.cls;
+    // Peel: a support stays close to the carry and never out in front of it.
+    if (cls === 'peel') {
+      const carry = carryOf(s, c, ai);
+      if (carry && dist(carry, c) > 420) { const n = norm(s.fountains[c.team].x - carry.x, s.fountains[c.team].y - carry.y); moveTo(b, carry.x + n.x * 120, carry.y + n.y * 120, 40); return; }
+    }
     if (k.melee) {
+      if (cls === 'flank' && iq > .45 && d > 260 && d < 800) {
+        // Come in from the side or behind, where Rend hits hardest.
+        const bx = t.x - (t.fx || 0) * 150, by = t.y - (t.fy || 0) * 150;
+        moveTo(b, bx + -(t.fy || 0) * b.strafe * 90, by + (t.fx || 0) * b.strafe * 90, 50); return;
+      }
       if (d > k.pref) moveTo(b, t.x + t.vx * .12, t.y + t.vy * .12, k.pref * .7);
-      else if (b.sk.iq > .6) { const n = norm(t.x - c.x, t.y - c.y); moveDir(b, -n.y * b.strafe, n.x * b.strafe); }
+      else if (iq > .6) { const n = norm(t.x - c.x, t.y - c.y); moveDir(b, -n.y * b.strafe, n.x * b.strafe); }
       else noMove(b);
       return;
     }
+    // Walls block attacks, so a ranged bot with no line of sight must walk until it has one.
+    if (d < c.range + t.r && !losClear(s, c.x, c.y, t.x, t.y)) { moveTo(b, t.x, t.y, Math.max(40, k.pref * .6)); return; }
+    // Ranged: stay at the edge of range, beyond the target's reach when possible.
+    const edge = Math.max(c.range + t.r - 30, (t.range || 0) + 45);
     if (d > c.range + t.r - 15) moveTo(b, t.x, t.y, k.pref);
-    else if (d < k.pref * .72) { const n = norm(c.x - t.x, c.y - t.y); moveDir(b, n.x, n.y); }
-    else if (b.sk.iq > .4) { const n = norm(t.x - c.x, t.y - c.y); moveDir(b, -n.y * b.strafe, n.x * b.strafe); }
+    else if (d < Math.min(edge, k.pref * .72) || (c.atkCd > .25 && d < t.range + 80)) { const n = norm(c.x - t.x, c.y - t.y); moveDir(b, n.x, n.y); }
+    else if (iq > .4) { const n = norm(t.x - c.x, t.y - c.y); moveDir(b, -n.y * b.strafe, n.x * b.strafe); }
     else noMove(b);
   }
 
+  // Where this bot should stand on a lane: behind its own wave, or by its tower when there is none.
   function laneTask(s, c, b, lane, ai, pushing) {
     const k = KITS[c.champ], info = s.laneInfo[c.team][lane], front = info.front, foeFront = s.laneInfo[1 - c.team][lane].front, own = firstTower(s, c.team, lane);
-    const home = s.fountains[c.team], wob = Math.sin(c.slot * 2.1);
+    const wob = Math.sin(c.slot * 2.1), center = mapCenter(s);
     let x, y;
     if (front) {
       const p = front.path, wp = Math.min(front.wp, p.length - 1), prev = p[Math.max(0, wp - 1)], n = norm(prev[0] - front.x, prev[1] - front.y);
-      const back = k.melee ? 60 : clamp(c.range * .5, 60, 240);
+      const back = k.melee ? 60 : clamp(c.range * .55, 80, 260);
       x = front.x + n.x * back - n.y * wob * 46; y = front.y + n.y * back + n.x * wob * 46;
-    } else { x = own.x + (c.team ? -130 : 130); y = own.y + (lane ? -40 : 40); }
-    // The support stands just behind its carry when the carry is out on the map.
-    const carry = c.role === 'support' ? [carryOf(s, c)].find(a => a && dist(a, home) > 800) || null : null;
-    if (carry && dist(carry, c) < 1500) { const n = norm(home.x - carry.x, home.y - carry.y); x = carry.x + n.x * 130 - n.y * 60; y = carry.y + n.y * 130 + n.x * 60; }
-    const lh = carry && dist(carry, c) < 800 ? null : findLastHit(s, c, b);
+    } else if (pushing) {
+      const et = firstTower(s, 1 - c.team, lane), n = norm(c.x - et.x, c.y - et.y), n2 = norm(s.fountains[c.team].x - et.x, s.fountains[c.team].y - et.y);
+      x = et.x + n2.x * (et.range + 90); y = et.y + n2.y * (et.range + 90);
+    } else { const n = norm(center.x - own.x, center.y - own.y); x = own.x + n.x * 130; y = own.y + n.y * 130 + (lane ? -40 : 40); }
+    // Never let the standing spot drift off the lane or inside an enemy tower it can't tank.
+    const near = laneNearest(s, lane, x, y);
+    if (near.d > 200) { const n = norm(x - near.x, y - near.y); x = near.x + n.x * 200; y = near.y + n.y * 200; }
+    const tw = towerOver(s, c.team, x, y, 34);
+    if (tw && alliesTanking(s, c.team, tw) < 2) { const n = norm(x - tw.x, y - tw.y); x = tw.x + n.x * (tw.range + 50); y = tw.y + n.y * (tw.range + 50); }
+    // The support stays with its carry, a little behind.
+    const carry = c.role === 'support' ? carryOf(s, c, ai) : null, withCarry = carry && dist(carry, s.fountains[c.team]) > 700;
+    if (withCarry) { const n = norm(s.fountains[c.team].x - carry.x, s.fountains[c.team].y - carry.y); x = carry.x + n.x * 130 - n.y * 60; y = carry.y + n.y * 130 + n.x * 60; }
+    const lh = withCarry && dist(carry, c) < 800 ? null : findLastHit(s, c, b);
     let dest = { x, y, a: 26 };
     const t = b.et;
-    if (t && b.etTanks > 0 && towerOpen(s, t)) b.siegeT = s.t + .8; // a wave stepping in and out of range must not flip the plan
+    if (t && b.etTanks >= 2 && towerOpen(s, t)) b.siegeT = s.t + .8; // a wave stepping in and out of range must not flip the plan
     const siege = t && s.t < b.siegeT && towerOpen(s, t);
+    const underTw = towerOver(s, c.team, c.x, c.y, 10);
+    // Wave plan: shove when told to or when the lane is free; otherwise last-hit and let the wave hold.
+    const free = b.closest > 1100;
+    const shove = pushing || free || (foeFront && dist(foeFront, own) < own.range + 260) || frac(c) < b.sk.low + .2;
     if (lh && dist(c, lh) - lh.r <= c.range) { c.atk = true; c.atkPref = lh.id; }
-    else if (lh && !carry) dest = { x: lh.x, y: lh.y, a: c.range + lh.r - 30 };
+    else if (lh && !carry && !underTw && !towerOver(s, c.team, lh.x, lh.y, 10)) dest = { x: lh.x, y: lh.y, a: c.range + lh.r - 30 };
     else if (siege && dist(c, t) - t.r < c.range + 200) {
       if (dist(c, t) - t.r <= c.range - 4) { c.atk = true; c.atkPref = t.id; c.preferTower = true; }
       else dest = { x: t.x, y: t.y, a: c.range + t.r - 24 };
-    } else if (pushing || b.closest > 900 || (foeFront && dist(foeFront, own) < own.range)) c.atk = true;
-    else if (b.lhSoon) c.atk = false;
+    } else if (shove) {
+      // Hit the wave, but never a champion from inside tower range: that brings the tower down on us.
+      let near = null, nd = c.range + 15;
+      for (const m of s.minions) if (m.alive && m.team !== c.team && m.delay <= 0) { const d = dist(c, m) - m.r; if (d < nd) { nd = d; near = m; } }
+      if (near) { c.atk = true; c.atkPref = near.id; } else if (!underTw) c.atk = true;
+    } else if (b.lhSoon) c.atk = false;
     else {
       const tgt = b.foes.find(e => e.id === b.tid);
-      if (tgt && dist(c, tgt) - tgt.r < c.range && !towerOver(s, c.team, c.x, c.y)) {
-        let near = 0; for (const m of s.minions) if (m.alive && m.team !== c.team && dist(m, c) < 380) near++;
-        if (near <= 2) { c.atk = true; c.atkPref = tgt.id; }
+      if (tgt && dist(c, tgt) - tgt.r < c.range && !underTw) {
+        let n = 0; for (const m of s.minions) if (m.alive && m.team !== c.team && dist(m, c) < 380) n++;
+        if (n <= 2) { c.atk = true; c.atkPref = tgt.id; }
       }
     }
     moveTo(b, dest.x, dest.y, dest.a);
   }
 
-  function pickGank(s, c, b) {
+  // A gank is earned: only after a full jungle route, and only on a target worth it.
+  function pickGank(s, c, b, ai) {
     if (b.gank) {
       const e = b.foes.find(x => x.id === b.gank.id);
       if (e && s.t < b.gank.until && !towerOver(s, c.team, e.x, e.y)) return e;
       b.gank = null; b.gankCd = s.t + 8;
     }
-    if (s.t < b.gankCd || frac(c) < .55 || c.lvl < 2) return null;
-    let best = null, bv = .9;
+    if (!b.gankReady || s.t < b.gankCd || frac(c) < .6 || c.lvl < 2) return null;
+    let best = null, bv = .72;
     for (const e of b.foes) {
-      if (dist(e, c) > 1500 || towerOver(s, c.team, e.x, e.y)) continue;
-      const deep = c.team ? e.x > W * .52 : e.x < W * .48, hurt = frac(e);
-      let v = (deep ? 1 : 0) + (hurt < .5 ? 1 : 0) + (hurt < .3 ? .5 : 0);
-      if (hurt > .4 && !s.champs.some(a => a !== c && a.alive && a.team === c.team && dist(a, e) < 700)) v -= .8;
-      v *= .5 + b.sk.iq * .5;
+      if (dist(e, c) > 1800 || towerOver(s, c.team, e.x, e.y)) continue;
+      const deep = c.team ? e.x > W * .52 : e.x < W * .48, hurt = frac(e), mate = s.champs.some(a => a !== c && a.alive && a.team === c.team && dist(a, e) < 700);
+      let v = (deep ? .9 : 0) + (hurt < .7 ? .5 : 0) + (hurt < .4 ? .6 : 0) + (mate ? .55 : 0);
+      if (!deep && hurt > .55 && !mate) v -= .8;
+      if (memThreat(s, c, b, ai, e.x, e.y, 700) > 1) v -= .5;
+      v *= .55 + b.sk.iq * .45;
       if (v > bv) { bv = v; best = e; }
     }
-    if (best) b.gank = { id: best.id, until: s.t + 14 };
+    if (best) { b.gank = { id: best.id, until: s.t + 14 }; b.gankReady = false; }
     return best;
   }
 
+  // Own camps in order: one half of the map, then the other. A full circuit earns a gank.
+  function jungleRoute(s, c, b) {
+    const own = s.camps.filter(k => k.side === c.team);
+    const upper = own.filter(k => k.y < H / 2), lower = own.filter(k => k.y >= H / 2), firstUp = hash01(c.id + (c.team * 37), 11) < .5;
+    const byBig = (a, z) => (a.big ? 1 : 0) - (z.big ? 1 : 0);
+    const route = [...(firstUp ? upper : lower).sort(byBig), ...(firstUp ? lower : upper).sort((a, z) => byBig(z, a))];
+    b.route = route; b.routeI = 0;
+  }
+
   function jungleTask(s, c, b, ai) {
-    const g = pickGank(s, c, b);
-    if (g) { moveTo(b, g.x, g.y, 60); c.atk = true; return; }
-    let best = null, bc = 1e9;
-    for (const camp of s.camps) {
-      const own = camp.side === c.team, wait = camp.alive ? 0 : Math.max(0, camp.at - s.t);
-      if (wait > 25 || (!own && b.foes.some(e => dist(e, camp) < 900))) continue;
-      const cost = Math.max(dist(c, camp) / c.msBase, wait) - (camp.big ? 3 : 0) + (own ? 0 : 6);
-      if (cost < bc) { bc = cost; best = camp; }
+    b.task = 'jungle';
+    const g = pickGank(s, c, b, ai);
+    if (g) { b.task = 'gank'; moveTo(b, g.x, g.y, 60); c.atk = true; return; }
+    if (!b.route) jungleRoute(s, c, b);
+    // Walk the route: the current camp if it is up or nearly up, otherwise the next live one.
+    // A camp cleared and not back soon moves the route on; finishing a circuit earns a gank.
+    let camp = null;
+    for (let i = 0; i < b.route.length; i++) {
+      const k = b.route[b.routeI];
+      if (k.alive || k.at - s.t < 12) { camp = k; break; }
+      b.routeI++; if (b.routeI >= b.route.length) { b.routeI = 0; b.cycles++; b.gankReady = true; }
     }
-    if (!best) { laneTask(s, c, b, c.y < H / 2 ? 0 : 1, ai, false); return; }
+    if (!camp) {
+      // Everything of ours is down. Stand at the camp due back soonest, unless an enemy-side camp is free after laning.
+      let soon = null, st = 1e9;
+      for (const k of b.route) if (k.at < st) { st = k.at; soon = k; }
+      let enemy = null, bc = 1e9;
+      if (ai.phase !== 'lane') for (const k of s.camps) {
+        if (!k.alive || k.side === c.team) continue;
+        if (memThreat(s, c, b, ai, k.x, k.y, 700) > .7 || b.foes.some(e => dist(e, k) < 900)) continue;
+        const d = dist(c, k); if (d < bc) { bc = d; enemy = k; }
+      }
+      camp = enemy || soon;
+    }
     let m = null, md = 1e9;
-    if (best.alive) for (const x of s.monsters) if (x.alive && x.camp === best.id) { const d = dist(c, x); if (d < md) { md = d; m = x; } }
-    if (!m) { moveTo(b, best.x, best.y, 40); return; }
+    if (camp.alive) for (const x of s.monsters) if (x.alive && x.camp === camp.id) { const d = dist(c, x); if (d < md) { md = d; m = x; } }
+    if (!m) { moveTo(b, camp.x, camp.y, 40); return; }
+    const low = frac(c);
+    if (low < (camp.big ? .42 : .34) && !s.monsters.some(x => x.alive && x.camp === camp.id && x.hp < x.maxHp * .35)) { b.low = true; return; }
     moveTo(b, m.x, m.y, KITS[c.champ].pref * .85);
     if (md - m.r <= c.range) { c.atk = true; c.atkPref = m.id; }
     castPve(s, c, b, m, md);
   }
 
   function hoardTask(s, c, b, ai) {
-    const boss = s.monsters.find(m => m.boss && m.alive); if (!boss) return false;
+    const boss = s.monsters.find(m => m.boss && m.alive);
+    if (!boss) { moveTo(b, ai.hoard.x, ai.hoard.y, 90); return true; } // gather a little before it spawns
     const d = dist(c, boss);
     if (!ai.hoardGo && d > 760) { moveTo(b, ai.hoard.x, ai.hoard.y, 90); return true; }
     const want = Math.max(KITS[c.champ].pref + boss.r * .3, boss.r + c.r + 10);
@@ -1404,7 +1691,8 @@ const Sim = (() => {
 
   // ---------- bots: the decision each bot makes ----------
   function botThink(s, c, b) {
-    const sk = b.sk, ai = s.ai[c.team], f = frac(c), home = s.fountains[c.team], homeD = dist(c, home);
+    const sk = b.sk, ai = s.ai[c.team]; ensureAi(ai);
+    const f = frac(c), home = s.fountains[c.team], homeD = dist(c, home), laning = ai.phase === 'lane', laner = c.role !== 'jungle' && roleLane(c) >= 0;
     c.atk = false; c.atkPref = 0; c.preferTower = false; b.still = false; b.diveOk = false;
     if (s.t >= b.noiseAt) { b.noise = (s.rand() - .5) * 2; b.noiseAt = s.t + 3 + s.rand() * 3; b.strafe = -b.strafe; }
 
@@ -1417,68 +1705,129 @@ const Sim = (() => {
     if (c.stunT > 0) { noMove(b); return; }
 
     if (homeD < 300) { b.lastHome = s.t; if (f > .92) b.low = false; }
-    // Forge the moment it's affordable, wherever the bot stands: a player has the same button.
-    const nb = nextBuy(c); if (nb && c.gold >= nb.cost) c.q.push({ t: 'forge', track: nb.track });
+    // Forge the moment it's affordable: anyone can press the button from anywhere.
+    const nb = nextBuy(s, c, ai); if (nb && c.gold >= nb.cost) c.q.push({ t: 'forge', track: nb.track });
+    if (c.hp < (b.hpWas || c.hp) - .5) b.hurtAt = s.t;
+    b.hpWas = c.hp;
     if (c.chan && c.chan.recall) {
-      if (b.closest >= 650) { b.still = true; noMove(b); return; }
+      if (b.closest >= 650) { b.task = 'recall'; b.still = true; noMove(b); return; }
       // moving is what cancels a recall, the same as for a player
     }
-    b.ratio = t ? assess(s, c, b) : 2;
+    b.ratio = t ? assess(s, c, b, ai) : 2;
     // Just died, or keeps dying: come back carefully rather than feed the same fight.
     const recent = b.deaths.reduce((n, at) => n + (s.t - at < 120 ? 1 : 0), 0), fresh = c.spawnT !== undefined && s.t - c.spawnT < 16;
-    if (recent >= 2 || fresh) b.ratio *= Math.max(.78, 1 - (recent - 1) * .08) * (fresh ? .94 : 1);
+    if (recent >= 2) { const last = b.deaths[b.deaths.length - 1] || 0; b.safeUntil = Math.max(b.safeUntil, last + 22 + (recent - 1) * 14); }
+    const safeMode = s.t < b.safeUntil;
+    if (safeMode) b.ratio *= 1 - .4 * sk.guard;
+    if (fresh) b.ratio *= 1 - .1 * sk.guard;
     if (b.deaths.length > 6) b.deaths.splice(0, b.deaths.length - 6);
 
     // Too hurt to stay: recall if it is quiet, walk home if it is not.
     if (f < sk.low || (f < sk.low + .15 && b.closest < 600 && b.ratio < .9)) b.low = true;
     if (b.low) {
-      if (homeD < 300) { c.atk = true; noMove(b); return; }
-      if (b.closest >= 700 && homeD > 1100) { if (!c.chan) c.q.push({ t: 'recall' }); b.still = true; noMove(b); return; }
-      moveTo(b, home.x, home.y, 40); c.atk = true; if (t) useCombo(s, c, b, t, 'retreat');
+      b.task = 'low';
+      if (homeD < 300) { c.atk = !towerOver(s, c.team, c.x, c.y, 0); noMove(b); return; }
+      const hitLately = s.t - (b.hurtAt || -9) < 2.2 || s.monsters.some(m => m.alive && m.tgt === c);
+      const quiet = b.closest >= 700 && homeD > 900 && !hitLately && memThreat(s, c, b, ai, c.x, c.y, 650) < .5 + (1 - sk.iq);
+      if (quiet) { if (!c.chan) c.q.push({ t: 'recall' }); b.still = true; noMove(b); return; }
+      moveTo(b, home.x, home.y, 40); c.atk = !towerOver(s, c.team, c.x, c.y, 0); if (t) useCombo(s, c, b, t, 'retreat');
       return;
     }
-    const called = ai.defend && ai.defend.ids.includes(c.id);
+    const heeds = key => hash01(key, c.id + 3) < .3 + .7 * sk.macro;
+    const called = ai.defend && ai.defend.ids.includes(c.id) && heeds(ai.defend.id + (s.t / 20 | 0));
 
     if (t) {
-      const kill = t.hp <= burstOn(c, t), tw = towerOver(s, c.team, t.x, t.y);
-      const safeKill = kill && c.hp > (110 + s.t * .12) * 2.5, tanks = tw ? alliesTanking(s, c.team, tw) : 0;
+      const kill = t.hp <= burstOn(c, t), tw = towerOver(s, c.team, t.x, t.y, 10), tanks = tw ? alliesTanking(s, c.team, tw) : 0;
+      // A dive pays for every tower shot it takes, with compounding.
+      const shots = 1 + Math.ceil((d / c.msBase + 1) / 1.1); let shotsSum = 0; for (let i = 0; i < shots; i++) shotsSum += towerShot(s, i);
+      const sureKill = kill && c.hp > shotsSum;
+      const pokeFromOut = tw && d - t.r <= c.range && !towerOver(s, c.team, c.x, c.y, 0);
       const group = ai.push !== null || ai.hoard;
       let want = (kill && b.ratio > .7) || (b.ratio > 1.4 && (frac(t) < .7 || d < 620)) || (b.ratio > 1.15 && d < c.range + 70)
         || (b.fighting && b.ratio > .78 && d < 900) || (group && b.ratio > .95 && d < 850);
-      if (tw && tanks < 2 && !safeKill) want = false;
+      if (tw && !sureKill && !pokeFromOut) want = false;
       if (f < .45 && b.ratio < 1.2 && !kill) want = false;
       const pack = s.champs.reduce((n, e) => n + (e.team !== c.team && e.alive && !e.air && dist(e, c) < 800 && canSee(s, c.team, e) ? 1 : e.team === c.team && e.alive && dist(e, c) < 800 ? -1 : 0), 0), outnumbered = pack >= 2 && !kill;
       if (outnumbered) want = false;
+      // Laning leash: laners trade on their lane and don't chase off it.
+      if (laning && laner && want) {
+        const off = laneDist(s, b.lane, t.x, t.y), up = (rdy(c, 0) ? 1 : 0) + (rdy(c, 1) ? 1 : 0);
+        if (off > 340 && !(kill && off < 520)) want = false;
+        if (!kill) {
+          if (up < 1 && b.ratio < 1.4) want = false;
+          if (s.t < b.tradeT) want = false;
+        }
+      }
+      if (laning && c.role === 'jungle' && !b.gank && !ai.help[c.id] && !kill && d > 600) want = false;
+      if (safeMode && !kill) want = want && b.ratio > 1.2;
+      // No long chases: a beginner gives up late, and a sharper bot sooner when it is losing ground.
+      if (want && d > c.range + 90 && !kill) { b.chase += sk.think; if (b.chase > 1.6 + sk.iq * 1.4) { want = false; b.noChase = s.t + 4; b.chase = 0; } } else b.chase = 0;
+      if (s.t < b.noChase && !kill) want = false;
+      if (laning && laner && b.fighting && !want && !kill) b.tradeT = s.t + 3.5;
       b.fighting = !!want;
       if (want) {
-        b.diveOk = !tw || tanks >= 2 || safeKill;
-        fightMove(s, c, b, t, d);
+        b.task = 'fight';
+        b.diveOk = !tw || sureKill;
+        fightMove(s, c, b, t, d, ai);
         c.atk = true; if (d - t.r <= c.range) c.atkPref = t.id;
         useCombo(s, c, b, t, 'fight');
         return;
       }
-      // Losing the local fight: back off to the nearest tower and use what escapes there are.
+      // Losing the local fight: back off along the lane to the tower, and use what escapes there are.
       if ((b.ratio < .62 || outnumbered) && d < 720) {
-        let safe = home, sd = homeD;
-        for (const o of s.towers) if (o.alive && o.team === c.team) { const od = dist(c, o); if (od < sd && dist(o, t) > od * .7) { sd = od; safe = o; } }
-        moveTo(b, safe.x, safe.y, 120); c.atk = true;
+        b.task = 'retreat';
+        let safe = laning && laner ? firstTower(s, c.team, b.lane) : home, sd = dist(c, safe);
+        if (!(laning && laner)) for (const o of s.towers) if (o.alive && o.team === c.team) { const od = dist(c, o); if (od < sd && dist(o, t) > od * .7) { sd = od; safe = o; } }
+        moveTo(b, safe.x, safe.y, 120); c.atk = !towerOver(s, c.team, c.x, c.y, 0);
         useCombo(s, c, b, t, 'retreat');
         return;
       }
     } else b.fighting = false;
 
     // Team plan first, then the role's normal job.
-    if (called) { moveTo(b, ai.defend.x, ai.defend.y, 60); c.atk = true; }
-    else if (ai.help[c.id] && ai.help[c.id].alive) { const a = ai.help[c.id]; moveTo(b, a.x, a.y, 130); c.atk = true; }
-    else if (ai.hoard && hoardTask(s, c, b, ai)) { /* handled */ }
-    else if (ai.sites[c.id] && ai.sites[c.id].alive) { const z = ai.sites[c.id]; moveTo(b, z.x, z.y, 70); c.atk = true; }
-    else if (ai.push !== null) laneTask(s, c, b, ai.push, ai, true);
+    if (called) { b.task = 'defend'; moveTo(b, ai.defend.x, ai.defend.y, 60); c.atk = true; }
+    else if (ai.help[c.id] && ai.help[c.id].alive && heeds(ai.help[c.id].id + (s.t / 12 | 0))) { b.task = 'help'; const a = ai.help[c.id]; moveTo(b, a.x, a.y, 130); c.atk = true; }
+    else if (ai.cover[c.id] !== undefined) { b.task = 'cover'; laneTask(s, c, b, ai.cover[c.id], ai, false); }
+    else if (ai.hoard && (hash01(1 + (s.t / 25 | 0), c.id + 7) < .65 + .35 * sk.macro) && hoardTask(s, c, b, ai)) { b.task = 'boss'; }
+    else if (ai.sites[c.id] && ai.sites[c.id].alive && heeds(ai.sites[c.id].id + 41 + (s.t / 25 | 0))) { b.task = 'site'; const z = ai.sites[c.id]; moveTo(b, z.x, z.y, 70); c.atk = true; }
+    else if (ai.split === c.id && ai.push !== null) { b.task = 'split'; laneTask(s, c, b, ai.push === 0 ? 1 : 0, ai, true); }
+    else if (ai.push !== null) { b.task = 'push'; laneTask(s, c, b, ai.push, ai, true); }
     else if (c.role === 'jungle') jungleTask(s, c, b, ai);
-    else laneTask(s, c, b, b.lane, ai, false);
+    else { b.task = 'lane'; laneTask(s, c, b, b.lane, ai, false); }
 
     // Poke with whatever is free when standing somewhere safe.
     const safeSpot = !towerOver(s, c.team, c.x, c.y) && b.ratio >= .7 && f > .4;
-    if (t ? safeSpot : c.champ === 'solenne') useCombo(s, c, b, t, 'poke');
+    if (t ? safeSpot && !(laning && s.t < b.tradeT) : c.champ === 'solenne') useCombo(s, c, b, t, 'poke');
+  }
+
+  // ---------- rank contract ----------
+  const RANKS = [{ name: 'Rookie', at: 0 }, { name: 'Vigilante', at: 1100 }, { name: 'Sentinel', at: 1400 }, { name: 'Guardian', at: 1700 }, { name: 'Champion', at: 2000 }, { name: 'Legend', at: 2350 }];
+  function rankOf(r) {
+    let i = 0; RANKS.forEach((x, k) => { if (r >= x.at) i = k; });
+    const at = RANKS[i].at, next = RANKS[i + 1] ? RANKS[i + 1].at : null;
+    return { name: RANKS[i].name, tier: i, next, frac: next === null ? 1 : clamp((r - at) / (next - at), 0, 1) };
+  }
+  // Rank onto bot skill: the default 1000 is about .3, a Legend about .9.
+  const rankSkill = r => clamp(.3 + (r - 1000) * .6 / 1350, .12, .95);
+  // The rating change for one match. Beating tougher bots pays more; a good personal game softens a loss.
+  function rankDelta(rank, won, stats, teamAvgBotSkill) {
+    const st = stats || {}, you = rankSkill(rank), them = teamAvgBotSkill === undefined ? you : teamAvgBotSkill;
+    const expected = clamp(.5 + (you - them) * 1.6, .08, .92);
+    let d = 34 * ((won ? 1 : 0) - expected);
+    const kda = ((st.kills || 0) + (st.assists || 0) * .5) / Math.max(1, st.deaths || 0);
+    d += clamp((kda - 1.5) * 2.2, -5, 5);
+    return Math.round(clamp(d, -45, 45));
+  }
+  // n skills around the median mapped from average player rank, with a spread, and at least one very
+  // advanced bot in every group of four (one per enemy team when the caller slices seats by four).
+  function botSkills(avgPlayerRank, n, seed) {
+    const r = rng(seed || 1), med = rankSkill(avgPlayerRank === undefined ? 1000 : avgPlayerRank), out = [];
+    for (let i = 0; i < n; i++) out.push(clamp(med + (r() + r() + r() - 1.5) * .22, .05, .98));
+    for (let g = 0; g < n; g += 4) {
+      const span = Math.min(4, n - g), idx = g + (r() * span | 0);
+      if (!out.slice(g, g + span).some(v => v >= .78 || v >= med + .3)) out[idx] = clamp(Math.max(.72, med + .34) + r() * .08, 0, .98);
+    }
+    return out;
   }
 
   // ---------- networking: compact state for host-authoritative play ----------
@@ -1486,7 +1835,7 @@ const Sim = (() => {
   // sparse delta of whole numbers on the reliable channel, so a lost packet can't desync it.
   const FX_CODE = ['snipe', 'snipeFull', 'deadeye', 'orb', 'ray', 'chain', 'bolt', 'mbolt', 'tower', 'rupture', 'crash', 'heal', 'stomp', 'dome', 'break', 'dash', 'parry', 'slash'];
   const FX_NUM = {}; FX_CODE.forEach((f, i) => { FX_NUM[f] = i; });
-  const POS = 16, SNAP_MAGIC = 0xF3;
+  const POS = 14, SNAP_MAGIC = 0xF3;
   const wb = new DataView(new ArrayBuffer(32768)); let wp = 0;
   const w8 = v => { wb.setUint8(wp, v); wp += 1; };
   const wi8 = v => { wb.setInt8(wp, clamp(Math.round(v), -127, 127)); wp += 1; };
@@ -1597,9 +1946,9 @@ const Sim = (() => {
       }
       if (map.size > arr.length * 2 + 40) { const live = new Set(frameA.map(a => a.id)); for (const k of map.keys()) if (!live.has(k)) map.delete(k); }
     };
-    sync(s.monsters, A.mon, B && B.mon, rx.m, a => ({ id: a.id, kind: 'monster', team: 2, alive: true, maxHp: 255, big: !!(a.fl & 1), boss: !!(a.fl & 2), r: a.fl & 2 ? 74 : a.fl & 1 ? 42 : 24, ms: a.fl & 2 ? 170 : 260, fx: 1, fy: 0 }),
+    sync(s.monsters, A.mon, B && B.mon, rx.m, a => ({ id: a.id, kind: 'monster', team: 2, alive: true, maxHp: 255, big: !!(a.fl & 1), boss: !!(a.fl & 2), r: a.fl & 2 ? 58 : a.fl & 1 ? 32 : 19, ms: a.fl & 2 ? 170 : 260, fx: 1, fy: 0 }),
       (u, a) => { u.hp = a.hp; u.stunT = a.fl & 4 ? 1 : 0; u.slowT = a.fl & 8 ? 1 : 0; u.markT = a.fl & 16 ? 1 : 0; });
-    sync(s.minions, A.min, B && B.min, rx.n, a => ({ id: a.id, kind: 'minion', team: a.fl & 1, ranged: !!(a.fl & 2), lane: a.fl & 64 ? 1 : 0, alive: true, maxHp: 255, r: a.fl & 2 ? 18 : 22, ms: 215, range: a.fl & 2 ? 300 : 95, fx: a.fl & 1 ? -1 : 1, fy: 0 }),
+    sync(s.minions, A.min, B && B.min, rx.n, a => ({ id: a.id, kind: 'minion', team: a.fl & 1, ranged: !!(a.fl & 2), lane: a.fl & 64 ? 1 : 0, alive: true, maxHp: 255, r: a.fl & 2 ? 14 : 17, sight: 500, ms: 215, range: a.fl & 2 ? 300 : 95, fx: a.fl & 1 ? -1 : 1, fy: 0 }),
       (u, a) => { u.hp = a.hp; u.stunT = a.fl & 4 ? 1 : 0; u.slowT = a.fl & 8 ? 1 : 0; u.markT = a.fl & 16 ? 1 : 0; u.delay = a.fl & 32 ? 1 : 0; });
     sync(s.proj, A.proj, B && B.proj, rx.p, a => ({ id: a.id, team: a.fl & 3, homing: !!(a.fl & 4), pierce: !!(a.fl & 8), fx: FX_CODE[a.fx], w: a.w, age: 0, vx: a.vx, vy: a.vy, seen: s.t }),
       (u, a) => { u.age = s.t - u.seen; u.vx = a.vx; u.vy = a.vy; u.w = a.w; if (!u.owner || u.owner.id !== a.owner) u.owner = unitOf(s, a.owner) || ghostUnit(a.owner, a.x, a.y, a.fl & 3); if (u.homing && (!u.target || u.target.id !== a.target)) u.target = unitOf(s, a.target) || ghostUnit(a.target, a.x, a.y, 2); });
@@ -1650,7 +1999,7 @@ const Sim = (() => {
   }
 
   // Events, as short arrays. Position fields are rounded; everything else is passed as is.
-  const EV_KEYS = { hit: ['u', 'a', 'sk', 'crit', 'by'], heal: ['u', 'a'], die: ['u', 'kind', 'x', 'y', 'by'], gold: ['u', 'a'], boom: ['x', 'y', 'r', 'fx'], phit: ['x', 'y', 'fx'], blink: ['x', 'y'], parry: ['u'], cast: ['u', 'fx', 'dx', 'dy'], level: ['u'], tower: ['team', 'sub'], bossup: [], boss: ['team'], feed: ['a', 'b', 'multi', 'first'], spawn: ['u'], tshot: ['u', 't'], cancelled: ['u'], stun: ['u'], mark: ['u'], forge: ['u', 'track'], atk: ['u', 't'], matk: ['u'], civ: ['team', 'x', 'y', 'id'], hope: ['team', 'on'] };
+  const EV_KEYS = { hit: ['u', 'a', 'sk', 'crit', 'by'], heal: ['u', 'a'], die: ['u', 'kind', 'x', 'y', 'by'], gold: ['u', 'a'], boom: ['x', 'y', 'r', 'fx'], phit: ['x', 'y', 'fx'], blink: ['x', 'y'], parry: ['u'], cast: ['u', 'fx', 'dx', 'dy'], level: ['u'], tower: ['team', 'sub'], bossup: [], boss: ['team'], feed: ['a', 'b', 'multi', 'first'], spawn: ['u'], tshot: ['u', 't', 'n'], cancelled: ['u'], stun: ['u'], mark: ['u'], forge: ['u', 'track'], atk: ['u', 't'], matk: ['u'], civ: ['team', 'x', 'y', 'id'], hope: ['team', 'on'] };
   const EV_NAMES = Object.keys(EV_KEYS), EV_IDX = {}; EV_NAMES.forEach((n, i) => { EV_IDX[n] = i; });
   const EV_ROUND = { x: 1, y: 1, dx: 100, dy: 100 };
   function packEvent(e) {
@@ -1719,7 +2068,7 @@ const Sim = (() => {
   }
   function tierOf(p) { let t = 0; TIERS.forEach((x, i) => { if (p >= x.at) t = i; }); return t; }
 
-  return { W, H, TICK, DT, KITS, buildMap, TIERS, TEAM_NAMES, FORGE_COST, createMatch, step, canSee, autoTarget, masteryGain, tierOf, towerOpen, xpNeed, ROLES, ROLE_INFO, autoRoles, CHARS, charOf,
-    DIFF, setBot, snapshot, decodeSnapshot, applySnapshot, applyFrame, applyChampState, slowFlat, slowDiff, applySlow, packEvent, unpackEvent, predict };
+  return { W, H, TICK, DT, KITS, buildMap, rayWall, visionSources, hasLOS, TIERS, TEAM_NAMES, FORGE_COST, createMatch, step, canSee, autoTarget, masteryGain, tierOf, towerOpen, xpNeed, ROLES, ROLE_INFO, autoRoles, CHARS, charOf,
+    RANKS, rankOf, rankDelta, botSkills, skillProfile, setBot, snapshot, decodeSnapshot, applySnapshot, applyFrame, applyChampState, slowFlat, slowDiff, applySlow, packEvent, unpackEvent, predict };
 })();
 if (typeof module !== 'undefined') module.exports = Sim;

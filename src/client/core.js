@@ -9,8 +9,9 @@ let VW = 800, VH = 400, rotated = false, dpr = 2, quality = 2, ZB = 1, Z = 1;
 let G = null, paused = false;
 
 const KEY = 'mintfall.v1';
-let save = { m: {}, music: true, sfx: true, diff: 'normal', hints: 0, gfx: 'auto' };
+let save = { m: {}, music: true, sfx: true, diff: 'normal', hints: 0, gfx: 'auto', rank: 1000 };
 try { const raw = localStorage.getItem(KEY); if (raw) save = Object.assign(save, JSON.parse(raw)); } catch (e) { }
+if (!isFinite(save.rank)) save.rank = 1000;
 const persist = () => { try { localStorage.setItem(KEY, JSON.stringify(save)); } catch (e) { } };
 const pts = id => save.m[id] || 0;
 Sound.setOn(save.music, save.sfx);
@@ -22,7 +23,7 @@ function layout() {
   VW = rotated ? h : w; VH = rotated ? w : h;
   stage.style.width = VW + 'px'; stage.style.height = VH + 'px';
   stage.style.transform = rotated ? `translate(${w}px,0) rotate(90deg)` : 'none';
-  resize(); ZB = VW / 1020; Z = ZB; hud();
+  resize(); ZB = VW / 1340; Z = ZB; hud();
 }
 addEventListener('resize', layout); addEventListener('orientationchange', () => setTimeout(layout, 120));
 document.addEventListener('gesturestart', e => e.preventDefault());
@@ -32,7 +33,7 @@ const lerp = (a, b, t) => a + (b - a) * t;
 const pct = (a, b) => Math.max(0, Math.min(1, a / b));
 const pos = (u, a) => ({ x: lerp(u.px, u.x, a), y: lerp(u.py, u.y, a) });
 function spriteOf(u) { if (u.kind === 'champ') return Art.champCoin(u.champ, u.team, u.tier); if (u.kind === 'minion') return Art.minionCoin(u.team, u.ranged); if (u.kind === 'monster') return Art.monsterCoin(u.big, u.boss); return null; }
-const drawR = u => u.kind === 'champ' ? 36 : u.kind === 'minion' ? (u.ranged ? 17 : 21) : u.boss ? 78 : u.big ? 44 : 25;
+const drawR = u => u.kind === 'champ' ? 27 : u.kind === 'minion' ? (u.ranged ? 13 : 16) : u.boss ? 60 : u.big ? 34 : 19;
 const unitById = id => { const s = G.s; return s.champs.find(c => c.id === id) || s.minions.find(c => c.id === id) || s.monsters.find(c => c.id === id) || s.towers.find(c => c.id === id); };
 
 // cfg: { teams: [[{champ, role, tier, human, remote, name}, ...4], [...4]], diff, seed }
@@ -48,8 +49,13 @@ function startMatch(cfg, net) {
 }
 function finishMatch() {
   const s = G.s, me = G.me, won = s.over.winner === me.team, gain = Sim.masteryGain(me.stats, won), before = pts(me.champ);
-  save.m[me.champ] = before + gain; persist();
-  G.ended = true; showEnd({ won, gain, before, after: before + gain, me, s });
+  save.m[me.champ] = before + gain;
+  // Rating: scored against the average skill of the bots on the other team.
+  const rankBefore = save.rank === undefined ? 1000 : save.rank, foes = G.cfg.teams[1 - me.team].filter(p => !p.human && p.skill !== undefined);
+  const avg = foes.length ? foes.reduce((a, p) => a + p.skill, 0) / foes.length : .5;
+  const rankDelta = Sim.rankDelta ? Sim.rankDelta(rankBefore, won, me.stats, avg) : 0, rankAfter = Math.max(0, Math.round(rankBefore + rankDelta));
+  save.rank = rankAfter; persist();
+  G.ended = true; showEnd({ won, gain, before, after: before + gain, me, s, rankBefore, rankAfter, rankDelta: rankAfter - rankBefore });
 }
 // Called by effects code: pause the simulation for a beat, or run it in slow motion.
 // Both are local-only moods, so an online match never uses them.

@@ -8,40 +8,46 @@ const { Ctl, applyInput, aimDir } = (() => {
   const near = (b, p, pad) => Math.hypot(p.x - b.x, p.y - b.y) < b.r + pad;
   const STICK = 58, MOVE_PX = 16, FULL_PX = 96;
 
-  // Nearest visible enemy champion in range, otherwise the nearest unit.
-  function quickTarget(me, a) {
-    const r = (a.range || 600) + 80; let best = null, bd = r;
-    for (const e of G.s.champs) {
-      if (!e.alive || e.team === me.team || !Sim.canSee(G.s, me.team, e)) continue;
-      const d = Math.hypot(e.x - me.x, e.y - me.y); if (d < bd) { bd = d; best = e; }
-    }
-    if (best) return best;
-    const scan = list => { for (const m of list) { if (!m.alive || m.team === me.team || m.delay > 0) continue; const d = Math.hypot(m.x - me.x, m.y - me.y); if (d < bd) { bd = d; best = m; } } };
-    scan(G.s.minions); scan(G.s.monsters);
+  // Distance a straight shot from the caster travels along (dx, dy) before a wall stops it.
+  const wallAt = (me, dx, dy, len) => Sim.rayWall ? Sim.rayWall(me.x, me.y, dx, dy, len) : len;
+  // Abilities flagged `over` (a leap or a blink) ignore walls.
+  const crossesWalls = (me, i) => !!me.kit[i].over;
+  const clearShot = (me, u, d, free) => free || d < 1 || wallAt(me, (u.x - me.x) / d, (u.y - me.y) / d, d) >= d - (u.r || 0);
+
+  // Nearest enemy champion that can be seen and reached, otherwise the nearest such unit.
+  function quickTarget(me, a, free) {
+    const r = (a.range || 600) + 80, s = G.s; let best = null, bd = r;
+    const scan = list => { for (const u of list) { if (!u.alive || u.team === me.team || u.delay > 0 || !Sim.canSee(s, me.team, u)) continue; const d = Math.hypot(u.x - me.x, u.y - me.y); if (d < bd && clearShot(me, u, d, free)) { bd = d; best = u; } } };
+    scan(s.champs); if (best) return best;
+    scan(s.minions); scan(s.monsters);
     return best;
   }
 
   // Where the current aim points. tx, ty is the exact point a release would send.
+  // reach is how far the shot really goes, stopped by the first wall; blocked says a wall cut it short.
   function aimDir() {
     const me = G.me, A = Ctl.aim;
-    if (!A) return { dx: me.fx, dy: me.fy, target: null, tx: me.x, ty: me.y, k: 1, reach: 0 };
+    if (!A) return { dx: me.fx, dy: me.fy, target: null, tx: me.x, ty: me.y, k: 1, reach: 0, blocked: false };
     const a = me.kit[A.slot], range = a.range || 0, circle = a.shape === 'circle';
     let dx = me.fx, dy = me.fy, target = null, k = 1;
-    if (a.shape === 'self') return { dx, dy, target, tx: me.x, ty: me.y, k, reach: 0 };
+    if (a.shape === 'self') return { dx, dy, target, tx: me.x, ty: me.y, k, reach: 0, blocked: false };
+    const free = crossesWalls(me, A.slot);
     if (A.moved) {
       const wy = A.dy / TILT, l = Math.hypot(A.dx, wy) || 1;
       dx = A.dx / l; dy = wy / l;
       if (circle) k = Math.min(1, Math.hypot(A.dx, A.dy) / FULL_PX);
     } else {
-      target = quickTarget(me, a);
+      target = quickTarget(me, a, free);
       if (target) {
         const tdx = target.x - me.x, tdy = target.y - me.y, l = Math.hypot(tdx, tdy) || 1;
         dx = tdx / l; dy = tdy / l;
         if (circle) k = Math.min(1, l / (range || 1));
       } else if (circle) k = .7;
     }
-    const reach = range * k;
-    return { dx, dy, target, tx: me.x + dx * reach, ty: me.y + dy * reach, k, reach };
+    const want = range * k, reach = free ? want : Math.min(want, wallAt(me, dx, dy, want)), blocked = reach < want - .5;
+    // A ground circle lands at the last visible point. A line keeps its full aim point, so a shot fired flush against a wall still has a direction.
+    const send = circle ? reach : want;
+    return { dx, dy, target, tx: me.x + dx * send, ty: me.y + dy * send, k, reach, blocked };
   }
 
   function cancelAim() {
@@ -72,7 +78,7 @@ const { Ctl, applyInput, aimDir } = (() => {
     try { view.setPointerCapture(e.pointerId); } catch (_) { }
     const p = Ctl.pt(e), U = Hud.ui, me = G.me;
     if (G.intro <= 0 && !G.outro) {
-      if (Hud.forgeOpen() && !near(U.forge, p, 8)) Hud.closeForge();
+      if (Hud.forgeOpen() && me.alive && !near(U.forge, p, 8)) Hud.closeForge();
       if (Ctl.aim && near(U.cancel, p, 6)) { cancelAim(); return; }
       if (near(U.pause, p, 10)) { Hud.squash('pause'); Hud.openPause(); return; }
       if (near(U.forge, p, 8)) { Hud.squash('forge'); Hud.toggleForge(); return; }
