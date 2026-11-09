@@ -33,7 +33,7 @@
   const CLASS = { vesper: 'back', ione: 'back', solenne: 'peel', kade: 'front', gravel: 'front', sable: 'flank', deadbolt: 'back', hex: 'back', plague: 'peel', duelist: 'front', ironjaw: 'front', shiv: 'flank', voltaic: 'flank', tidecaller: 'peel', paragon: 'front', mirage: 'back', cinder: 'back', ravager: 'flank', cataclysm: 'front', puppeteer: 'peel' };
   function makeBot(s, c, skill) {
     const i = c.slot, b = {
-      skill: 0, sk: null, lane: c.role === 'top' ? 0 : 1, cls: CLASS[c.champ] || 'front', mask: navMask(c.team), next: i * .05 + .02, foes: [], tid: 0, closest: 1e9, ratio: 1, noise: 0, noiseAt: 0, strafe: i % 2 ? 1 : -1,
+      skill: 0, sk: null, lane: c.role === 'top' || c.oneLane ? 0 : 1, cls: CLASS[c.champ] || 'front', mask: navMask(c.team), next: i * .05 + .02, foes: [], tid: 0, closest: 1e9, ratio: 1, noise: 0, noiseAt: 0, strafe: i % 2 ? 1 : -1,
       gx: c.x, gy: c.y, ga: 20, hasGoal: false, vx: 0, vy: 0, vecT: 0, ex: 0, ey: 0, evadeT: 0, dodgeAt: 0, dodgeSeen: 0, path: null, pi: 0, pgx: 0, pgy: 0, needPath: false, sx: c.x, sy: c.y, stuck: 0, still: false, diveOk: false,
       et: null, etTanks: 0, castAt: 0, chargeHold: 1.12, threatT: 9, parry: false, low: false, fighting: false, lhSoon: false, lastHome: 0, gank: null, gankCd: 0, deaths: [], siegeT: 0,
       buyPath: 0, potAt: 0, route: null, routeI: 0, cycles: 0, gankReady: false, chase: 0, noChase: 0, tradeT: 0, task: 'spawn', safeUntil: 0,
@@ -288,7 +288,7 @@
   const frac = u => u.hp / u.maxHp;
   const mapCenter = s => s.map.center || { x: W / 2, y: H / 2 };
   const ensureAi = ai => { if (!ai.mem) { ai.mem = {}; ai.cover = {}; ai.phase = 'lane'; ai.hum = {}; ai.split = 0; ai.pings = []; } };
-  const roleLane = c => c.role === 'top' ? 0 : c.role === 'jungle' ? -1 : 1;
+  const roleLane = c => c.role === 'jungle' ? -1 : c.role === 'top' || c.oneLane ? 0 : 1;
 
   // Distance to, and closest point on, a lane's centre line.
   function laneNearest(s, lane, x, y) {
@@ -396,7 +396,7 @@
     // Which lane each seat holds. A human who has left a lane open gets covered by the jungler only,
     // so a lane is never filled by accident and never by more than one body.
     ai.cover = {};
-    if (laning) for (const lane of [0, 1]) {
+    if (laning) for (const lane of s.lanes) {
       const seats = s.champs.filter(o => o.team === team && roleLane(o) === lane);
       let held = false;
       for (const o of seats) {
@@ -521,11 +521,11 @@
     // Later the side groups and pushes one lane, leaving a strong top laner to split the other.
     ai.split = 0;
     const late = ai.phase === 'late', ahead = s.t >= 500 && (s.kills[team] - s.kills[1 - team] >= 6 || foesAlive <= mine.length - 3 || s.champs.some(c => c.team === team && c.buffT > 0));
-    if (!laning && mine.length >= foesAlive - 1 && (late || ahead)) {
+    if (!s.raid && !laning && mine.length >= foesAlive - 1 && (late || ahead)) {
       if (s.t >= ai.pushUntil || ai.push === null) {
         const left = [0, 1].map(l => s.towers.filter(t => t.alive && t.team !== team && t.lane === l).length);
         const adv = [0, 1].map(l => s.laneInfo[team][l].best);
-        ai.push = left[0] !== left[1] ? (left[0] < left[1] ? 0 : 1) : (adv[0] >= adv[1] ? 0 : 1);
+        ai.push = s.oneLane ? 0 : left[0] !== left[1] ? (left[0] < left[1] ? 0 : 1) : (adv[0] >= adv[1] ? 0 : 1);
         ai.pushUntil = s.t + 35;
       }
       const top = mine.find(c => c.bot && c.role === 'top' && frac(c) > .6);
@@ -1249,7 +1249,7 @@
     const fightDue = ai.hoard && ai.hoard.ids.includes(c.id) || ai.push !== null || b.fighting;
     if (s.t > 480 && !(c.elixT > 0) && spare > 300 && fightDue) { c.q.push({ t: 'buy', id: 'elixir' }); return; }
     if (s.t > 420 && spare > reinforceCost(s, c) + 60 && s.t >= s.reinforceAt[c.team] && (ai.push !== null || s.t > 660)) {
-      const left = [0, 1].map(l => s.towers.filter(t => t.alive && t.team !== c.team && t.lane === l).length), lane = ai.push !== null ? ai.push : (left[0] < left[1] ? 0 : left[1] < left[0] ? 1 : s.laneInfo[c.team][0].n > s.laneInfo[c.team][1].n ? 0 : 1);
+      const left = [0, 1].map(l => s.towers.filter(t => t.alive && t.team !== c.team && t.lane === l).length), lane = s.oneLane ? 0 : ai.push !== null ? ai.push : (left[0] < left[1] ? 0 : left[1] < left[0] ? 1 : s.laneInfo[c.team][0].n > s.laneInfo[c.team][1].n ? 0 : 1);
       c.q.push({ t: 'reinforce', lane }); return;
     }
     const noBonus = c.team ? s.hope > 34 : s.hope < 66;

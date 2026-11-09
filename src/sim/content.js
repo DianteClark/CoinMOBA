@@ -991,4 +991,75 @@
   const PROF_IDS = {}; for (const r in PROFS) for (const p of PROFS[r]) PROF_IDS[p.id] = r;
 
   // Marks earned at the end of a match.
-  function marksEarned(won, st) { st = st || {}; return Math.round(30 + (won ? 45 : 0) + Math.min(30, (st.kills || 0) * 3 + (st.assists || 0) * 1.5) + Math.min(10, (st.skillHits || 0) * .1)); }
+  // ---------- 11.0 career medals ----------
+  // kind: 'sum' adds a match stat to the career, 'max' keeps the best single match, the rest are read from career tallies.
+  const medal = (id, name, cat, kind, key, need, d, line) => ({ id, name, cat, kind, key, d, tiers: ['Bronze', 'Silver', 'Gold'].map((t, i) => ({ name: t, need: need[i], d: line(need[i].toLocaleString('en-US')) })) });
+  const MEDAL_CATS = { multi: 'Multi-kills', deathless: 'Deathless', mastery: 'Champion mastery', rescue: 'Rescues', objective: 'Objectives', clutch: 'Clutch comebacks', role: 'Role mastery' };
+  const MEDALS = [
+    medal('hat_trick', 'Hat Trick', 'multi', 'sum', 'multi3', [10, 60, 240], 'Triple kills across your career.', n => `Land ${n} triple kills.`),
+    medal('clean_sweep', 'Clean Sweep', 'multi', 'sum', 'multi4', [3, 20, 80], 'Quadruple kills across your career.', n => `Land ${n} quadruple kills.`),
+    medal('rampage', 'Rampage', 'multi', 'sum', 'multi5', [1, 8, 30], 'Chains of five kills or more.', n => `Chain five kills or more, ${n} times.`),
+    medal('body_count', 'Body Count', 'multi', 'max', 'kills', [15, 22, 30], 'Most kills in a single match.', n => `Take ${n} kills in one match.`),
+    medal('untouchable', 'Untouchable', 'deathless', 'sum', 'deathless', [10, 60, 240], 'Wins without dying once, with at least 5 takedowns.', n => `Win ${n} matches without dying.`),
+    medal('ghost_run', 'Ghost Run', 'deathless', 'max', 'deathlessTD', [12, 20, 30], 'Takedowns in a single deathless win.', n => `Score ${n} takedowns in one deathless win.`),
+    medal('long_life', 'Long Life', 'deathless', 'max', 'bestStreak', [8, 13, 20], 'Longest kill streak in a single life.', n => `Reach a streak of ${n} kills without dying.`),
+    medal('specialist', 'Specialist', 'mastery', 'champWins', '', [25, 100, 400], 'Wins on your single best champion.', n => `Win ${n} matches on one champion.`),
+    medal('repertoire', 'Repertoire', 'mastery', 'champsAt', '', [4, 10, 20], 'Champions with at least 10 wins each.', n => `Reach 10 wins on ${n} different champions.`),
+    medal('grand_master', 'Grand Master', 'mastery', 'sum', 'mastery', [30000, 200000, 800000], 'Mastery earned across every champion.', n => `Earn ${n} mastery.`),
+    medal('shepherd', 'Shepherd', 'rescue', 'sum', 'rescues', [60, 400, 1600], 'Civilians brought to safety across your career.', n => `Rescue ${n} civilians.`),
+    medal('safe_passage', 'Safe Passage', 'rescue', 'max', 'rescues', [6, 10, 15], 'Most civilian rescues in a single match.', n => `Make ${n} rescues in one match.`),
+    medal('lifeline', 'Lifeline', 'rescue', 'sum', 'saves', [40, 250, 1000], 'Heals that pull an ally back from under a quarter health.', n => `Save allies from the brink ${n} times.`),
+    medal('demolition', 'Demolition', 'objective', 'sum', 'towers', [80, 500, 2000], 'Towers felled with you at the scene.', n => `Be present for ${n} tower kills.`),
+    medal('big_game', 'Big Game', 'objective', 'sum', 'objectives', [80, 500, 2000], 'Bosses slain and map events won.', n => `Secure ${n} objectives.`),
+    medal('colossus_slayer', 'Colossus Slayer', 'objective', 'sum', 'colossi', [10, 60, 240], 'Colossus kills you took part in.', n => `Bring down the Colossus ${n} times.`),
+    medal('grand_theft', 'Grand Theft', 'objective', 'sum', 'steals', [2, 15, 60], 'Last hits on a boss the other team had nearly finished.', n => `Steal ${n} bosses.`),
+    medal('never_over', 'Never Over', 'clutch', 'sum', 'comebacks', [8, 50, 200], 'Wins after trailing by 3,000 gold or more.', n => `Win ${n} matches from far behind.`),
+    medal('long_way_back', 'The Long Way Back', 'clutch', 'max', 'deficit', [5000, 9000, 14000], 'The largest deficit you have ever overturned.', n => `Win after trailing by ${n} gold.`),
+    medal('last_breath', 'Last Breath', 'clutch', 'sum', 'clutch', [25, 150, 600], 'Kills made at 15% health or less.', n => `Land ${n} kills at 15% health or less.`),
+    medal('warden', 'Warden of the High Road', 'role', 'role', 'top', [25, 120, 500], 'Wins in the top lane.', n => `Win ${n} matches as top.`),
+    medal('stalker', 'Wild Stalker', 'role', 'role', 'jungle', [25, 120, 500], 'Wins in the jungle.', n => `Win ${n} matches as jungle.`),
+    medal('keeper', 'Keeper of the Low Road', 'role', 'role', 'bottom', [25, 120, 500], 'Wins in the bottom lane.', n => `Win ${n} matches as bottom.`),
+    medal('steadfast', 'Steadfast', 'role', 'role', 'support', [25, 120, 500], 'Wins as support.', n => `Win ${n} matches as support.`),
+  ];
+  const newCareer = () => ({ v: 1, games: 0, wins: 0, sum: {}, max: {}, champ: {}, role: {}, tiers: {} });
+  // A career's current number for one medal, which is also what a progress bar shows.
+  function medalValue(career, m) {
+    if (!career) return 0;
+    if (m.kind === 'sum') return (career.sum || {})[m.key] || 0;
+    if (m.kind === 'max') return (career.max || {})[m.key] || 0;
+    if (m.kind === 'role') return ((career.role || {})[m.key] || 0);
+    const wins = Object.values(career.champ || {}).map(c => c.w || 0);
+    return m.kind === 'champWins' ? wins.reduce((a, b) => Math.max(a, b), 0) : wins.filter(w => w >= 10).length;
+  }
+  const medalTier = (m, v) => m.tiers.reduce((n, t) => v >= t.need ? n + 1 : n, 0);
+  // Folds one finished match (from Sim.matchStats) into the career. Returns the tiers this match earned.
+  function medalProgress(career, st) {
+    const C = Object.assign(newCareer(), career || {}), earned = [];
+    for (const k of ['sum', 'max', 'champ', 'role', 'tiers']) if (career && !career[k]) C[k] = {};
+    if (career) Object.assign(career, C);
+    const out = career || C;
+    if (!st || st.practice) return { career: out, earned };
+    const full = st.full !== false, pvp = st.mode !== 'raid', td = (st.kills || 0) + (st.assists || 0);
+    const clean = full && pvp && st.won && !st.deaths && td >= 5, back = full && pvp && st.won && (st.trailed || 0) >= 3000;
+    const inc = (k, v) => { if (v) out.sum[k] = (out.sum[k] || 0) + v; }, top = (k, v) => { if (v > (out.max[k] || 0)) out.max[k] = v; };
+    out.games++; if (st.won) out.wins++;
+    for (const k of ['multi3', 'multi4', 'multi5', 'mastery', 'rescues', 'saves', 'towers', 'objectives', 'colossi', 'steals', 'clutch']) inc(k, st[k] || 0);
+    inc('deathless', clean ? 1 : 0); inc('comebacks', back ? 1 : 0);
+    if (full && pvp) { top('kills', st.kills || 0); top('bestStreak', st.bestStreak || 0); }
+    top('rescues', st.rescues || 0); if (clean) top('deathlessTD', td); if (back) top('deficit', st.trailed);
+    if (st.champ) { const c = out.champ[st.champ] || (out.champ[st.champ] = { g: 0, w: 0 }); c.g++; if (st.won) c.w++; }
+    if (st.won && st.role && full && pvp && st.mode !== 'duel') out.role[st.role] = (out.role[st.role] || 0) + 1;
+    for (const m of MEDALS) {
+      const was = out.tiers[m.id] || 0, now = Math.max(was, medalTier(m, medalValue(out, m)));
+      for (let i = was; i < now; i++) earned.push({ id: m.id, name: m.name, tier: i, tierName: m.tiers[i].name, need: m.tiers[i].need });
+      if (now) out.tiers[m.id] = now;
+    }
+    return { career: out, earned };
+  }
+  const MARK_BONUS = { potg: 25, mvp: 30, svp: 15, medal: [40, 100, 300] };
+  // bonus = { potg, mvp, svp, medals: earned list from medalProgress }, all optional.
+  function marksEarned(won, st, bonus) {
+    st = st || {}; const b = bonus || {};
+    const base = 30 + (won ? 45 : 0) + Math.min(30, (st.kills || 0) * 3 + (st.assists || 0) * 1.5) + Math.min(10, (st.skillHits || 0) * .1);
+    return Math.round(base + (b.potg ? MARK_BONUS.potg : 0) + (b.mvp ? MARK_BONUS.mvp : 0) + (b.svp ? MARK_BONUS.svp : 0) + (b.medals || []).reduce((a, m) => a + (MARK_BONUS.medal[m.tier] || 0), 0));
+  }

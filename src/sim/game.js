@@ -32,8 +32,18 @@
 //   New zone kinds: tidewave (moves; r, dx, dy), mirrors (x,y,r), puppet (x,y). Existing kinds carry new fx: fissure 'thunder'|'earthbreak', miasma 'scorch'|'entrench'.
 //   Comebacks: feed.bounty includes a shutdown bonus when the killer's side is behind. Sim.sensiblePool(team, wantKit, rand) = four kits covering the four roles, for bot fill.
 //   New event: strike{u,x,y} (Kill Strike lands). c.pstack carries passive stacks for Mirage, Tidecaller, Paragon and Cataclysm; c.pready for Voltaic and Ravager.
+// 11.0 additions (names final):
+//   Sim.scoreMatch(s) = {list:[{id,champ,name,team,role,score,parts}] best first, mvp, svp} (champion ids, 0 = none; Raid has an MVP and no SVP). Uses only synced stats, rounded, so host and guests agree.
+//   Sim.MEDALS, Sim.MEDAL_CATS {cat: name}, Sim.newCareer(), Sim.medalValue(career, medal), Sim.matchStats(s, c), Sim.medalProgress(career, matchStats) = {career, earned:[{id,name,tier,tierName,need}]}; career.tiers[id] = tiers held, 0..3.
+//   Sim.marksEarned(won, stats, {potg,mvp,svp,medals:earned}); Sim.MARK_BONUS = {potg,mvp,svp,medal:[bronze,silver,gold]}.
+//   c.stats gains Sim.EXTRA_STATS: multi3 multi4 multi5 (chains reaching that size), bestStreak, clutch, saves, steals, colossi, trailed (largest gold deficit). Guests need these added to the slow state for full medal credit.
+//   Highlights: event hl{kind,u,x,y,n,v,b}. kind: multi (n size), ult (n caught), steal (b boss), boss, ace, clutch, shutdown (n bounty), save, core. v = worth.
+//   Modes: cfg.mode classic|duel|brawl|gold|raid, Sim.MODES = [{id,name,d,teamSize?,coop?}]; s.mode, s.oneLane, s.lanes = [0] or [0,1]. createMatch shapes cfg.teams in place (Sim.normalizeTeams): Duel keeps one seat a side, Raid moves up to 4 humans to one side and empties the other.
+//   Raid: s.raid = {team, enemy, surge}. Enemy base is sealed; killing the Colossus (at 8:00) wins, losing your core loses. Event raid{phase} when it calls a surge (1, 2).
 // ==== end NET STATE ====
 const Sim = (() => {
+  // c.stats fields added in 11.0 that the slow state has yet to carry to guests.
+  const EXTRA_STATS = ['multi3', 'multi4', 'multi5', 'bestStreak', 'clutch', 'saves', 'steals', 'colossi', 'trailed'];
   const SCALE = 1.2, W = 5184, H = 3072, TICK = 30, DT = 1 / TICK;
   const S = v => Math.round(v * SCALE);
   const TEAM_NAMES = ['Heroes', 'Villains'];
@@ -238,7 +248,7 @@ const Sim = (() => {
     if (!src || src.kind !== 'champ') return;
     for (const c of s.champs) {
       if (c === src || c.team !== src.team || !c.alive || c.role !== 'support' || Math.hypot(c.x - x, c.y - y) > 850) continue;
-      const k = roleK(c, 'support') * .5; if (k) { c.gold += gold * k; c.stats.gold += gold * k; giveXp(s, c, xp * k); }
+      const k = roleK(c, 'support') * .5; if (k) { pay(s, c, gold * k); giveXp(s, c, xp * k); }
     }
   }
 
@@ -250,8 +260,32 @@ const Sim = (() => {
     else { c.bot = undefined; c.human = true; }
   }
 
+  // ---------- 11.0 match modes ----------
+  const MODES = [
+    { id: 'classic', name: 'Classic', d: 'Two lanes, four a side, every objective in play.' },
+    { id: 'duel', name: 'Duel', d: 'One on one in a single lane.', teamSize: 1 },
+    { id: 'brawl', name: 'Brawl', d: 'Four a side, all in one lane.' },
+    { id: 'gold', name: 'Gold Rush', d: 'Classic with double gold.' },
+    { id: 'raid', name: 'Raid', d: 'Co-op against the Colossus and its waves.', coop: true },
+  ];
+  const RAID_COLOSSUS_AT = 480, RAID_COLOSSUS_HP = 2.6, RAID_COLOSSUS_DMG = 1.25, RAID_TOWER_K = .28;
+  const modeOf = cfg => MODES.some(m => m.id === cfg.mode) ? cfg.mode : 'classic';
+  // Shapes cfg.teams in place for the mode, so the seat order stays s.champs order for host and guests. Safe to run twice.
+  function normalizeTeams(cfg) {
+    const mode = modeOf(cfg), T = cfg.teams;
+    if (mode === 'duel') for (const list of T) { const keep = list.find(p => p.human) || list[0]; list.length = 0; if (keep) { keep.role = 'top'; list.push(keep); } }
+    if (mode === 'raid') {
+      const side = Math.max(0, T.findIndex(l => l.some(p => p.human))), other = T[1 - side], own = T[side], humans = [...own.filter(p => p.human), ...other.filter(p => p.human)].slice(0, 4), bots = own.filter(p => !p.human);
+      const rand = rng((cfg.seed || 7) + 991), used = humans.map(p => sideKit(side, p.champ)), fill = bots.slice(0, 4 - humans.length);
+      if (humans.length + fill.length < 4) for (const champ of sensiblePool(side, null, rand)) if (humans.length + fill.length < 4 && !used.includes(champ) && !fill.some(p => p.champ === champ)) fill.push({ champ, name: KITS[champ].name, tier: 0, skill: .6 });
+      own.length = 0; own.push(...humans, ...fill); other.length = 0;
+    }
+    return mode;
+  }
   function createMatch(cfg) {
+    const mode = normalizeTeams(cfg), oneLane = mode === 'duel' || mode === 'brawl', raidSide = Math.max(0, cfg.teams.findIndex(l => l.length));
     const s = {
+      mode, oneLane, lanes: oneLane ? [0] : [0, 1], raid: mode === 'raid' ? { team: raidSide, enemy: 1 - raidSide, surge: 0 } : null,
       t: 0, tick: 0, nid: 1, rand: rng(cfg.seed || 7), map: buildMap(), champs: [], minions: [], towers: [], monsters: [], proj: [], zones: [], ev: [], over: null,
       nextWave: 8, wave: 0, bossAt: BOSS_FIRST.colossus, kills: [0, 0], buff: [0, 0], camps: [], gaps: {}, navLeft: 2, hope: 50, hopeTeam: -1, sites: [],
       laneInfo: [[{}, {}], [{}, {}]], beacons: [], practice: !!cfg.practice, catchup: [0, 0], seed: cfg.seed || 7, bosses: [], boons: [blankBoons(), blankBoons()], event: null, eventAt: EVENT_FIRST, eventI: 0, eventOrder: [], fog: [1, 1], fund: [0, 0], reinforceAt: [0, 0], reinforceQ: [[0, 0], [0, 0]], votes: [null, null], voteCd: [0, 0],
@@ -264,7 +298,7 @@ const Sim = (() => {
         const hp = kind === 'core' ? CORE_HP : tier === 0 ? TOWER_HP[0] : TOWER_HP[1];
         s.towers.push({ id: s.nid++, kind: 'tower', sub: kind, team, x: mir(x, team), y, px: mir(x, team), py: y, r: kind === 'core' ? 54 : 36, hp, maxHp: hp, armor: 30, range: kind === 'core' ? CORE_RANGE : TOWER_RANGE, sight: 750, alive: true, cd: 0, lane, tier, stack: 0, last: null, vx: 0, vy: 0 });
       };
-      for (const lane of [0, 1]) { const f = y => lane ? H - y : y; mk(S(1500), f(S(345)), 'tower', lane, 0); mk(S(800), f(S(640)), 'tower', lane, 1); }
+      for (const lane of s.lanes) { const f = y => lane ? H - y : y; mk(S(1500), f(S(345)), 'tower', lane, 0); mk(S(800), f(S(640)), 'tower', lane, 1); }
       mk(S(340), H / 2, 'core', -1, 2);
     });
     // Jungle: four quadrants, each with a small trio and one heavy
@@ -279,6 +313,8 @@ const Sim = (() => {
       s.sites.push({ id: s.sites.length, x: f.x, y: f.y, alive: true, at: 0, prog: [0, 0], need: 2.5, con: {} });
     }
     initBosses(s);
+    if (mode === 'duel') { for (const B of s.bosses) B.at = 1e9; s.bossAt = 1e9; s.eventAt = 1e9; }
+    if (mode === 'raid') { const B = s.bosses.find(b => b.kind === 'colossus'); B.at = RAID_COLOSSUS_AT; s.bossAt = RAID_COLOSSUS_AT; s.eventAt = 1e9; }
     rebuildNav(s);
     s.practiceSide = Math.max(0, cfg.teams.findIndex(l => l.some(p => p.human)));
     cfg.teams.forEach((list, team) => {
@@ -290,12 +326,12 @@ const Sim = (() => {
       const c = {
         id: s.nid++, kind: 'champ', team, slot: i, role, solo: false, atkPref: 0, champ, pname: p.name, tier: p.tier || 0, human: !!p.human, remote: !!p.remote, skill: p.skill, build, buildDef: k.builds.find(b => b.id === build),
         finish: p.finish, trail: p.trail, recall: p.recall, prof, targetPref: p.targetPref === 'pct' ? 'pct' : 'hp',
-        x: mir(S(180), team), y: H / 2 + (i - 1.5) * 46, r: 26, sight: k.sight + (prof === 'longsight' ? 120 : 0), lvl: 1, xp: 0, gold: 300, up: { edge: 0, guard: 0, haste: 0 },
+        oneLane, x: mir(S(180), team), y: H / 2 + (i - 1.5) * 46, r: 26, sight: k.sight + (prof === 'longsight' ? 120 : 0), lvl: 1, xp: 0, gold: 300 * goldK(s), up: { edge: 0, guard: 0, haste: 0 },
         hp: k.hp, maxHp: k.hp, armor: k.armor, mr: k.mr, dmgBase: k.dmg, range: k.range, msBase: k.ms, as: k.as, kit: k.kit, f: { [build]: 1 }, evolved: [-1, -1], items: Array(ITEM_SLOTS).fill(null), atkMode: 'champ', beacons: prof === 'pathfinder' ? 3 : 2, beaconT: 0, st: blankStats(),
         alive: true, respawn: 0, atkCd: 0, lock: 0, fx: team ? -1 : 1, fy: 0, cd: [0, 0, 0], recast: [0, 0, 0], q: [], mv: { x: 0, y: 0 }, atk: false,
         stunT: 0, slowT: 0, slowA: 0, markT: 0, parryT: 0, drT: 0, air: 0, buffT: 0, empowerT: 0, revealT: 0, rootT: 0, polyT: 0, knockT: 0, knockMax: 0, stealthT: 0, noHealT: 0, hasteT: 0, hasteA: 0, shieldHp: 0, shieldT: 0, vulnT: 0, dmarkT: 0, opener: 0, ripT: 0, curseN: 0, curseT: 0, poisonT: 0, poisonDps: 0, bleedT: 0, bleedDps: 0, pstack: 0, pready: 0, rage: 0, streak: 0, bounty: 0, potT: 0, elixT: 0, tonicT: 0, sentT: 0, dropT: 0, buybackCd: 0, fundCd: 0, cleanseCd: 0, dlog: [],
         vx: 0, vy: 0, assist: {}, charge: null, chan: null, dash: null, leap: null, cuts: null, duelZ: null, inBrush: -1, recentHit: 0,
-        stats: { casts: 0, skillHits: 0, parries: 0, kills: 0, deaths: 0, assists: 0, dmg: 0, dealt: 0, taken: 0, healing: 0, gold: 0, towers: 0, objectives: 0, rescues: 0 },
+        stats: { casts: 0, skillHits: 0, parries: 0, kills: 0, deaths: 0, assists: 0, dmg: 0, dealt: 0, taken: 0, healing: 0, gold: 0, towers: 0, objectives: 0, rescues: 0, multi3: 0, multi4: 0, multi5: 0, bestStreak: 0, clutch: 0, saves: 0, steals: 0, colossi: 0, trailed: 0 },
       };
       applyMods(c); applyStats(c, false); c.hp = c.maxHp;
       c.px = c.x; c.py = c.y;
@@ -328,6 +364,7 @@ const Sim = (() => {
   const cdOf = (c, i) => { const a = c.kit[i]; return a.noCdr ? a.cd : a.cd * (1 - c.st.cdr); };
 
   const towerOpen = (s, t) => {
+    if (s.raid && t.team === s.raid.enemy) return false; // Raid: the enemy base is out of reach, the Colossus is the goal
     if (t.sub === 'core') return s.towers.some(o => o.team === t.team && o.sub === 'tower' && o.tier === 1 && !o.alive);
     if (t.tier === 1) return !s.towers.some(o => o.team === t.team && o.lane === t.lane && o.tier === 0 && o.alive);
     return true;
@@ -354,7 +391,7 @@ const Sim = (() => {
     return false;
   }
 
-  function heal(s, src, t, amt) { if (t.noHealT > 0) return; amt *= (1 + .15 * roleK(src, 'support')) * (1 + (src.st ? src.st.healPow : 0)) * (src.prof === 'guardian' ? 1.2 : 1); if (src.st && src.st.u.saintsbell && t !== src) t.bellT = 3; const a = Math.min(amt, t.maxHp - t.hp); t.hp += a; if (src.stats) src.stats.healing += a; if (src.champ === 'solenne' && amt - a > 1 && t.kind === 'champ') { t.shieldHp = Math.min(t.maxHp * .25, (t.shieldT > 0 ? t.shieldHp : 0) + (amt - a) * .5); t.shieldT = Math.max(t.shieldT || 0, 3); } if (a > 1) s.ev.push({ e: 'heal', u: t.id, a: Math.round(amt) }); }
+  function heal(s, src, t, amt) { if (t.noHealT > 0) return; amt *= (1 + .15 * roleK(src, 'support')) * (1 + (src.st ? src.st.healPow : 0)) * (src.prof === 'guardian' ? 1.2 : 1); if (src.st && src.st.u.saintsbell && t !== src) t.bellT = 3; const a = Math.min(amt, t.maxHp - t.hp); if (src.stats && t !== src && t.kind === 'champ' && t.hp < t.maxHp * .25 && a >= t.maxHp * .08 && s.t - (t.lastHurt || -99) < 3 && !(t.savedAt > s.t)) { t.savedAt = s.t + 10; src.stats.saves++; highlight(s, 'save', src, t.x, t.y, 1, 35); } t.hp += a; if (src.stats) src.stats.healing += a; if (src.champ === 'solenne' && amt - a > 1 && t.kind === 'champ') { t.shieldHp = Math.min(t.maxHp * .25, (t.shieldT > 0 ? t.shieldHp : 0) + (amt - a) * .5); t.shieldT = Math.max(t.shieldT || 0, 3); } if (a > 1) s.ev.push({ e: 'heal', u: t.id, a: Math.round(amt) }); }
 
   function hurt(s, src, t, amt, o = {}) {
     if (!t.alive || t.air) return 0;
@@ -396,11 +433,13 @@ const Sim = (() => {
     // Structures weaken late so a match always reaches an ending.
     if (t.kind === 'tower') a *= structureK(s) * (1 - .2 * (s.catchup[t.team] || 0));
     if (t.kind === 'tower' && src && src.kind === 'minion') a *= src.towerK || 1;
+    if (t.kind === 'tower' && s.raid) a *= RAID_TOWER_K;
     if (s.practice && t.kind === 'tower') { s.ev.push({ e: 'hit', u: t.id, a: Math.round(a), sk: o.skill ? 1 : 0, crit: 0, by: src ? src.id : 0 }); return a; }
     if (t.kind === 'monster' && champSrc) {
       t.hitAt = s.t; if (!t.tgt) t.tgt = src; a *= (1 + .35 * roleK(src, 'jungle')) * (1 + src.st.mon) * (src.prof === 'predator' ? (t.boss ? 1.15 : 1.25) : 1) * (t.boss && src.st.u.sovereign ? 1.25 : 1);
       // Kill Strike: a monster dropping under 10% is finished on the spot.
       if (src.prof === 'killstrike' && !(src.strikeAt > s.t) && t.hp - a < t.maxHp * .1) { a = Math.max(a, t.hp + 1); src.strikeAt = s.t + (t.boss ? 30 : 10); heal(s, src, src, src.maxHp * .08); s.ev.push({ e: 'strike', u: src.id, x: t.x, y: t.y }); }
+      if (t.boss) (t.dmgBy || (t.dmgBy = [0, 0]))[src.team] += a;
     }
     if (t.kind === 'tower' && champSrc && src.prof === 'demolisher') a *= 1.35;
     if (t.shieldHp > 0) { const ab = Math.min(t.shieldHp, a); t.shieldHp -= ab; a -= ab; }
@@ -416,7 +455,7 @@ const Sim = (() => {
       if (o.basic && src && src.kind === 'champ' && t.st.u.thorns && KITS[src.champ].melee) hurt(s, t, src, a * (t.st.u.thornwall ? .4 : .25) * (100 + src.armor) / 100, { dot: 1 });
     }
     if (champSrc) {
-      src.stats.dmg += a; if (t.kind === 'champ') src.stats.dealt += a;
+      src.stats.dmg += a; if (t.kind === 'champ') { src.stats.dealt += a; if (src.ultW && s.t <= src.ultW.t) { src.ultW.dmg += a; if (!src.ultW.ids.includes(t.id)) src.ultW.ids.push(t.id); } }
       if (!o.dot) { src.revealT = 1.2; if (t.kind === 'champ') { t.assist[src.id] = s.t; src.recentHit = s.t; } }
       if (o.basic && t.alive && t.kind === 'champ' && src.st.u.tempest) t.markT = Math.max(t.markT || 0, 1.5);
       if (src.st.lifesteal && !o.dot && (o.basic || !magic) && t.kind !== 'tower') heal(s, src, src, a * src.st.lifesteal * (t.kind === 'champ' ? 1 : .4));
@@ -487,11 +526,25 @@ const Sim = (() => {
     if (keepFrac) c.hp = Math.max(1, c.maxHp * f);
   }
   // Catch-up pay for the side that has fallen behind.
-  const earn = (s, c, g) => { g *= (1 + .34 * (s.catchup ? s.catchup[c.team] : 0)) * (s.boons[c.team].heist > 0 ? 1.25 : 1); c.gold += g; c.stats.gold += g; };
+  const goldK = s => s.mode === 'gold' ? 2 : 1;
+  const earn = (s, c, g) => { g *= goldK(s) * (1 + .34 * (s.catchup ? s.catchup[c.team] : 0)) * (s.boons[c.team].heist > 0 ? 1.25 : 1); c.gold += g; c.stats.gold += g; };
   // Paying a champion without catch-up multipliers: objectives, bounties and refunds already carry their own numbers.
-  const pay = (s, c, g) => { c.gold += g; c.stats.gold += g; };
+  const pay = (s, c, g) => { g *= goldK(s); c.gold += g; c.stats.gold += g; };
   const teamNear = (s, team, x, y, r) => s.champs.filter(c => c.team === team && c.alive && Math.hypot(c.x - x, c.y - y) < r);
 
+  // Highlights: one event per moment worth replaying. v is a rough score, n the size of it.
+  const highlight = (s, kind, u, x, y, n, v, b) => s.ev.push({ e: 'hl', kind, u: u.id, x: Math.round(x), y: Math.round(y), n, v: Math.round(v), b });
+  function noteKill(s, src, t, multi, bounty) {
+    const st = src.stats;
+    if (multi >= 3) st.multi3++; if (multi >= 4) st.multi4++; if (multi >= 5) st.multi5++;
+    st.bestStreak = Math.max(st.bestStreak, src.streak);
+    if (src.ultW && s.t <= src.ultW.t) src.ultW.kills++;
+    if (multi >= 2) highlight(s, 'multi', src, t.x, t.y, multi, 30 * multi * multi);
+    if (src.alive && src.hp <= src.maxHp * .15) { st.clutch++; highlight(s, 'clutch', src, t.x, t.y, 1, 45); }
+    if (bounty >= 300) highlight(s, 'shutdown', src, t.x, t.y, Math.round(bounty), 30 + bounty / 10);
+    const foes = s.champs.filter(c => c.team === t.team);
+    if (foes.length >= 2 && foes.every(c => !c.alive)) highlight(s, 'ace', src, t.x, t.y, foes.length, 120);
+  }
   function kill(s, src, t) {
     t.alive = false; t.hp = 0;
     if (t.curseN > 0 && t.curseT > 0) spreadCurses(s, t);
@@ -515,7 +568,7 @@ const Sim = (() => {
       if (src && src.kind === 'champ') { multi = s.t - (src.lastKill || -99) < 10 ? (src.multi || 1) + 1 : 1; src.multi = multi; src.lastKill = s.t; }
       const first = !s.firstBlood; s.firstBlood = true;
       if (src && src.kind === 'champ' && src.st.u.widow) haste(src, .35, 2.5);
-      if (src && src.kind === 'champ') { src.streak = (src.streak || 0) + 1; src.bounty = bountyFor(src.streak); src.deathN = 0; earn(s, src, killPay + bounty); src.stats.kills++; giveXp(s, src, (120 + 16 * t.lvl) * xpK(src.lvl)); s.ev.push({ e: 'gold', u: src.id, a: killPay + bounty }); }
+      if (src && src.kind === 'champ') { src.streak = (src.streak || 0) + 1; src.bounty = bountyFor(src.streak); src.deathN = 0; earn(s, src, killPay + bounty); src.stats.kills++; giveXp(s, src, (120 + 16 * t.lvl) * xpK(src.lvl)); s.ev.push({ e: 'gold', u: src.id, a: killPay + bounty }); noteKill(s, src, t, multi, bounty); }
       // Assists split one pot, so ganging up on someone does not print money.
       const helpers = Object.keys(t.assist).filter(id => s.t - t.assist[id] < 9 && (!src || +id !== src.id)).map(id => s.champs.find(c => c.id === +id)).filter(Boolean), share = helpers.length ? Math.max(ASSIST_MIN, ASSIST_POOL / helpers.length) * (1 - .35 * ahead) : 0;
       for (const a of helpers) { a.deathN = 0; earn(s, a, share * (a.prof === 'patron' ? 1.4 : 1)); a.stats.assists++; giveXp(s, a, 70 * xpK(a.lvl)); }
@@ -539,21 +592,23 @@ const Sim = (() => {
       s.champs.filter(c => c.team === et).forEach(c => { pay(s, c, 140 * objK(s, et)); giveXp(s, c, 70); if (c.alive && dist(c, t) < 900) c.stats.towers++; });
       rebuildNav(s);
       s.ev.push({ e: 'tower', team: t.team, sub: t.sub });
-      if (t.sub === 'core') s.over = { winner: et, t: s.t };
+      if (t.sub === 'core') { s.over = { winner: et, t: s.t }; if (src && src.kind === 'champ') highlight(s, 'core', src, t.x, t.y, 1, 60); }
     }
   }
 
-  function spawnWave(s) {
-    s.wave++;
+  function spawnWave(s, surge) {
+    if (!surge) s.wave++;
     const scale = 1 + s.wave * .035 + Math.max(0, s.t - 780) / 140;
-    for (const team of [0, 1]) for (const lane of [0, 1]) {
-      const path = team ? [...s.map.lanes[lane]].reverse() : s.map.lanes[lane], reinf = s.reinforceQ[team][lane] > 0; if (reinf) s.reinforceQ[team][lane]--;
-      const boonK = (s.boons[team].foreman > 0 ? 1.4 : 1) * (reinf ? 1.35 : 1), n = 4 + (s.wave % 3 === 0 ? 1 : 0) + (reinf ? 2 : 0);
+    const R = s.raid;
+    for (const team of [0, 1]) for (const lane of s.lanes) {
+      if (surge && team !== R.enemy) continue;
+      const foe = R && team === R.enemy, path = team ? [...s.map.lanes[lane]].reverse() : s.map.lanes[lane], reinf = s.reinforceQ[team][lane] > 0; if (reinf) s.reinforceQ[team][lane]--;
+      const boonK = (s.boons[team].foreman > 0 ? 1.4 : 1) * (reinf ? 1.35 : 1), n = 4 + (s.wave % 3 === 0 ? 1 : 0) + (reinf ? 2 : 0) + (foe ? (surge ? 2 : (s.wave >= 8 ? 1 : 0) + (s.wave >= 14 && s.wave % 4 === 0 ? 2 : 0)) : 0), raidK = R ? 1 + Math.max(0, s.wave - 8) * .03 : 1;
       for (let i = 0; i < n; i++) {
         // Two melee, two ranged, a heavy every third wave; reinforcements add heavies at the back.
         const type = i < 2 ? 'melee' : i < 4 ? 'ranged' : 'heavy', T = MINION_TYPES[type], x = path[0][0] + (s.rand() - .5) * 30, y = path[0][1] + (s.rand() - .5) * 30 + i * 8;
-        const hp = T.hp * scale * boonK;
-        s.minions.push({ id: s.nid++, kind: 'minion', type, heavy: type === 'heavy', team, lane, x, y, px: x, py: y, r: T.r, sight: 500, hp, maxHp: hp, armor: T.armor, dmg: T.dmg * scale * boonK, towerK: T.towerK, range: T.range, ranged: type === 'ranged', ms: T.ms, as: T.as, alive: true, cd: 0, wp: 1, path, stunT: 0, slowT: 0, slowA: 0, markT: 0, vx: 0, vy: 0, delay: i * .45, fx: team ? -1 : 1, fy: 0 });
+        const hp = T.hp * scale * boonK * raidK;
+        s.minions.push({ id: s.nid++, kind: 'minion', type, heavy: type === 'heavy', team, lane, x, y, px: x, py: y, r: T.r, sight: 500, hp, maxHp: hp, armor: T.armor, dmg: T.dmg * scale * boonK * raidK, towerK: T.towerK, range: T.range, ranged: type === 'ranged', ms: T.ms, as: T.as, alive: true, cd: 0, wp: 1, path, stunT: 0, slowT: 0, slowA: 0, markT: 0, vx: 0, vy: 0, delay: i * .45, fx: team ? -1 : 1, fy: 0 });
       }
     }
   }
@@ -605,8 +660,8 @@ const Sim = (() => {
       if (s.catchup[0] > .1) side = 0; else if (s.catchup[1] > .1) side = 1;
       const a = list.find(x => x.side === side) || list[0]; B.x = a.x; B.y = a.y;
     }
-    const hp = S2.hp * k, x = B.x, y = B.y;
-    const m = { id: s.nid++, kind: 'monster', team: 2, boss: true, bossKind: B.kind, x, y, px: x, py: y, hx: x, hy: y, r: S2.r, leash: Math.max(BOSS_LEASH, B.r), hp, maxHp: hp, armor: S2.armor, dmg: S2.dmg, range: S2.range, ms: S2.ms, as: S2.as, alive: true, cd: 0, slam: S2.slamEvery * .7, tgt: null, stunT: 0, slowT: 0, slowA: 0, markT: 0, vx: 0, vy: 0, fx: 1, fy: 0 };
+    const raidBoss = s.raid && B.kind === 'colossus', hp = S2.hp * k * (raidBoss ? RAID_COLOSSUS_HP : 1), x = B.x, y = B.y;
+    const m = { id: s.nid++, kind: 'monster', team: 2, boss: true, bossKind: B.kind, x, y, px: x, py: y, hx: x, hy: y, r: S2.r, leash: Math.max(BOSS_LEASH, B.r), hp, maxHp: hp, armor: S2.armor, dmg: S2.dmg * (raidBoss ? RAID_COLOSSUS_DMG : 1), range: S2.range, ms: S2.ms, as: S2.as, alive: true, cd: 0, slam: S2.slamEvery * .7, tgt: null, stunT: 0, slowT: 0, slowA: 0, markT: 0, vx: 0, vy: 0, fx: 1, fy: 0 };
     s.monsters.push(m); B.up = true; B.id = m.id; B.at = 0;
     if (B.kind === 'colossus') s.bossUp = true;
     s.ev.push({ e: 'bossup', kind: B.kind });
@@ -619,11 +674,13 @@ const Sim = (() => {
     const team = src && src.team !== 2 ? src.team : 0, B = s.bosses.find(b => b.kind === m.bossKind);
     if (B) { B.up = false; B.id = 0; B.at = s.t + BOSS_RESPAWN[B.kind]; }
     const boonT = boonFor(s, team);
-    for (const c of s.champs) if (c.team === team) { pay(s, c, (m.bossKind === 'colossus' ? 200 : 130) * objK(s, team)); giveXp(s, c, m.bossKind === 'colossus' ? 200 : 140); if (Math.hypot(c.x - m.x, c.y - m.y) < 1000) c.stats.objectives++; }
+    for (const c of s.champs) if (c.team === team) { pay(s, c, (m.bossKind === 'colossus' ? 200 : 130) * objK(s, team)); giveXp(s, c, m.bossKind === 'colossus' ? 200 : 140); if (Math.hypot(c.x - m.x, c.y - m.y) < 1000) { c.stats.objectives++; if (m.bossKind === 'colossus') c.stats.colossi++; } }
+    if (src && src.kind === 'champ') { const by = m.dmgBy || [0, 0], all = by[0] + by[1]; if (all > 0 && by[team] / all < .35) { src.stats.steals++; highlight(s, 'steal', src, m.x, m.y, 1, 160, m.bossKind); } else if (m.bossKind === 'colossus') highlight(s, 'boss', src, m.x, m.y, 1, 55, m.bossKind); }
     grantBoon(s, team, m.bossKind, boonT);
     if (m.bossKind === 'colossus') { s.buff[team] = 1; s.bossAt = s.t + BOSS_RESPAWN.colossus; s.bossUp = false; for (const c of s.champs) if (c.team === team) c.buffT = boonT; }
     if (m.bossKind === 'sentinel') for (const c of s.champs) if (c.team === team) { c.sentT = boonT; applyStats(c, true); if (c.alive) shield(s, c, c.maxHp * .12, 10); }
     s.ev.push({ e: 'boss', team, kind: m.bossKind });
+    if (s.raid && m.bossKind === 'colossus') s.over = { winner: s.raid.team, t: s.t };
   }
   // Timers: boons run down, Sentinel keeps refreshing its shield, a boon ending is announced.
   function stepBoons(s) {
@@ -714,7 +771,7 @@ const Sim = (() => {
     s.ev.push({ e: 'buyback', u: c.id }); return true;
   }
   function reinforce(s, c, lane) {
-    lane = lane ? 1 : 0;
+    lane = lane && !s.oneLane ? 1 : 0;
     if (s.t < s.reinforceAt[c.team]) return false;
     const cost = reinforceCost(s, c); if (c.gold < cost) return false;
     c.gold -= cost; s.reinforceAt[c.team] = s.t + REINFORCE_CD; s.reinforceQ[c.team][lane]++;
@@ -869,6 +926,7 @@ const Sim = (() => {
     if (!a.keepStealth) breakStealth(s, c);
     c.cd[q.slot] = Math.max(c.cd[q.slot], cdOf(c, q.slot));
     c.stats.casts++; c.fx = dx; c.fy = dy; c.spin = 1;
+    if (q.slot === 2) c.ultW = { t: s.t + 3, dmg: 0, ids: [], kills: 0 };
     if (c.chan && c.chan.recall) c.chan = null;
     if (c.st.u.phase) haste(c, c.st.u.ghoststep ? .28 : .15, c.st.u.ghoststep ? 2 : 1.5);
     says();
@@ -1083,8 +1141,9 @@ const Sim = (() => {
     const worth = [0, 0];
     for (const c of s.champs) { worth[c.team] += c.gold + c.xp * .4; for (const id of c.items) if (id) worth[c.team] += itemPath(id).reduce((v, p) => v + ITEM_BY[p].cost, 0); }
     // A lead is judged against the size of the economy: 2000 gold is a lot at minute 5 and little at minute 15.
-    const gap = worth[1] - worth[0], k = clamp(Math.abs(gap) / (900 + .1 * (worth[0] + worth[1])), 0, 1);
+    const gap = s.raid ? 0 : worth[1] - worth[0], k = clamp(Math.abs(gap) / (900 + .1 * (worth[0] + worth[1])), 0, 1);
     s.catchup[0] = gap > 0 ? k : 0; s.catchup[1] = gap < 0 ? k : 0;
+    for (const c of s.champs) { const behind = c.team ? -gap : gap; if (behind > c.stats.trailed) c.stats.trailed = Math.round(behind); }
     s.topLvl = [0, 1].map(team => s.champs.reduce((v, c) => c.team !== team ? Math.max(v, c.lvl) : v, 1));
   }
   // Poison and bleed, ticking twice a second. Damage over time never reveals or interrupts.
@@ -1147,7 +1206,7 @@ const Sim = (() => {
         if (homeD(m) > leash) { const h = norm(m.x - m.hx, m.y - m.hy); m.x = m.hx + h.x * leash; m.y = m.hy + h.y * leash; pushOut(s.map, m); m.tgt = null; }
       } else if (m.cd <= 0) { m.cd = 1 / m.as; hurt(s, m, t, m.dmg); s.ev.push({ e: 'matk', u: m.id }); }
     } else {
-      const n = norm(m.hx - m.x, m.hy - m.y); if (n.l > 8) { m.x += n.x * 320 * DT; m.y += n.y * 320 * DT; pushOut(s.map, m); } else m.hp = Math.min(m.maxHp, m.hp + m.maxHp * .25 * DT);
+      const n = norm(m.hx - m.x, m.hy - m.y); if (n.l > 8) { m.x += n.x * 320 * DT; m.y += n.y * 320 * DT; pushOut(s.map, m); } else if (!(s.raid && m.bossKind === 'colossus')) m.hp = Math.min(m.maxHp, m.hp + m.maxHp * .25 * DT);
     }
     m.vx = (m.x - m.px) / DT; m.vy = (m.y - m.py) / DT;
   }
@@ -1237,6 +1296,19 @@ const Sim = (() => {
   /*BOTS*/
   /*CODEC*/
   // ---------- step ----------
+  // An ultimate is judged once its window closes: several champions caught, a kill, or a huge hit.
+  function stepUlts(s) {
+    for (const c of s.champs) if (c.ultW && s.t > c.ultW.t) {
+      const w = c.ultW; c.ultW = null;
+      if (w.ids.length >= 2 || w.kills || w.dmg >= 900) highlight(s, 'ult', c, c.x, c.y, w.ids.length, 25 * w.ids.length + 45 * w.kills + w.dmg / 45);
+    }
+  }
+  // Raid: the Colossus calls extra waves as it weakens, at two thirds and one third health.
+  function stepRaid(s) {
+    const R = s.raid, B = s.bosses.find(b => b.kind === 'colossus'), m = B.up ? s.monsters.find(x => x.id === B.id && x.alive) : null; if (!m) return;
+    const due = m.hp < m.maxHp / 3 ? 2 : m.hp < m.maxHp * 2 / 3 ? 1 : 0;
+    if (due > R.surge) { R.surge = due; spawnWave(s, true); s.ev.push({ e: 'raid', phase: due }); }
+  }
   function step(s) {
     if (s.over) return;
     if (s.practice) { s.eventAt = 1e9; s.bossAt = 1e9; for (const B of s.bosses) if (!B.up) B.at = 1e9; }
@@ -1245,6 +1317,7 @@ const Sim = (() => {
     if (s.hope !== 50) setHope(s, s.hope + (50 - s.hope) * HOPE_DRIFT * DT); // public mood settles back toward even
     refreshLanes(s);
     if (s.tick % 15 === 0) teamThink(s, 0); else if (s.tick % 15 === 7) teamThink(s, 1);
+    if (s.raid) stepRaid(s);
     if (s.tick % 15 === 3) for (const c of s.champs) updateSolo(s, c);
     for (const c of s.champs) if (c.bot) {
       if (!c.alive) { botDead(s, c, c.bot); continue; }
@@ -1261,7 +1334,7 @@ const Sim = (() => {
     for (const m of s.monsters) if (m.alive) stepMonster(s, m);
     for (const t of s.towers) if (t.alive) stepTower(s, t);
     stepProj(s); stepZones(s); stepSites(s); stepDots(s); stepBeacons(s);
-    stepBoons(s); stepEvent(s); stepFog(s); stepVotes(s);
+    stepBoons(s); stepEvent(s); stepFog(s); stepVotes(s); stepUlts(s);
     if (s.tick % 60 === 0) updateCatchup(s);
     s.minions = s.minions.filter(m => m.alive); s.monsters = s.monsters.filter(m => m.alive);
   }
@@ -1273,9 +1346,30 @@ const Sim = (() => {
     const acc = st.casts ? Math.min(1, st.skillHits / st.casts) : 0;
     return Math.round(st.skillHits * 6 * (.6 + acc) + st.parries * 25 + (st.kills + st.assists * .5) * 20 + (won ? 60 : 20));
   }
+  // End of match scoring. Every input is rounded and comes from the synced slow state, so host and guests name the same MVP.
+  const SCORE_WEIGHTS = {
+    top: { kda: 26, dmg: 22, taken: 20, towers: 18, objectives: 8, healing: 0, rescues: 6 },
+    jungle: { kda: 28, dmg: 16, taken: 10, towers: 8, objectives: 32, healing: 0, rescues: 6 },
+    bottom: { kda: 30, dmg: 38, taken: 2, towers: 18, objectives: 6, healing: 0, rescues: 6 },
+    support: { kda: 30, dmg: 8, taken: 12, towers: 4, objectives: 10, healing: 28, rescues: 8 },
+  };
+  function scoreMatch(s) {
+    const raid = s.mode === 'raid', pick = c => { const t = c.stats, r = v => Math.round(v || 0); return { kda: (r(t.kills) * 2 + r(t.assists)) / (1 + r(t.deaths) * .5), dmg: r(raid ? t.dmg : t.dealt), taken: r(t.taken), towers: r(t.towers), objectives: r(t.objectives), healing: r(t.healing), rescues: r(t.rescues) }; };
+    const rows = s.champs.map(c => ({ c, v: pick(c) })), best = {};
+    for (const k of Object.keys(SCORE_WEIGHTS.top)) best[k] = Math.max(1, ...rows.map(r => r.v[k]));
+    const list = rows.map(({ c, v }) => { const W2 = SCORE_WEIGHTS[c.role] || SCORE_WEIGHTS.top; let score = 0; for (const k in W2) score += W2[k] * v[k] / best[k]; return { id: c.id, champ: c.champ, name: c.pname, team: c.team, role: c.role, score: Math.round(score * 10) / 10, parts: v }; });
+    const top = team => list.filter(r => r.team === team).sort((a, b) => b.score - a.score || b.parts.dmg - a.parts.dmg || a.id - b.id)[0] || null;
+    const w = s.over ? s.over.winner : -1, mvp = raid ? top(s.champs.length ? s.champs[0].team : 0) : w < 0 ? null : top(w), svp = raid || w < 0 ? null : top(1 - w);
+    return { list: list.sort((a, b) => b.score - a.score || a.id - b.id), mvp: mvp ? mvp.id : 0, svp: svp ? svp.id : 0 };
+  }
+  // What medalProgress needs from one champion's finished match.
+  function matchStats(s, c) {
+    const won = !!s.over && s.over.winner === c.team, t = c.stats, n = v => Math.round(v || 0);
+    return { won, mode: s.mode || 'classic', practice: !!s.practice, full: s.t >= 360, t: Math.round(s.t), champ: c.champ, role: c.role, mastery: masteryGain(t, won), kills: n(t.kills), deaths: n(t.deaths), assists: n(t.assists), towers: n(t.towers), objectives: n(t.objectives), rescues: n(t.rescues), skillHits: n(t.skillHits), multi3: n(t.multi3), multi4: n(t.multi4), multi5: n(t.multi5), bestStreak: n(t.bestStreak), clutch: n(t.clutch), saves: n(t.saves), steals: n(t.steals), colossi: n(t.colossi), trailed: n(t.trailed) };
+  }
   function tierOf(p) { let t = 0; TIERS.forEach((x, i) => { if (p >= x.at) t = i; }); return t; }
 
-  return { sensiblePool, MAX_LEVEL, PROFS, itemPaths, quickTarget, ITEM_SLOTS, CONSUMABLES, buybackCost, reinforceCost, fundCost, sellValue, BOSS_INFO, EVENT_INFO, BOON_INFO, SURRENDER_AT, BEACON_RANGE, ROSTER, ITEMS, ITEM_BY, itemPath, itemPrice, recommended, marksEarned, cdOf, defaultBuild, TOWER_RANGE, MAX_ATTACK_RANGE, refreshChamp, W, H, TICK, DT, KITS, buildMap, rayWall, visionSources, hasLOS, TIERS, TEAM_NAMES, FORGE_COST, createMatch, step, canSee, autoTarget, masteryGain, tierOf, towerOpen, xpNeed, ROLES, ROLE_INFO, autoRoles, CHARS, charOf,
+  return { MODES, normalizeTeams, MEDALS, MEDAL_CATS, MARK_BONUS, EXTRA_STATS, newCareer, medalValue, medalProgress, scoreMatch, matchStats, sensiblePool, MAX_LEVEL, PROFS, itemPaths, quickTarget, ITEM_SLOTS, CONSUMABLES, buybackCost, reinforceCost, fundCost, sellValue, BOSS_INFO, EVENT_INFO, BOON_INFO, SURRENDER_AT, BEACON_RANGE, ROSTER, ITEMS, ITEM_BY, itemPath, itemPrice, recommended, marksEarned, cdOf, defaultBuild, TOWER_RANGE, MAX_ATTACK_RANGE, refreshChamp, W, H, TICK, DT, KITS, buildMap, rayWall, visionSources, hasLOS, TIERS, TEAM_NAMES, FORGE_COST, createMatch, step, canSee, autoTarget, masteryGain, tierOf, towerOpen, xpNeed, ROLES, ROLE_INFO, autoRoles, CHARS, charOf,
     RANKS, rankOf, rankDelta, botSkills, skillProfile, setBot, snapshot, decodeSnapshot, applySnapshot, applyFrame, applyChampState, slowFlat, slowDiff, applySlow, packEvent, unpackEvent, predict };
 })();
 if (typeof module !== 'undefined') module.exports = Sim;
