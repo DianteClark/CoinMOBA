@@ -16,13 +16,27 @@ const { Ctl, applyInput, aimDir } = (() => {
   const crossesWalls = (me, i) => !!me.kit[i].over;
   const clearShot = (me, u, d, free) => free || d < 1 || wallAt(me, (u.x - me.x) / d, (u.y - me.y) / d, d) >= d - (u.r || 0);
 
-  // Nearest enemy champion that can be seen and reached, otherwise the nearest such unit.
+  // Tap-to-fire. Enemy players first, lowest health first (by value or by percentage, from Settings).
+  // With no player in reach it goes by where you stand: in a lane, minions and then towers; in the jungle, monsters.
+  const wantsPct = () => save.targetPref === 'pct';
+  const hpScore = u => wantsPct() ? u.hp / (u.maxHp || 1) : u.hp;
+  const LANE_R = 240;
+  function standingInLane(x, y) {
+    if (Sim.inLane) return !!Sim.inLane(x, y, G.s);
+    const lanes = G.s.map && G.s.map.lanes; if (!lanes) return true;
+    for (const L of lanes) for (let i = 1; i < L.length; i++) {
+      const ax = L[i - 1][0], ay = L[i - 1][1], bx = L[i][0] - ax, by = L[i][1] - ay, t = Math.max(0, Math.min(1, ((x - ax) * bx + (y - ay) * by) / (bx * bx + by * by || 1)));
+      if (Math.hypot(x - ax - bx * t, y - ay - by * t) < LANE_R) return true;
+    }
+    return false;
+  }
   function quickTarget(me, a, free) {
-    const r = (a.range || 600) + 80, s = G.s; let best = null, bd = r;
-    const scan = list => { for (const u of list) { if (!u.alive || u.team === me.team || u.delay > 0 || !Sim.canSee(s, me.team, u)) continue; const d = Math.hypot(u.x - me.x, u.y - me.y); if (d < bd && clearShot(me, u, d, free)) { bd = d; best = u; } } };
-    scan(s.champs); if (best) return best;
-    scan(s.minions); scan(s.monsters);
-    return best;
+    const r = (a.range || 600) + 80, s = G.s, ok = (u, d) => u.alive && !u.air && u.team !== me.team && !(u.delay > 0) && d < r && Sim.canSee(s, me.team, u) && clearShot(me, u, d, free);
+    const lowest = list => { let best = null, top = Infinity; for (const u of list) { const d = Math.hypot(u.x - me.x, u.y - me.y); if (!ok(u, d)) continue; const v = hpScore(u); if (v < top) { top = v; best = u; } } return best; };
+    const tower = () => { let best = null, bd = Infinity; for (const t of s.towers) { const d = Math.hypot(t.x - me.x, t.y - me.y); if (!ok(t, d) || d >= bd || !Sim.towerOpen(s, t)) continue; bd = d; best = t; } return best; };
+    const foe = lowest(s.champs); if (foe) return foe;
+    if (standingInLane(me.x, me.y)) return lowest(s.minions) || tower() || lowest(s.monsters);
+    return lowest(s.monsters) || lowest(s.minions) || tower();
   }
 
   // Where the current aim points. tx, ty is the exact point a release would send.
@@ -267,4 +281,158 @@ const { Ctl, applyInput, aimDir } = (() => {
   Ctl.radial = RADIAL;
 
   return { Ctl, applyInput, aimDir };
+})();
+
+// ---------- kinetic scrolling ----------
+// One scroller for every list in the game, because native scrolling cannot be trusted inside the rotated stage.
+// Mark a list with .scroll (vertical) or .scroll.sx (sideways). Fingers are read in stage space, so both orientations behave the same.
+const Kin = (() => {
+  const SLOP = 7, TAU_MS = 340, MAX_V = 5, K_SPRING = .00024, C_SPRING = .031, STOP_V = .012, SAMPLE_MS = 90, RUBBER = .5, FLICK_KEEP = 450, HOLD_MS = 130; // a dropped frame can delay the last move by 100ms; a real pause is longer
+  const states = new WeakMap(), active = new Set();
+  let track = null, swallow = false, swallowT = 0, raf = 0, last = 0;
+
+  const isX = el => el.classList.contains('sx');
+  function st(el) {
+    let s = states.get(el);
+    if (!s) { s = { el, x: isX(el), pos: 0, v: 0, mode: 'idle', over: 0, bar: null, barT: 0, at: 0, flickV: 0, flickT: 0, target: 0 }; states.set(el, s); }
+    s.x = isX(el);
+    return s;
+  }
+  const limit = s => s.x ? s.el.scrollWidth - s.el.clientWidth : s.el.scrollHeight - s.el.clientHeight;
+  const read = s => s.x ? s.el.scrollLeft : s.el.scrollTop;
+  const size = s => s.x ? s.el.clientWidth : s.el.clientHeight;
+  // Soft resistance past the ends: the further you pull, the less it follows.
+  const rubber = (d, h) => { const a = Math.abs(d), v = (1 - 1 / (a * RUBBER / h + 1)) * h; return d < 0 ? -v : v; };
+
+  function bar(s) {
+    const el = s.el, host = el.offsetParent; if (!host) return null;
+    if (!s.bar || s.bar.parentNode !== host) {
+      if (s.bar) s.bar.remove();
+      s.bar = document.createElement('i'); s.bar.className = 'kbar' + (s.x ? ' x' : ''); s.bar.setAttribute('aria-hidden', 'true'); host.append(s.bar);
+    }
+    return s.bar;
+  }
+  function paintBar(s) {
+    const max = limit(s), b = bar(s); if (!b) return;
+    if (max < 2) { b.classList.remove('on'); return; }
+    const el = s.el, view = size(s), track_ = view - 8, len = Math.max(26, track_ * view / (view + max)) - Math.abs(s.over) * .6, f = Math.max(0, Math.min(1, read(s) / max)), at = 4 + (track_ - len) * f + (s.over > 0 ? Math.max(0, s.over) * .4 : 0);
+    if (s.x) { b.style.left = el.offsetLeft + 'px'; b.style.top = el.offsetTop + el.offsetHeight - 3 + 'px'; b.style.width = len + 'px'; b.style.transform = `translate3d(${at}px,0,0)`; }
+    else { b.style.left = el.offsetLeft + el.offsetWidth - 4 + 'px'; b.style.top = el.offsetTop + 'px'; b.style.height = len + 'px'; b.style.transform = `translate3d(0,${at}px,0)`; }
+    b.classList.add('on'); s.barT = performance.now();
+  }
+  function write(s, quiet) {
+    const max = Math.max(0, limit(s)), p = Math.max(0, Math.min(max, s.pos));
+    if (s.x) s.el.scrollLeft = p; else s.el.scrollTop = p;
+    const over = s.pos < 0 ? s.pos : s.pos > max ? s.pos - max : 0;
+    if (over !== s.over || over) {
+      s.over = over;
+      if (over) { s.el.style.setProperty('--ko', `${-over}px`); s.el.classList.add('kov'); }
+      else { s.el.classList.remove('kov'); s.el.style.removeProperty('--ko'); }
+    }
+    if (!quiet) paintBar(s);
+  }
+  function wake(s) { active.add(s); if (!raf) { last = performance.now(); raf = requestAnimationFrame(tick); } }
+  function settle(s, keepBar) { s.mode = 'idle'; s.v = 0; if (s.over) { s.over = 0; s.el.classList.remove('kov'); s.el.style.removeProperty('--ko'); } if (!keepBar) active.delete(s); }
+  function tick(now) {
+    raf = 0;
+    const dt = Math.min(34, now - last || 16); last = now;
+    for (const s of active) {
+      if (!s.el.isConnected) { active.delete(s); continue; }
+      if (s.mode === 'fling') {
+        const max = Math.max(0, limit(s)), d = s.pos < 0 ? s.pos : s.pos > max ? s.pos - max : 0;
+        if (d) {
+          // Past an end: a stiff spring brings it back without a wobble.
+          s.v += (-K_SPRING * d - C_SPRING * s.v) * dt; s.pos += s.v * dt;
+          const edge = s.pos < 0 ? 0 : s.pos > max ? max : (d < 0 ? 0 : max);
+          if (Math.abs(s.pos - edge) < .4 && Math.abs(s.v) < .03) { s.pos = edge; write(s); settle(s, true); continue; }
+          if ((d < 0 && s.pos >= 0) || (d > 0 && s.pos <= max)) { s.pos = edge; write(s); settle(s, true); continue; }
+        } else {
+          s.v *= Math.exp(-dt / TAU_MS); s.pos += s.v * dt;
+          if (Math.abs(s.v) < STOP_V) { write(s); settle(s, true); continue; }
+          if (s.pos < 0 || s.pos > max) s.v = Math.max(-1.1, Math.min(1.1, s.v));
+        }
+        write(s);
+      } else if (s.mode === 'glide') {
+        s.pos += (s.target - s.pos) * (1 - Math.exp(-dt / 70));
+        if (Math.abs(s.target - s.pos) < .5) { s.pos = s.target; write(s); settle(s, true); continue; }
+        write(s);
+      } else if (s.mode === 'idle' && now - s.barT > 620) { if (s.bar) s.bar.classList.remove('on'); active.delete(s); }
+    }
+    if (active.size) raf = requestAnimationFrame(tick);
+  }
+  function chainOf(t) { const out = []; for (let e = t && t.closest ? t.closest('.scroll') : null; e; e = e.parentElement && e.parentElement.closest('.scroll')) out.push(e); return out; }
+
+  document.addEventListener('pointerdown', e => {
+    clearTimeout(swallowT); swallow = false;
+    if (track && track.id !== e.pointerId) return; // a second finger never disturbs the first
+    const chain = chainOf(e.target);
+    // A touch on a moving list only stops it. It is not also a tap on whatever slid under the finger.
+    for (const el of chain) { const s = st(el); if (s.mode === 'fling' || s.mode === 'glide') { if (Math.abs(s.v) > .08 || s.mode === 'glide') swallow = true; settle(s, true); wake(s); } }
+    track = chain.length ? { id: e.pointerId, p0: Ctl.pt(e), p: Ctl.pt(e), chain, owner: null, btn: e.target.closest && e.target.closest('button'), last: null, samples: [] } : null;
+  }, true);
+
+  document.addEventListener('pointermove', e => {
+    if (!track || track.id !== e.pointerId) return;
+    const p = Ctl.pt(e);
+    if (!track.owner) {
+      const dx = p.x - track.p0.x, dy = p.y - track.p0.y;
+      if (Math.hypot(dx, dy) < SLOP) return;
+      const wantX = Math.abs(dx) > Math.abs(dy), el = track.chain.find(c => isX(c) === wantX && limit(st(c)) > 1);
+      if (!el) { track = null; return; }
+      const s = st(el); s.pos = s.raw = read(s); s.v = 0; s.mode = 'drag'; track.owner = s; track.p = p; swallow = true;
+      if (track.btn) track.btn.classList.remove('down');
+      active.add(s);
+      track.samples = [[e.timeStamp, s.pos]];
+      return;
+    }
+    const s = track.owner, delta = s.x ? p.x - track.p.x : p.y - track.p.y;
+    track.p = p;
+    if (!s.el.isConnected) { track = null; return; }
+    const max = Math.max(0, limit(s));
+    // Inside the ends the list follows the finger exactly; past them, the raw distance feeds the rubber band.
+    s.raw -= delta;
+    const h = size(s) * .32;
+    s.pos = s.raw < 0 ? (calm ? 0 : rubber(s.raw, h)) : s.raw > max ? max + (calm ? 0 : rubber(s.raw - max, h)) : s.raw;
+    write(s);
+    const t = e.timeStamp, sam = track.samples; sam.push([t, s.pos]);
+    while (sam.length > 2 && t - sam[0][0] > SAMPLE_MS) sam.shift();
+  }, true);
+
+  function release(e, lost) {
+    if (!track || track.id !== e.pointerId) return;
+    const s = track.owner, sam = track.samples; track = null;
+    if (!s) return;
+    clearTimeout(swallowT); swallowT = setTimeout(() => { swallow = false; }, 380);
+    let v = 0;
+    if (!lost && sam.length > 1 && !calm) {
+      const t1 = e.timeStamp, a = sam[0], b = sam[sam.length - 1], span = Math.max(8, b[0] - a[0]);
+      // A held finger leaves no momentum. Event times, not the clock now: a busy frame must not read as a pause.
+      if (t1 - b[0] < HOLD_MS) v = (b[1] - a[1]) / span;
+    }
+    // Repeated flicks the same way stack, the way a long list wants to be thrown.
+    const now = performance.now();
+    if (s.flickV && now - s.flickT < FLICK_KEEP && Math.sign(s.flickV) === Math.sign(v) && Math.abs(v) > .25) v += s.flickV * .6;
+    v = Math.max(-MAX_V, Math.min(MAX_V, v));
+    s.flickV = v; s.flickT = now;
+    s.v = v; s.mode = 'fling'; wake(s);
+  }
+  document.addEventListener('pointerup', e => release(e, false), true);
+  document.addEventListener('pointercancel', e => release(e, true), true);
+  // Anything that was a scroll is not also a tap.
+  document.addEventListener('click', e => { if (swallow) { swallow = false; e.stopPropagation(); e.preventDefault(); } }, true);
+  // Older Safari will still try to pan the page unless the touch is claimed here.
+  document.addEventListener('touchmove', e => { if (track && track.owner) e.preventDefault(); }, { passive: false });
+
+  return {
+    // Put a list back without a stale fling carrying over into new content.
+    stop(el) { const s = states.get(el); if (s) { settle(s, false); s.pos = read(s); } },
+    // Slide a child into view, centred, for tab strips and the like.
+    reveal(el, child, snap) {
+      const s = st(el), max = Math.max(0, limit(s)); if (!max) return;
+      const at = s.x ? child.offsetLeft - el.offsetLeft : child.offsetTop - el.offsetTop, len = s.x ? child.offsetWidth : child.offsetHeight;
+      s.target = Math.max(0, Math.min(max, at - (size(s) - len) / 2)); s.pos = read(s);
+      if (snap || calm) { s.pos = s.target; write(s, true); return; }
+      s.mode = 'glide'; wake(s);
+    },
+  };
 })();

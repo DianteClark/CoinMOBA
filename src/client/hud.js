@@ -153,6 +153,7 @@ const { hud, initHud, hudDraw, uiEvent } = (() => {
   const TENTH = Array.from({ length: 31 }, (_, i) => (i / 10).toFixed(1));
   const num = n => n >= 0 && n < 240 ? NUM[n] : String(n);
   const clamp01 = v => v < 0 ? 0 : v > 1 ? 1 : v;
+  const maxLvl = () => Sim.MAX_LEVEL || Sim.MAX_LVL || 15;
   const outBack = t => { const k = 1.9; t -= 1; return 1 + (k + 1) * t * t * t + k * t * t; };
   const SIDE_ACC = [GOLD, CRIM], TEAM_DOT = [BLUE, CRIM];
 
@@ -253,6 +254,7 @@ const { hud, initHud, hudDraw, uiEvent } = (() => {
       hint: save.hints < 2 ? { i: 0, t: 0, n: 0 } : null,
     };
     g.goldBump = 0; g.goldAnchor = { x: GOLD_X, y: GOLD_Y };
+    me.q.push({ t: 'pref', v: save.targetPref === 'pct' ? 'pct' : 'hp' });
     hud();
   }
 
@@ -332,6 +334,9 @@ const { hud, initHud, hudDraw, uiEvent } = (() => {
   }
 
   // ---------- player frame ----------
+  function skewBar(x, y, w, h, s) { if (w <= 0) return; const sl = Math.min(w, s); ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x + w, y); ctx.lineTo(x + w - sl, y + h); ctx.lineTo(x, y + h); ctx.closePath(); ctx.fill(); }
+  const barGrads = {};
+  function barFill(low, y, h) { const k = (low ? 1 : 0) + '|' + y; return barGrads[k] || (barGrads[k] = (() => { const g = ctx.createLinearGradient(0, y, 0, y + h); if (low) { g.addColorStop(0, '#ff8d9c'); g.addColorStop(.28, '#ea3a52'); g.addColorStop(1, '#a51a30'); } else { g.addColorStop(0, '#a4f0c4'); g.addColorStop(.28, '#46c780'); g.addColorStop(1, '#23884f'); } return g; })()); }
   function drawFrame(dt, me) {
     const hpw = U.hpW, f = clamp01(me.hp / me.maxHp), side = me.team;
     if (me.hp < H.hpPrev - .5) H.hurt = 1;
@@ -346,18 +351,20 @@ const { hud, initHud, hudDraw, uiEvent } = (() => {
     ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.font = fw(600, Math.round(11.5 * lb)); ctx.fillStyle = PAPER; ctx.fillText(num(me.lvl), bx, by + .5);
     if (me.hp < H.hpTrail) { H.hpHold += dt; if (H.hpHold > .32) H.hpTrail = Math.max(me.hp, H.hpTrail - (me.maxHp * .9 + H.hpTrail - me.hp) * dt); } else { H.hpTrail = me.hp; H.hpHold = 0; }
     const x = HP_X, y = 11, h = 12, tr = clamp01(H.hpTrail / me.maxHp), low = f < .3;
-    ctx.fillStyle = GLASS; ctx.fillRect(x - 1, y - 1, hpw + 2, h + 7);
-    ctx.fillStyle = WELL; ctx.fillRect(x, y, hpw, h);
-    if (tr > f) { ctx.fillStyle = PAPER; ctx.fillRect(x + hpw * f, y, hpw * (tr - f), h); }
+    ctx.fillStyle = GLASS; skewBar(x - 1, y - 1, hpw + 2, h + 7, 4);
+    ctx.fillStyle = WELL; skewBar(x, y, hpw, h, 3);
+    if (tr > f) { ctx.fillStyle = '#ffd98a'; skewBar(x, y, hpw * tr, h, 3); }
     H.hpEase += (f - H.hpEase) * Math.min(1, dt * 22);
     const hf = calm ? f : H.hpEase;
-    ctx.fillStyle = low ? CRIM : '#3fbf78'; ctx.fillRect(x, y, hpw * hf, h);
-    ctx.fillStyle = low ? '#ff7f90' : '#86e5ae'; ctx.fillRect(x, y, hpw * hf, 2);
+    ctx.fillStyle = barFill(low, y, h); skewBar(x, y, hpw * hf, h, 3);
+    // A notch every 250 health, so a glance reads how much is really left.
+    ctx.fillStyle = 'rgba(5,6,10,.42)'; for (let hv = 250; hv < me.maxHp; hv += 250) { const nx = x + hpw * hv / me.maxHp; if (nx < x + hpw * hf) ctx.fillRect(nx, y, 1, h); }
+    const shf = clamp01((me.shield || 0) / me.maxHp); if (shf > 0) { ctx.fillStyle = 'rgba(233,237,244,.82)'; ctx.fillRect(x + Math.max(0, hpw * Math.min(hf, 1 - shf)), y + h - 3, hpw * shf, 3); }
     // A slow glint along the bar keeps it feeling like polished metal.
     if (!calm && quality > 0) { const g0 = (H.t * .22) % 1, gx = x + hpw * hf * g0; if (g0 < .94 && hf > .08) { ctx.globalAlpha = .28; ctx.fillStyle = '#fff'; ctx.fillRect(gx, y, Math.min(14, hpw * hf * (1 - g0)), h); ctx.globalAlpha = 1; } }
     ctx.font = fw(600, 11.5); ctx.textAlign = 'center';
     label(num(Math.ceil(me.hp)), x + hpw / 2, y + h / 2 + .5, WHITE, 2.2);
-    const need = Sim.xpNeed(me.lvl), xf = me.lvl >= 10 ? 1 : clamp01(me.xp / need);
+    const need = Sim.xpNeed(me.lvl), xf = me.lvl >= maxLvl() || !(need > 0) ? 1 : clamp01(me.xp / need);
     // Xp rises smoothly, and drops straight back to the bottom on a level-up.
     H.xpEase = xf < H.xpEase - .25 ? xf : H.xpEase + (xf - H.xpEase) * Math.min(1, dt * 10);
     ctx.fillStyle = WELL; ctx.fillRect(x, y + h + 2, hpw, 3);
@@ -859,12 +866,19 @@ const { hud, initHud, hudDraw, uiEvent } = (() => {
   }
 
   function drawStick(s) {
-    const st = Ctl.stick;
-    if (st) {
-      disc(st.sx, st.sy, 58); ctx.fillStyle = 'rgba(6,7,11,.3)'; ctx.fill(); ctx.strokeStyle = 'rgba(233,237,244,.4)'; ctx.lineWidth = 1.2; ctx.stroke();
-      const dx = st.x - st.sx, dy = st.y - st.sy, l = Math.min(58, Math.hypot(dx, dy)), an = Math.atan2(dy, dx), nx = st.sx + Math.cos(an) * l, ny = st.sy + Math.sin(an) * l;
-      disc(nx, ny, 23); ctx.fillStyle = 'rgba(233,237,244,.82)'; ctx.fill();
-    } else if (H.guide && s.t < 20) { disc(left() ? VW - 122 : 122, VH - 86, 52); ctx.strokeStyle = 'rgba(233,237,244,.22)'; ctx.lineWidth = 1.2; ctx.stroke(); }
+    const st = Ctl.stick, now = H.t, dt = Math.min(.05, now - (H.stickT || now)); H.stickT = now;
+    // The pad swells in under the thumb and lets go softly rather than popping away.
+    H.stickK = (H.stickK || 0) + ((st ? 1 : 0) - (H.stickK || 0)) * Math.min(1, dt * 20);
+    if (st) H.stickAt = { sx: st.sx, sy: st.sy, x: st.x, y: st.y };
+    const P = H.stickAt, k = calm ? (st ? 1 : 0) : H.stickK;
+    if (P && k > .02) {
+      const acc = SIDE_ACC[G.me.team], R = 58 * (.86 + .14 * k), dx = P.x - P.sx, dy = P.y - P.sy, l = Math.min(58, Math.hypot(dx, dy)), an = Math.atan2(dy, dx), nx = P.sx + Math.cos(an) * l, ny = P.sy + Math.sin(an) * l;
+      ctx.globalAlpha = k;
+      disc(P.sx, P.sy, R); ctx.fillStyle = 'rgba(6,7,11,.32)'; ctx.fill(); ctx.strokeStyle = 'rgba(233,237,244,.34)'; ctx.lineWidth = 1.2; ctx.stroke();
+      if (l > 8) arcLine(P.sx, P.sy, R, an - .55, an + .55, acc, 2.5);
+      disc(nx, ny, 23); ctx.fillStyle = 'rgba(233,237,244,.84)'; ctx.fill(); ctx.strokeStyle = 'rgba(5,6,10,.35)'; ctx.lineWidth = 1; ctx.stroke();
+      ctx.globalAlpha = 1;
+    } else if (!st && H.guide && s.t < 20) { disc(left() ? VW - 122 : 122, VH - 86, 52); ctx.strokeStyle = 'rgba(233,237,244,.22)'; ctx.lineWidth = 1.2; ctx.stroke(); }
   }
 
   function drawFeed(dt) {
@@ -1153,23 +1167,33 @@ const { hud, initHud, hudDraw, uiEvent } = (() => {
 
 
   // ---------- item shop ----------
-  const CATS = [['rec', 'For you'], ['attack', 'Attack'], ['ability', 'Ability'], ['tank', 'Defence'], ['util', 'Utility'], ['leg', 'Legendary'], ['cons', 'Supplies'], ['city', 'City']];
+  // Browsed by damage type and role. Sim.ITEMS supplies the goods; everything here reads its fields so new items just appear.
+  const CATS = [['rec', 'For you', 'star'], ['phys', 'Physical', 'sword'], ['magic', 'Magic', 'burst'], ['def', 'Defence', 'shield'], ['sup', 'Support', 'plus'], ['util', 'Utility', 'chevron'], ['leg', 'Legend', 'crown'], ['cons', 'Supplies', 'flask'], ['city', 'City', 'city']];
+  const ROLE_F = [['all', 'All'], ['tank', 'Tank'], ['bruiser', 'Bruiser'], ['marksman', 'Marksman'], ['assassin', 'Assassin'], ['mage', 'Mage'], ['support', 'Support'], ['jungle', 'Jungle']];
+  const TIER_NAME = ['', 'Starter', 'Core', 'Advanced', 'Legendary'];
   const shopOpen = () => !$('shop').classList.contains('hide');
   const itemDb = () => Sim.ITEMS || [];
   const itemBy = id => id && Sim.ITEM_BY ? Sim.ITEM_BY[id] || null : itemDb().find(i => i.id === id) || null;
   const isLeg = it => !!it.legendary;
   const isCons = it => !!it.consumable;
   const hasTag = (it, ...t) => (it.tags || []).some(x => t.includes(x));
+  const isPhys = it => hasTag(it, 'attack', 'marksman', 'assassin') || !!(it.ad || it.pen || it.as);
+  const isMagic = it => hasTag(it, 'magic', 'ability') || !!(it.ap || it.mpen);
+  const isDef = it => hasTag(it, 'tank', 'resist') || !!(it.armor || it.mr);
+  const isSup = it => hasTag(it, 'support') || !!it.healPow;
+  const isUtil = it => hasTag(it, 'mobility', 'jungle') || !!(it.ms || it.cdr || it.mon);
+  // The sim tags each item with who it is for.
+  const FOR_ROLE = { tank: it => hasTag(it, 'tank', 'resist'), bruiser: it => hasTag(it, 'bruiser'), marksman: it => hasTag(it, 'marksman'), assassin: it => hasTag(it, 'assassin'), mage: it => hasTag(it, 'magic', 'ability'), support: it => hasTag(it, 'support'), jungle: it => hasTag(it, 'jungle') };
+  const dmgKey = it => isCons(it) ? 'cons' : isMagic(it) && !isPhys(it) ? 'magic' : isPhys(it) && !isMagic(it) ? 'phys' : isDef(it) ? 'def' : isSup(it) ? 'sup' : isPhys(it) ? 'phys' : isUtil(it) ? 'util' : 'util';
   function slotsOf(me) { const v = (me.items || []).map(i => i && i.id ? i.id : i || null), n = Sim.ITEM_SLOTS || 5; while (v.length < n) v.push(null); return v.slice(0, n); }
   const costOf = (me, it) => Sim.itemPrice ? Sim.itemPrice(me, it.id) : it.cost;
   function canBuy(me, it) { if (isCons(it) && !me.alive) return false; const p = costOf(me, it); return p !== null && p !== undefined && me.gold >= p; }
   const canAfford = me => itemDb().some(it => !isCons(it) && canBuy(me, it));
-  const recommendedOf = me => Sim.recommended ? (Sim.recommended(me.champ, me.build) || []) : [];
+  const recommendedOf = me => Sim.recommended ? (Sim.recommended(me.champ, me.build, (H && H.shopPath) || 0) || []) : [];
+  const pathsOf = me => (Sim.itemPaths && Sim.itemPaths(me.champ, me.build)) || [];
   const pathOf = id => Sim.itemPath ? Sim.itemPath(id) : [id];
   const upsOf = id => itemDb().filter(i => i.upgradesFrom === id);
-  function sellOf(me, slot) {
-    return Math.floor(Sim.sellValue(slotsOf(me)[slot]));
-  }
+  function sellOf(me, slot) { return Math.floor(Sim.sellValue(slotsOf(me)[slot])); }
   // The next step along each item this build wants.
   function nextSteps(me) {
     const own = slotsOf(me), out = [];
@@ -1186,66 +1210,137 @@ const { hud, initHud, hudDraw, uiEvent } = (() => {
     const goals = recommendedOf(me), wanted = ups.find(u => goals.some(g => pathOf(g).includes(u.id)));
     return wanted || ups.slice().sort((a, b) => a.cost - b.cost)[0];
   }
-  const TAG_ICON = {
-    damage: '<path d="M12 2 19 9l-7 13L5 9Z"/>', attack: '<path d="M12 2 19 9l-7 13L5 9Z"/>', ability: '<path d="m12 2 3 7 7 1-5 5 1.5 7L12 18l-6.5 4L7 15l-5-5 7-1Z"/>', magic: '<path d="m12 2 3 7 7 1-5 5 1.5 7L12 18l-6.5 4L7 15l-5-5 7-1Z"/>',
-    armor: '<path d="M12 2 21 5v7c0 5-4 8-9 10-5-2-9-5-9-10V5Z"/>', armour: '<path d="M12 2 21 5v7c0 5-4 8-9 10-5-2-9-5-9-10V5Z"/>', tank: '<path d="M12 2 21 5v7c0 5-4 8-9 10-5-2-9-5-9-10V5Z"/>', guard: '<path d="M12 2 21 5v7c0 5-4 8-9 10-5-2-9-5-9-10V5Z"/>',
-    mobility: '<path d="M3 4h5l7 8-7 8H3l7-8Zm9 0h5l7 8-7 8h-5l7-8Z"/>', support: '<path d="M10 3h4v7h7v4h-7v7h-4v-7H3v-4h7Z"/>', health: '<path d="M10 3h4v7h7v4h-7v7h-4v-7H3v-4h7Z"/>', heal: '<path d="M10 3h4v7h7v4h-7v7h-4v-7H3v-4h7Z"/>', sustain: '<path d="M12 2c4 6 7 9 7 13a7 7 0 0 1-14 0c0-4 3-7 7-13Z"/>', lifesteal: '<path d="M12 2c4 6 7 9 7 13a7 7 0 0 1-14 0c0-4 3-7 7-13Z"/>',
-    speed: '<path d="M3 4h5l7 8-7 8H3l7-8Zm9 0h5l7 8-7 8h-5l7-8Z"/>', move: '<path d="M3 4h5l7 8-7 8H3l7-8Zm9 0h5l7 8-7 8h-5l7-8Z"/>', haste: '<path d="M13 2 5 13h6l-1 9 9-12h-6Z"/>', cooldown: '<path d="M13 2 5 13h6l-1 9 9-12h-6Z"/>',
-    crit: '<path d="M11 2h2v7h-2zm0 13h2v7h-2zM2 11h7v2H2zm13 0h7v2h-7z"/><circle cx="12" cy="12" r="2.4"/>', vision: '<path d="M1 12c4-6 8-8 11-8s7 2 11 8c-4 6-8 8-11 8S5 18 1 12Zm11 4a4 4 0 1 0 0-8 4 4 0 0 0 0 8Z" fill-rule="evenodd"/>',
-    consumable: '<path d="M9 2h6v2l-1 1v4l5 9a3 3 0 0 1-3 4H8a3 3 0 0 1-3-4l5-9V5L9 4Z"/>',
+  const GLYPH = {
+    sword: '<path d="M14.5 2H20v5.5L9.6 17.9l-3.5-3.5ZM5 15.5l3.5 3.5-1.7 1.7 1 1-1.4 1.4-2.7-2.7-2 2L.3 21l2-2-2.7-2.7L1 14.9l1 1Z"/>',
+    burst: '<path d="m12 1 2.6 7.4L22 11l-7.4 2.6L12 23l-2.6-9.4L2 11l7.4-2.6Z"/>',
+    shield: '<path d="M12 2 21 5v7c0 5-4 8-9 10-5-2-9-5-9-10V5Z"/>',
+    ward: '<path d="M12 2 21 5v7c0 5-4 8-9 10-5-2-9-5-9-10V5Zm0 4.5-1.5 3.7-4 .300 3 2.6-.9 3.9 3.4-2.1 3.4 2.1-.9-3.9 3-2.6-4-.300Z" fill-rule="evenodd"/>',
+    plus: '<path d="M10 3h4v7h7v4h-7v7h-4v-7H3v-4h7Z"/>',
+    chevron: '<path d="M3 4h5l7 8-7 8H3l7-8Zm9 0h5l7 8-7 8h-5l7-8Z"/>',
+    bolt: '<path d="M13 2 5 13h6l-1 9 9-12h-6Z"/>',
+    drop: '<path d="M12 2c4 6 7 9 7 13a7 7 0 0 1-14 0c0-4 3-7 7-13Z"/>',
+    cross: '<path d="M11 2h2v7h-2zm0 13h2v7h-2zM2 11h7v2H2zm13 0h7v2h-7z"/><circle cx="12" cy="12" r="2.4"/>',
+    eye: '<path d="M1 12c4-6 8-8 11-8s7 2 11 8c-4 6-8 8-11 8S5 18 1 12Zm11 4a4 4 0 1 0 0-8 4 4 0 0 0 0 8Z" fill-rule="evenodd"/>',
+    flask: '<path d="M9 2h6v2l-1 1v4l5 9a3 3 0 0 1-3 4H8a3 3 0 0 1-3-4l5-9V5L9 4Z"/>',
+    fang: '<path d="M4 3h16c0 7-3 14-8 19C7 17 4 10 4 3Zm5 3 3 9 3-9Z" fill-rule="evenodd"/>',
+    crown: '<path d="m2 7 5 4 5-7 5 7 5-4-2 12H4Zm3 13h14v2H5Z"/>',
+    star: '<path d="m12 2 3 7 7 1-5 5 1.5 7L12 18l-6.5 4L7 15l-5-5 7-1Z"/>',
+    city: '<path d="M3 21V9l5-3v4l5-3v14Zm12 0V3h6v18Z"/>',
+    gem: '<path d="M12 2 20 7v10l-8 5-8-5V7Z"/>',
   };
   const svgOf = d => `<svg viewBox="0 0 24 24" aria-hidden="true" fill="currentColor">${d}</svg>`;
-  function itemIcon(it) {
-    if (isCons(it)) return svgOf(TAG_ICON.consumable);
-    for (const t of (it.tags || [])) if (TAG_ICON[t]) return svgOf(TAG_ICON[t]);
-    return svgOf('<path d="M12 2 20 7v10l-8 5-8-5V7Z"/>');
+  // What an item is for, drawn from what it mostly does.
+  function glyphOf(it) {
+    if (isCons(it)) return 'flask';
+    if (it.lifesteal || it.vamp || hasTag(it, 'sustain')) return 'drop';
+    if (it.mr || hasTag(it, 'resist')) return 'ward';
+    if (it.armor || hasTag(it, 'tank')) return 'shield';
+    if (it.healPow || hasTag(it, 'support')) return 'plus';
+    if (it.mon || hasTag(it, 'jungle')) return 'fang';
+    if (it.pen || hasTag(it, 'assassin')) return 'cross';
+    if (isMagic(it) && !isPhys(it)) return it.cdr && !it.ap ? 'bolt' : 'burst';
+    if (it.as) return 'chevron';
+    if (isPhys(it)) return 'sword';
+    if (it.ms || hasTag(it, 'mobility')) return 'chevron';
+    if (it.cdr) return 'bolt';
+    return 'gem';
   }
+  const itemIcon = it => svgOf(GLYPH[glyphOf(it)]);
+  // Every item coin gets its own rim from its name, so a long list does not blur together.
+  const rimOf = id => { let h = 0; for (let i = 0; i < id.length; i++) h = h * 31 + id.charCodeAt(i) | 0; return 10 + (h >>> 0) % 13; };
+  const coinHtml = it => `<span class="ic ${tierClass(it)} d-${dmgKey(it)}" style="--n:${rimOf(it.id)}">${itemIcon(it)}</span>`;
   const CITY_ICON = { reinforce: '<path d="m3 21 9-18 9 18h-5l-4-8-4 8Z"/>', fund: '<path d="M4 21V9l8-6 8 6v12h-6v-7h-4v7Z"/>', buyback: '<path d="M12 3a9 9 0 1 1-8 13l2.6-1.3A6 6 0 1 0 12 6v3L6.5 4.5 12 0Z"/>' };
   const tierClass = it => isLeg(it) ? 'leg' : isCons(it) ? 'cons' : `t${it.tier || 1}`;
-  function itemBtn(it, rec) {
+  const pc = v => `${Math.round(v * 100)}%`;
+  const amt = v => v < 2 ? `+${pc(v)}` : `+${v}`;
+  const STAT_ROWS = [
+    ['ad', 'Attack power', amt], ['ap', 'Ability power', amt], ['as', 'Attack speed', amt], ['lifesteal', 'Lifesteal', amt], ['vamp', 'Ability lifesteal', amt], ['pen', 'Armor piercing', amt], ['mpen', 'Magic piercing', amt],
+    ['hp', 'Health', v => `+${v}`], ['armor', 'Armor', v => `+${v}`], ['mr', 'Magic resist', v => `+${v}`], ['regen', 'Regen', v => `+${(v * 100).toFixed(1)}%`],
+    ['healPow', 'Heal and shield', amt], ['cdr', 'Cooldowns', v => `\u2212${pc(v)}`], ['ms', 'Move speed', v => `+${v}`], ['mon', 'Monster damage', amt],
+  ];
+  const statsHtml = it => STAT_ROWS.filter(([k]) => it[k]).slice(0, 6).map(([k, n, f]) => `<li><span>${n}</span><b>${f(it[k])}</b></li>`).join('');
+  function statLine(it) { const r = STAT_ROWS.filter(([k]) => it[k]).slice(0, 2); return r.length ? r.map(([k, n, f]) => `${f(it[k])} ${n}`).join(' · ') : it.d; }
+  function itemBtn(it, rec, i) {
     const b = document.createElement('button');
-    b.className = `it ${tierClass(it)}`; b.dataset.id = it.id;
-    b.innerHTML = `<span class="ic">${itemIcon(it)}</span><span class="tx"><b>${it.name}</b><span class="c"><i class="gc"></i><span class="p">${it.cost}</span></span></span>${rec ? '<u class="rec" aria-hidden="true"></u>' : ''}`;
+    b.className = `it ${tierClass(it)}`; b.dataset.id = it.id; b.style.setProperty('--i', Math.min(i || 0, 12));
+    b.innerHTML = `${coinHtml(it)}<span class="tx"><b>${it.name}</b><small>${statLine(it)}</small></span><span class="c"><i class="gc"></i><span class="p">${it.cost}</span></span>${rec ? '<u class="rec" aria-hidden="true"></u>' : ''}`;
     b.setAttribute('aria-label', `${it.name}, ${it.cost} gold${rec ? ', recommended' : ''}`);
-    b.onpointerdown = () => { H.shopSel = { item: it.id }; Sound.play('tick'); shopFoot(); };
+    b.onclick = () => { H.shopSel = { item: it.id }; Sound.play('tick'); shopFoot(true); };
     return b;
   }
   const shead = t => { const h = document.createElement('h4'); h.textContent = t; return h; };
-  const sgrid = list => { const g = document.createElement('div'); g.className = 'items'; list.forEach(([it, rec]) => g.append(itemBtn(it, rec))); return g; };
+  let cardN = 0;
+  const sgrid = list => { const g = document.createElement('div'); g.className = 'items'; list.forEach(([it, rec]) => g.append(itemBtn(it, rec, cardN++))); return g; };
   function catItems(cat) {
-    const db = itemDb().filter(i => !isCons(i) && !isLeg(i)), sort = l => l.slice().sort((a, b) => (a.tier || 1) - (b.tier || 1) || a.cost - b.cost);
-    if (cat === 'attack') return sort(db.filter(i => hasTag(i, 'attack', 'damage', 'crit', 'lifesteal')));
-    if (cat === 'ability') return sort(db.filter(i => hasTag(i, 'ability', 'magic', 'cooldown', 'haste')));
-    if (cat === 'tank') return sort(db.filter(i => hasTag(i, 'tank', 'armor', 'armour', 'guard', 'health')));
-    if (cat === 'util') return sort(db.filter(i => hasTag(i, 'mobility', 'support', 'move', 'speed', 'vision', 'heal', 'sustain')));
-    if (cat === 'leg') return sort(itemDb().filter(isLeg));
+    const db = itemDb().filter(i => !isCons(i)), sort = l => l.slice().sort((a, b) => (a.tier || 1) - (b.tier || 1) || a.cost - b.cost);
+    if (cat === 'phys') return sort(db.filter(isPhys));
+    if (cat === 'magic') return sort(db.filter(isMagic));
+    if (cat === 'def') return sort(db.filter(isDef));
+    if (cat === 'sup') return sort(db.filter(isSup));
+    if (cat === 'util') return sort(db.filter(isUtil));
+    if (cat === 'leg') return sort(db.filter(isLeg));
     if (cat === 'cons') return sort(itemDb().filter(isCons));
     return [];
   }
+  const roleFilterable = cat => cat === 'phys' || cat === 'magic' || cat === 'def' || cat === 'sup' || cat === 'util' || cat === 'leg';
   function shopTabs() {
-    const t = $('shTabs'); t.textContent = '';
-    CATS.forEach(([k, name]) => {
-      if ((k === 'leg' || k === 'cons') && !catItems(k).length) return;
-      const b = document.createElement('button'); b.textContent = name; b.dataset.k = k; b.setAttribute('aria-pressed', k === H.shopCat);
-      b.onpointerdown = () => { if (H.shopCat === k) return; H.shopCat = k; H.shopSel = null; Sound.play('tick'); shopTabs(); shopList(); };
-      t.append(b);
-    });
+    const t = $('shTabs');
+    if (t.dataset.built !== '1') {
+      t.dataset.built = '1'; t.innerHTML = '<i class="shind" id="shInd"></i>';
+      CATS.forEach(([k, name, icon]) => {
+        const b = document.createElement('button'); b.dataset.k = k; b.className = `k-${k}`; b.innerHTML = `${svgOf(GLYPH[icon])}<span>${name}</span>`;
+        b.onclick = () => { if (H.shopCat === k) return; H.shopCat = k; H.shopSel = null; H.shopRole = 'all'; shopTabs(); shopList(); };
+        t.append(b);
+      });
+    }
+    let on = null;
+    t.querySelectorAll('button').forEach(b => { const k = b.dataset.k, sel = k === H.shopCat; b.setAttribute('aria-pressed', sel); b.classList.toggle('hide', (k === 'leg' || k === 'cons') && !catItems(k).length); if (sel) on = b; });
+    if (on) { const ind = $('shInd'); ind.style.height = on.offsetHeight + 'px'; ind.style.transform = `translate3d(0,${on.offsetTop}px,0)`; Kin.reveal(t, on); }
   }
-  function shopList() {
+  function shopRoles() {
+    const box = $('shRoles'), cat = H.shopCat, paths = cat === 'rec' ? pathsOf(G.me) : [], on = roleFilterable(cat) || paths.length > 1;
+    box.classList.toggle('hide', !on);
+    if (!on) return;
+    // On For you the same strip picks between the build's item paths.
+    if (cat === 'rec') {
+      box.textContent = '';
+      paths.forEach((pa, i) => {
+        const b = document.createElement('button'); b.textContent = pa.name; b.setAttribute('aria-pressed', i === (H.shopPath || 0));
+        b.onclick = () => { if ((H.shopPath || 0) === i) return; H.shopPath = i; H.shopSel = null; H.footKey = ''; Sound.play('tick'); shopRoles(); shopList(true); };
+        box.append(b);
+      });
+      return;
+    }
+    if (!H.shopRole) H.shopRole = 'all';
+    box.textContent = '';
+    ROLE_F.forEach(([k, name]) => {
+      if (k !== 'all' && !catItems(cat).some(FOR_ROLE[k])) return;
+      const b = document.createElement('button'); b.textContent = name; b.dataset.r = k; b.setAttribute('aria-pressed', k === H.shopRole);
+      b.onclick = () => { if (H.shopRole === k) return; H.shopRole = k; H.shopSel = null; Sound.play('tick'); shopRoles(); shopList(true); };
+      box.append(b);
+    });
+    const on2 = box.querySelector('[aria-pressed=true]'); if (on2) Kin.reveal(box, on2, true);
+  }
+  function shopList(keepRoles) {
     const me = G.me, list = $('shList'), cat = H.shopCat;
-    list.textContent = ''; list.scrollTop = 0;
+    list.textContent = ''; list.scrollTop = 0; Kin.stop(list); cardN = 0;
+    list.classList.remove('fresh'); void list.offsetWidth; list.classList.add('fresh');
     $('shop').classList.toggle('citymode', cat === 'city');
+    if (!keepRoles) shopRoles();
     if (!itemDb().length) { list.innerHTML = '<p class="shnone">The shop is stocking its shelves.</p>'; return; }
     if (cat === 'city') { shopCity(list); H.shopKey = ''; shopSync(true); return; }
     if (cat === 'rec') {
       const goals = [...new Set(recommendedOf(me))].map(itemBy).filter(Boolean), next = nextSteps(me);
       if (next.length) { list.append(shead('Next for your build'), sgrid(next.map(it => [it, true]))); }
       if (goals.length) { list.append(shead('Where your build is heading'), sgrid(goals.map(it => [it, false]))); }
-      const cons = catItems('cons').slice(0, 3);
+      const cons = catItems('cons').slice(0, 4);
       if (cons.length) list.append(shead('Supplies'), sgrid(cons.map(it => [it, false])));
-    } else {
-      const rec = recommendedOf(me).flatMap(pathOf);
-      list.append(sgrid(catItems(cat).map(it => [it, rec.includes(it.id)])));
+    } else if (cat === 'cons') list.append(sgrid(catItems('cons').map(it => [it, false])));
+    else {
+      const rec = recommendedOf(me).flatMap(pathOf), role = H.shopRole || 'all', items = catItems(cat).filter(it => role === 'all' || FOR_ROLE[role](it));
+      if (!items.length) list.innerHTML = '<p class="shnone">Nothing here for that role.</p>';
+      const tiers = [...new Set(items.map(it => it.legendary ? 4 : it.tier || 1))].sort((a, b) => a - b);
+      for (const t of tiers) { const here = items.filter(it => (it.legendary ? 4 : it.tier || 1) === t); if (tiers.length > 1) list.append(shead(TIER_NAME[t] || `Tier ${t}`)); list.append(sgrid(here.map(it => [it, rec.includes(it.id)]))); }
     }
     H.shopKey = ''; shopSync(true);
   }
@@ -1263,9 +1358,9 @@ const { hud, initHud, hudDraw, uiEvent } = (() => {
     const fund = cityCard('fund', 'Fund the City', G.me.team ? 'Buy off the city. The people bar slides your way.' : 'Rebuild the city. The people bar slides your way.', `<button class="tok" id="shFund">Fund<span class="c"><i class="gc"></i><span data-p="fund"></span></span></button>`);
     const back = cityCard('buyback', 'Buyback', 'Respawn right now, at your base.', `<button class="tok" id="shBack2">Buy back<span class="c"><i class="gc"></i><span data-p="buyback"></span></span></button>`);
     list.append(rein, fund, back);
-    rein.querySelectorAll('[data-lane]').forEach(b => { b.onpointerdown = () => doCity('reinforce', +b.dataset.lane, b); });
-    $('shFund').onpointerdown = e => doCity('fund', 0, e.currentTarget);
-    $('shBack2').onpointerdown = e => doCity('buyback', 0, e.currentTarget);
+    rein.querySelectorAll('[data-lane]').forEach(b => { b.onclick = () => doCity('reinforce', +b.dataset.lane, b); });
+    $('shFund').onclick = e => doCity('fund', 0, e.currentTarget);
+    $('shBack2').onclick = e => doCity('buyback', 0, e.currentTarget);
   }
   function doCity(kind, lane, btn) {
     if (!G) return;
@@ -1278,12 +1373,25 @@ const { hud, initHud, hudDraw, uiEvent } = (() => {
   }
   const popEl = el => { if (!el) return; el.classList.remove('bought'); void el.offsetWidth; el.classList.add('bought'); };
   const denyEl = el => { if (!el) return; el.classList.remove('shake'); void el.offsetWidth; el.classList.add('shake'); setTimeout(() => el.classList.remove('shake'), 320); };
+  // A coin leaves the card and lands in the first slot it can sit in.
+  function flyToSlot(it, fromEl) {
+    if (calm || !fromEl) return;
+    const shop = $('shop'), slots = slotsOf(G.me), path = pathOf(it.id), at = isCons(it) ? -1 : Math.max(slots.findIndex(id => id && path.includes(id)), slots.indexOf(null));
+    const to = at >= 0 ? document.querySelectorAll('#shSlots .slot')[at] : $('shGold');
+    if (!to) return;
+    const box = el => { let x = 0, y = 0, e = el; while (e && e !== shop) { x += e.offsetLeft - (e.scrollLeft || 0); y += e.offsetTop - (e.scrollTop || 0); e = e.offsetParent; } return { x: x + el.offsetWidth / 2, y: y + el.offsetHeight / 2 }; };
+    const a = box(fromEl.querySelector('.ic') || fromEl), b = box(to), mid = (b.y + a.y) / 2 - 42;
+    const t = document.createElement('i'); t.className = `flytok ${tierClass(it)}`; shop.append(t);
+    t.animate([{ transform: `translate3d(${a.x}px,${a.y}px,0) scale(1)`, opacity: 1 }, { transform: `translate3d(${(a.x + b.x) / 2}px,${mid}px,0) scale(1.25)`, opacity: 1, offset: .55 }, { transform: `translate3d(${b.x}px,${b.y}px,0) scale(.5)`, opacity: .4 }], { duration: 340, easing: 'cubic-bezier(.3,.1,.3,1)' }).onfinish = () => t.remove();
+  }
   function doBuy(id, cell) {
     if (!G) return false;
-    const it = itemBy(id); if (!it || !canBuy(G.me, it)) { Sound.play('cancel'); denyEl(cell); return false; }
+    const it = itemBy(id); if (!it || !canBuy(G.me, it)) { Sound.play('cancel'); denyEl(cell || $('shAct')); return false; }
+    const card = cell || document.querySelector(`#shList .it[data-id="${id}"]`);
+    flyToSlot(it, card);
     G.me.q.push({ t: 'buy', id });
     Sound.play(isLeg(it) ? 'buyLegendary' : 'coin');
-    popEl(cell || document.querySelector(`#shList .it[data-id="${id}"]`));
+    popEl(card);
     setTimeout(() => shopSync(true), 40);
     return true;
   }
@@ -1301,42 +1409,51 @@ const { hud, initHud, hudDraw, uiEvent } = (() => {
         const me = G.me, id = slotsOf(me)[i]; if (!id) return;
         const up = e.target.closest && e.target.closest('.up');
         if (up && bestUp(me, id)) { doBuy(bestUp(me, id).id, b); return; }
-        H.shopSel = { slot: i }; Sound.play('tick'); shopFoot();
+        H.shopSel = { slot: i }; Sound.play('tick'); shopFoot(true);
       };
       slots.append(b);
     });
     H.shopSel = H.shopSel && (H.shopSel.item ? itemBy(H.shopSel.item) : slotsOf(G.me)[H.shopSel.slot]) ? H.shopSel : null;
+    $('shTabs').dataset.built = '';
     shopTabs(); shopList();
   }
   function nextRec(me) { for (const it of nextSteps(me)) { const p = costOf(me, it); if (p !== null && p !== undefined) return it; } return null; }
   function chain(it, me) {
-    const own = slotsOf(me), p = pathOf(it.id), ups = upsOf(it.id);
+    const own = slotsOf(me), p = pathOf(it.id), ups = upsOf(it.id).slice(0, 3);
     if (p.length < 2 && !ups.length) return '';
-    const dot = id => `<i class="${own.includes(id) ? 'on' : ''}${id === it.id ? ' at' : ''}">${(itemBy(id) || {}).name || ''}</i>`;
-    return `<p class="shpath">${p.map(dot).join('<s></s>')}${ups.length ? `<s></s>${ups.slice(0, 2).map(u => dot(u.id)).join('')}` : ''}</p>`;
+    const dot = id => { const x = itemBy(id); return x ? `<button class="pth${own.includes(id) ? ' on' : ''}${id === it.id ? ' at' : ''}" data-go="${id}" aria-label="${x.name}">${coinHtml(x)}</button>` : ''; };
+    return `<div class="shpath">${p.map(dot).join('<s></s>')}${ups.length ? `<s></s>${ups.map(u => dot(u.id)).join('')}` : ''}</div>`;
   }
-  function shopFoot() {
+  function wirePath(foot) { foot.querySelectorAll('[data-go]').forEach(b => { b.onclick = () => { H.shopSel = { item: b.dataset.go }; Sound.play('tick'); shopFoot(true); }; }); }
+  function shopFoot(animate) {
     if (!H || !G) return;
     const me = G.me, foot = $('shFoot'), sel = H.shopSel, slots = slotsOf(me);
-    if (H.shopCat === 'city') { document.querySelectorAll('#shSlots .slot').forEach(b => b.classList.remove('sel')); foot.innerHTML = '<p class="shd"><b>The city</b>Gold keeps working after your slots are full. Pay for a wave, sway the people, or get back in the fight.</p>'; return; }
+    if (animate) { foot.classList.remove('fresh'); void foot.offsetWidth; foot.classList.add('fresh'); H.footKey = ''; }
+    if (H.shopCat === 'city') { document.querySelectorAll('#shSlots .slot').forEach(b => b.classList.remove('sel')); foot.innerHTML = '<div class="shd"><b>The city</b><p>Gold keeps working after your slots are full. Pay for a wave, sway the people, or get back in the fight.</p></div>'; return; }
     let it = sel && sel.item ? itemBy(sel.item) : sel && slots[sel.slot] ? itemBy(slots[sel.slot]) : null;
     const slotMode = !!(sel && sel.slot !== undefined && it);
-    if (!it) it = H.shopCat === 'rec' ? nextRec(me) : catItems(H.shopCat)[0] || null;
+    if (!it) it = H.shopCat === 'rec' ? nextRec(me) : (H.shopRole && H.shopRole !== 'all' ? catItems(H.shopCat).find(FOR_ROLE[H.shopRole]) : catItems(H.shopCat)[0]) || null;
     document.querySelectorAll('#shList .it').forEach(b => b.classList.toggle('sel', !!it && !slotMode && b.dataset.id === it.id));
     document.querySelectorAll('#shSlots .slot').forEach((b, i) => b.classList.toggle('sel', slotMode && sel.slot === i));
-    if (!it) { foot.innerHTML = '<p class="shd"><b>All set</b>Your slots hold what this build wants. Try the City tab.</p>'; return; }
-    const tag = isLeg(it) ? 'Legendary' : isCons(it) ? 'Supply' : `Tier ${it.tier || 1}`;
-    const info = `<p class="shd"><em class="${tierClass(it)}">${tag}</em><b>${it.name}</b>${it.d}</p>${chain(it, me)}`;
+    if (!it) { foot.innerHTML = '<div class="shd"><b>All set</b><p>Your slots hold what this build wants. Try the City tab.</p></div>'; return; }
+    // The panel only redraws when something on it changed, so a thumb can rest on Buy or scroll the text in peace.
+    const footKey = `${it.id}|${slotMode ? sel.slot : ''}|${costOf(me, it)}|${canBuy(me, it)}|${slots.join()}|${(slotMode && bestUp(me, it.id)) ? canBuy(me, bestUp(me, it.id)) : ''}`;
+    if (footKey === H.footKey && foot.querySelector('.shtop')) return;
+    H.footKey = footKey;
+    const tag = isLeg(it) ? 'Legendary' : isCons(it) ? 'Supply' : TIER_NAME[it.tier || 1] || `Tier ${it.tier || 1}`, stats = statsHtml(it);
+    const info = `<div class="shtop">${coinHtml(it)}<div class="shd"><em class="${tierClass(it)}">${tag}</em><b${it.name.length > 9 ? ' class="long"' : ''}>${it.name}</b></div></div><div class="shmore scroll"><div>${stats ? `<ul class="shst">${stats}</ul>` : ''}<p class="shdesc">${it.d}</p>${chain(it, me)}</div></div>`;
     if (slotMode) {
       const up = bestUp(me, it.id), price = up ? costOf(me, up) : null, can = !!up && canBuy(me, up);
       foot.innerHTML = info + `<div class="shact">${up ? `<button class="go${can ? ' hot' : ' off'}" id="shUp">Upgrade<span class="c"><i class="gc"></i>${price === null ? '' : price}</span></button>` : ''}<button class="ghost sell" id="shAct">Sell<span class="c"><i class="gc"></i>+${sellOf(me, sel.slot)}</span></button></div>`;
       $('shAct').onpointerdown = () => doSell(sel.slot);
-      if (up) $('shUp').onpointerdown = () => { if (doBuy(up.id)) { H.shopSel = null; } };
+      if (up) $('shUp').onpointerdown = () => { if (doBuy(up.id, foot.querySelector('.ic'))) { H.shopSel = null; } };
+      wirePath(foot);
       return;
     }
     const cost = costOf(me, it), own = slots.includes(it.id), can = canBuy(me, it), lead = pathOf(it.id).slice(0, -1).some(id => slots.includes(id)) ? 'Upgrade' : 'Buy';
     foot.innerHTML = info + `<div class="shact"><button class="go${can ? ' hot' : ' off'}" id="shAct">${own ? 'Owned' : cost === null ? 'No slot free' : `${lead}<span class="c"><i class="gc"></i>${cost}</span>`}</button></div>`;
     $('shAct').onpointerdown = () => { if (doBuy(it.id)) H.shopSel = null; };
+    wirePath(foot);
   }
   function shopSync(force) {
     if (!H || !G || !shopOpen() || !itemDb().length) return;
@@ -1349,10 +1466,12 @@ const { hud, initHud, hudDraw, uiEvent } = (() => {
     const bb = $('shBack2'); if (bb) bb.classList.toggle('off', me.alive || me.buybackCd > 0);
     const wait = G.s.reinforceAt ? G.s.reinforceAt[me.team] - G.s.t : 0; document.querySelectorAll('[data-lane]').forEach(b => b.classList.toggle('off', wait > 0));
     document.querySelectorAll('#shSlots .slot').forEach((b, i) => {
-      const it = itemBy(slots[i]), up = it && bestUp(me, it.id), price = up ? costOf(me, up) : null, can = up && price !== null && me.gold >= price;
+      const it = itemBy(slots[i]), up = it && bestUp(me, it.id), price = up ? costOf(me, up) : null, can = up && price !== null && me.gold >= price, was = b.dataset.has || '';
       b.className = `slot${it ? ` full ${tierClass(it)}` : ''}${H.shopSel && H.shopSel.slot === i ? ' sel' : ''}`;
-      b.innerHTML = (it ? itemIcon(it) : '<i></i>') + (up ? `<span class="up${can ? ' can' : ''}"><u></u>${price === null ? '' : price}</span>` : '');
+      b.innerHTML = (it ? coinHtml(it) : '<i></i>') + (up ? `<span class="up${can ? ' can' : ''}"><u></u>${price === null ? '' : price}</span>` : '');
       b.setAttribute('aria-label', it ? `${it.name}. ${up ? `Upgrade for ${price} gold, or tap for details` : 'Tap to sell'}` : 'Empty slot');
+      if (it && was !== it.id) popEl(b);
+      b.dataset.has = it ? it.id : '';
     });
     shopFoot();
   }
@@ -1366,7 +1485,7 @@ const { hud, initHud, hudDraw, uiEvent } = (() => {
   };
 
   // ---------- evolve: two taps' worth of choice, never in the way ----------
-  const EVOLVE_AT = [4, 8];
+  const EVOLVE_AT = Sim.EVOLVE_AT || [4, 8];
   function evoPending(me) {
     const ev = Sim.KITS[me.champ] && Sim.KITS[me.champ].evolves;
     if (!ev || !me.evolved) return -1;

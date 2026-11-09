@@ -21,6 +21,10 @@ const { initMenus, animMenus, showEnd } = (() => {
   const shortName = n => n.replace(/^(The|Captain|Madame) /, '');
   const buildsOf = id => (Sim.KITS[id] && Sim.KITS[id].builds) || [];
   const myBuild = id => { const b = buildsOf(id), v = save.builds && save.builds[id]; return b.some(x => x.id === v) ? v : b[0] ? b[0].id : undefined; };
+  const profsOf = role => (Sim.PROFS && Sim.PROFS[role]) || [];
+  // The player's choice for each lane is remembered; a bot rolls one per seat.
+  const myProf = role => { const l = profsOf(role), v = save.profs && save.profs[role]; return l.some(p => p.id === v) ? v : l[0] ? l[0].id : undefined; };
+  const seatProf = s => { const l = profsOf(s.role); if (!l.length) return undefined; if (isMe(s)) return myProf(s.role); if (!l.some(p => p.id === s.prof)) s.prof = l[Math.floor(Math.random() * l.length)].id; return s.prof; };
   const botBuild = (id, role) => Sim.defaultBuild ? Sim.defaultBuild(id, role, Math.random()) : undefined;
   const cosmeticIds = kind => (Art.COSMETICS || []).filter(c => c.kind === kind).map(c => c.id);
   const equipOf = () => { const e = save.equip || {}, ok = k => e[k] && isOwned(e[k]) ? e[k] : undefined; return { finish: ok('finish'), trail: ok('trail'), recall: ok('recall') }; };
@@ -97,7 +101,7 @@ const { initMenus, animMenus, showEnd } = (() => {
   // On your own team the friend's champion and role are off limits.
   const friendHolds = (key, val) => !!N.mode && L.seats[L.team].some(o => o.who !== N.pid && o[key] === val);
   const isBanned = id => !!N.mode && !!N.draft && bannedFrom(N.draft, L.team).includes(id);
-  const seatOut = s => ({ champ: s.champ, role: s.role, tier: seatTier(s), name: s.name, build: s.build, finish: s.finish, trail: s.trail, recall: s.recall });
+  const seatOut = s => ({ champ: s.champ, role: s.role, tier: seatTier(s), name: s.name, build: s.build, prof: seatProf(s), targetPref: isMe(s) ? save.targetPref : undefined, finish: s.finish, trail: s.trail, recall: s.recall });
   const buildCfg = () => { wearMine(mine()); return withSkills({ seed: skillSeed(), practice: L.practice || undefined, teams: L.seats.map(row => row.map(s => Object.assign(seatOut(s), { human: s.human }))) }, myRank()); };
 
   // ---------- side ----------
@@ -119,8 +123,9 @@ const { initMenus, animMenus, showEnd } = (() => {
       r.append(coinCanvas(Art.champCoin(id, L.team, i, 20), 56)); lad.append(r);
     });
     $('wTier').textContent = next ? `${TIERS[tier].name}, ${next.at - p} to ${next.name}` : `${TIERS[tier].name}, the highest border`;
-    const pk = $('picks'); pk.textContent = '';
-    rosterOf(L.team).forEach(cid => {
+    const pk = $('picks'), pkY = pk.scrollTop; pk.textContent = '';
+    // Best fit for the lane you are in comes first, so a long roster still reads at a glance.
+    rosterOf(L.team).slice().sort((a, b) => Sim.KITS[b].fit[seat.role] - Sim.KITS[a].fit[seat.role]).forEach(cid => {
       const b = document.createElement('button'), nm0 = charName(L.team, cid); b.className = 'pick'; b.setAttribute('aria-label', nm0); b.setAttribute('aria-pressed', cid === id);
       b.append(coinCanvas(Art.champCoin(cid, L.team, Sim.tierOf(pts(cid)), 54), 112));
       b.insertAdjacentHTML('beforeend', `<span class="pn">${shortName(nm0)}</span>${pipsHtml(Sim.KITS[cid].fit[seat.role])}`);
@@ -129,6 +134,7 @@ const { initMenus, animMenus, showEnd } = (() => {
       b.onclick = () => { if (cid === id || mine().locked) return; if (taken || ban) { Sound.play('cancel'); return; } setChamp(L.team, L.slot, cid); Sound.play('coin'); netPicked(); renderLobby(); };
       pk.append(b);
     });
+    pk.scrollTop = pkY;
     [0, 1].forEach(team => {
       const el = $('s' + team); el.textContent = '';
       L.seats[team].forEach((s, i) => {
@@ -145,25 +151,41 @@ const { initMenus, animMenus, showEnd } = (() => {
         el.append(d);
       });
     });
-    const lane = $('lane'), fit = Sim.KITS[id].fit[seat.role];
-    lane.innerHTML = `<small>Your lane</small><b>${roleName(seat.role)}</b>${pipsHtml(fit)}`;
-    lane.classList.toggle('lo', fit === 0);
-    lane.setAttribute('aria-label', `Your lane: ${roleName(seat.role)}. Tap for the next lane.`);
+    paintLane();
     paintRank($('lRank'), myRank(), true);
     $('pSide').classList.toggle('hide', !L.practice);
     lobbyNet();
   }
+  function paintLane() {
+    const seat = mine(), lane = $('lane'), fit = Sim.KITS[seat.champ].fit[seat.role], prof = profsOf(seat.role).find(p => p.id === myProf(seat.role));
+    lane.innerHTML = `<small>Your lane</small><b>${roleName(seat.role)}</b>${prof ? `<em>${prof.name}</em>` : pipsHtml(fit)}`;
+    lane.classList.toggle('lo', fit === 0);
+    lane.setAttribute('aria-label', `Your lane: ${roleName(seat.role)}${prof ? `, ${prof.name}` : ''}. Tap for the next lane.`);
+  }
   // The part of the lobby that changes with a build or tab tap, redrawn on its own so the coins stay still.
   function renderWho(animate) {
-    const seat = mine(), id = seat.champ, k = Sim.KITS[id], builds = buildsOf(id), showKit = L.tab === 'kit' || !builds.length;
+    const seat = mine(), id = seat.champ, k = Sim.KITS[id], builds = buildsOf(id), profs = profsOf(seat.role), tab = L.tab === 'prof' && profs.length ? 'prof' : L.tab === 'kit' || !builds.length ? 'kit' : 'builds', showKit = tab === 'kit';
     $('wBest').innerHTML = bestLine(k);
     const pass = $('wP');
     pass.classList.toggle('hide', !k.passive);
     if (k.passive) pass.innerHTML = `<b>${k.passive.name}</b>${k.passive.d}`;
-    document.querySelectorAll('#wTab [data-t]').forEach(b => b.setAttribute('aria-pressed', (b.dataset.t === 'kit') === showKit));
-    $('wTab').classList.toggle('hide', !builds.length);
-    const wb = $('wBuilds'), wk = $('wKit');
-    wb.classList.toggle('hide', showKit); wk.classList.toggle('hide', !showKit);
+    document.querySelectorAll('#wTab [data-t]').forEach(b => { b.setAttribute('aria-pressed', b.dataset.t === tab); if (b.dataset.t === 'prof') b.classList.toggle('hide', !profs.length); });
+    $('wTab').classList.toggle('hide', !builds.length && !profs.length);
+    const wb = $('wBuilds'), wk = $('wKit'), wp = $('wProf');
+    wb.classList.toggle('hide', tab !== 'builds'); wk.classList.toggle('hide', !showKit); wp.classList.toggle('hide', tab !== 'prof');
+    if (tab === 'prof') {
+      const cur = myProf(seat.role), g = document.createElement('div'); g.className = 'bgrid profs';
+      profs.slice(0, 3).forEach((pr, i) => {
+        const b = document.createElement('button'); b.className = 'bld'; b.style.setProperty('--i', i); b.setAttribute('aria-pressed', pr.id === cur);
+        b.innerHTML = `<span><b>${pr.name}</b></span><small>${pr.d}</small>`;
+        b.setAttribute('aria-label', `${pr.name}. ${pr.d}`);
+        b.onclick = () => { const m = mine(); if (m.locked || myProf(m.role) === pr.id) return; (save.profs || (save.profs = {}))[m.role] = pr.id; m.prof = pr.id; persist(); netPicked(); renderWho(); paintLane(); };
+        g.append(b);
+      });
+      wp.textContent = ''; wp.append(g);
+      if (animate) { wp.classList.remove('in'); void wp.offsetWidth; wp.classList.add('in'); }
+      return;
+    }
     if (showKit) {
       $('wA').innerHTML = k.kit.map((a, i) => `<div><img src="${iconOf(id, i)}" alt=""><span><em>${a.name}</em><u>${a.range ? `Range ${a.range}` : 'Self'}</u><br>${a.d}</span></div>`).join('');
     } else {
@@ -194,6 +216,7 @@ const { initMenus, animMenus, showEnd } = (() => {
   }
   function lobbyEnter() {
     const l = $('lobby'); l.classList.remove('enter'); void l.offsetWidth; l.classList.add('enter');
+    const on = $('picks').querySelector('[aria-pressed=true]'); if (on) Kin.reveal($('picks'), on, true);
     setTimeout(() => l.classList.remove('enter'), 900);
   }
 
@@ -238,6 +261,9 @@ const { initMenus, animMenus, showEnd } = (() => {
     const sens = save.aimSens || 1;
     document.querySelectorAll('#sAim [data-a]').forEach(b => b.setAttribute('aria-pressed', Math.abs(+b.dataset.a - sens) < .01));
     $('sLeft').setAttribute('aria-pressed', !!(save.hud && save.hud.left));
+    const pct = save.targetPref === 'pct';
+    document.querySelectorAll('#sTgt [data-v]').forEach(b => b.setAttribute('aria-pressed', (b.dataset.v === 'pct') === pct));
+    $('pTgt').textContent = pct ? 'Focus: lowest %' : 'Focus: least HP';
     paintTip();
   }
   // ---------- add to home screen ----------
@@ -250,6 +276,76 @@ const { initMenus, animMenus, showEnd } = (() => {
     const ios = /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
     el.innerHTML = `<b>Add to home screen</b>${ios ? 'Tap Share, then Add to Home Screen, to play fullscreen with no browser bars.' : installEvt ? 'Install Flipside to play fullscreen with no browser bars.' : 'Open your browser menu and choose Add to Home screen to play fullscreen.'}${installEvt ? '<br><button class="tok" id="sInstall">Install</button>' : ''}`;
     const b = $('sInstall'); if (b) b.onclick = async () => { const e = installEvt; installEvt = null; Sound.play('tap'); e.prompt(); try { await e.userChoice; } catch (_) { } paintTip(); };
+  }
+  // ---------- account: transfer code and reset ----------
+  // Copy and paste is the whole transport: there is no server. The code is the save squeezed with LZW, packed into bytes, base64 with a checksum.
+  const XFER_KEYS = ['m', 'music', 'sfx', 'diff', 'hints', 'rank', 'marks', 'owned', 'equip', 'builds', 'last', 'lastBy', 'missions', 'hud', 'aimSens', 'callsign', 'targetPref', 'profs'];
+  const crc32 = bytes => { let c = ~0; for (let i = 0; i < bytes.length; i++) { c ^= bytes[i]; for (let k = 0; k < 8; k++) c = c >>> 1 ^ (0xEDB88320 & -(c & 1)); } return ~c >>> 0; };
+  function lzwPack(bytes) {
+    const dict = new Map(), out = []; let w = '', next = 256;
+    for (let i = 0; i < 256; i++) dict.set(String.fromCharCode(i), i);
+    const put = n => { while (n > 127) { out.push(n & 127 | 128); n >>>= 7; } out.push(n); };
+    for (const b of bytes) { const ch = String.fromCharCode(b), wc = w + ch; if (dict.has(wc)) w = wc; else { put(dict.get(w)); if (next < 65535) dict.set(wc, next++); w = ch; } }
+    if (w) put(dict.get(w));
+    return Uint8Array.from(out);
+  }
+  function lzwUnpack(bytes, limit) {
+    const dict = []; for (let i = 0; i < 256; i++) dict[i] = String.fromCharCode(i);
+    let at = 0, w = '', res = '';
+    const take = () => { let n = 0, sh = 0, b; do { if (at >= bytes.length) return -1; b = bytes[at++]; n |= (b & 127) << sh; sh += 7; } while (b & 128 && sh < 35); return n >>> 0; };
+    for (let n = take(); n !== -1; n = take()) {
+      const e = n < dict.length ? dict[n] : n === dict.length && w ? w + w[0] : null;
+      if (e === null) return null;
+      res += e; if (res.length > limit) return null;
+      if (w && dict.length < 65535) dict.push(w + e[0]);
+      w = e;
+    }
+    return Uint8Array.from(res, c => c.charCodeAt(0));
+  }
+  const b64 = bytes => btoa(String.fromCharCode(...bytes)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+  function makeXfer() {
+    const o = {}; for (const k of XFER_KEYS) if (save[k] !== undefined) o[k] = save[k];
+    const raw = new TextEncoder().encode(JSON.stringify(o)), crc = crc32(raw).toString(36).toUpperCase().padStart(7, '0');
+    let packed = lzwPack(raw), str = ''; for (let i = 0; i < packed.length; i += 8192) str += b64(packed.subarray(i, i + 8192));
+    return `FLIP1-${str}-${crc}`;
+  }
+  // Returns the save inside a code, or null with the reason set on .why.
+  function readXfer(text) {
+    const m = /^FLIP1-([A-Za-z0-9_-]+)-([0-9A-Z]{7})$/.exec(String(text).replace(/\s+/g, ''));
+    if (!m) return { why: 'That is not a Flipside transfer code. Paste the whole thing.' };
+    let raw, data;
+    try { const bin = atob(m[1].replace(/-/g, '+').replace(/_/g, '/')); raw = lzwUnpack(Uint8Array.from(bin, c => c.charCodeAt(0)), 2e6); } catch (e) { raw = null; }
+    if (!raw || crc32(raw).toString(36).toUpperCase().padStart(7, '0') !== m[2]) return { why: 'That code was damaged on the way here. Copy it again.' };
+    try { data = JSON.parse(new TextDecoder().decode(raw)); } catch (e) { return { why: 'That code could not be read.' }; }
+    if (!data || typeof data !== 'object' || !data.m || typeof data.m !== 'object') return { why: 'That code could not be read.' };
+    const out = {}; for (const k of XFER_KEYS) if (data[k] !== undefined) out[k] = data[k];
+    if (!isFinite(out.rank)) delete out.rank; if (!isFinite(out.marks)) delete out.marks;
+    return { data: out };
+  }
+  // cue is the sound the confirming press makes; the page reloads after it has had time to ring.
+  function ask(title, msg, yes, cue, fn) {
+    $('cT').textContent = title; $('cM').textContent = msg; $('cYes').textContent = yes; $('cYes').dataset.snd = cue;
+    $('cYes').onclick = () => { hide('confirm'); fn(); };
+    $('cNo').onclick = () => { Sound.play('tap'); hide('confirm'); };
+    show('confirm');
+  }
+  const reloadSoon = erase => setTimeout(() => { if (erase) try { localStorage.removeItem(KEY); } catch (e) { } location.reload(); }, 520);
+  const xferMsg = (t, bad) => { const m = $('xMsg'); m.textContent = t; m.className = 'xmsg' + (bad ? ' bad' : ''); };
+  function openXfer() { $('xOut').value = makeXfer(); $('xIn').value = ''; xferMsg(''); show('xfer'); }
+  function loadXfer() {
+    const r = readXfer($('xIn').value);
+    if (!r.data) { xferMsg(r.why, true); Sound.play('importBad'); shake($('xLoad')); return; }
+    const d = r.data, rank = d.rank === undefined ? 1000 : Math.round(d.rank), marks = d.marks || 0;
+    ask('Load this account?', `Rank ${rank}, ${marks} Marks, ${Object.keys(d.m).length} champions played. This replaces everything saved on this device.`, 'Replace', 'importOk', () => {
+      const keep = {}; for (const k of Object.keys(save)) if (!XFER_KEYS.includes(k)) keep[k] = save[k];
+      save = Object.assign(keep, d); persist(); reloadSoon();
+    });
+  }
+  function resetAccount() {
+    ask('Reset account data?', 'Rank, mastery, Marks, the store, missions and settings on this device are erased for good. Copy a transfer code first if you may want them back.', 'Erase everything', 'resetDone', () => {
+      try { localStorage.removeItem(KEY); } catch (e) { }
+      reloadSoon(true);
+    });
   }
   // ---------- hud editor ----------
   const hudSave = () => save.hud || (save.hud = { left: false, pos: {} });
@@ -453,6 +549,13 @@ const { initMenus, animMenus, showEnd } = (() => {
     g.save(); g.globalCompositeOperation = 'lighter'; g.globalAlpha = .55; g.translate(cx, -10); g.rotate(Math.PI + Math.sin(T.clock * .35) * .16); g.drawImage(spot, -R * 1.5, -VH * 1.05, R * 3, VH * 1.05); g.restore();
     const haloS = R * 2.45; g.drawImage(halo(world), cx - haloS / 2 * 1.2, cy - hop - haloS / 2 * 1.2, haloS * 1.2, haloS * 1.2);
     Deco.flip(g, cx, cy - hop, R, ang, 230);
+    // Gold dust rising through the spotlight.
+    if (!calm) {
+      if (!T.dust) T.dust = Array.from({ length: 26 }, () => ({ x: Math.random(), y: Math.random(), v: .02 + Math.random() * .05, s: .7 + Math.random() * 1.5, p: Math.random() * TAU }));
+      g.save(); g.globalCompositeOperation = 'lighter'; g.fillStyle = `rgb(${col})`;
+      for (const d of T.dust) { d.y -= d.v * dt; if (d.y < -.02) { d.y = 1.02; d.x = Math.random(); } g.globalAlpha = .12 + .5 * Math.abs(Math.sin(T.clock * .8 + d.p)); g.fillRect(d.x * VW + Math.sin(T.clock * .4 + d.p) * 10, d.y * VH, d.s, d.s); }
+      g.restore();
+    }
     if (since >= 0 && since < .5 && !calm) { const f = Math.sin(since / .5 * Math.PI); Deco.glint(g, cx - R * .62, cy - R * .62, R * .55 * f, '#fff'); }
   }
 
@@ -757,7 +860,7 @@ const { initMenus, animMenus, showEnd } = (() => {
     const out = curScr; curScr = id;
     if (out) { const o = $(out); o.classList.remove('in'); o.classList.add('out'); setTimeout(() => { if (curScr !== out) o.classList.add('hide'); o.classList.remove('out'); }, 170); }
     if (id === 'menu') { paintRank($('mRank'), myRank()); paintMarks(); paintRejoin(); }
-    if (id) { const e = $(id); e.classList.remove('hide', 'out', 'in'); void e.offsetWidth; e.classList.add('in'); if (id === 'menu') fitLogo(); }
+    if (id) { const e = $(id); e.classList.remove('hide', 'out', 'in'); e.classList.toggle('back', id === 'menu' && !!out); void e.offsetWidth; e.classList.add('in'); if (id === 'menu') fitLogo(); }
   }
   function shake(el) { el.classList.remove('shake'); void el.offsetWidth; el.classList.add('shake'); setTimeout(() => el.classList.remove('shake'), 320); }
   function flash(btn, text) { if (!btn.dataset.t0) btn.dataset.t0 = btn.textContent; btn.textContent = text; clearTimeout(btn._t); btn._t = setTimeout(() => { btn.textContent = btn.dataset.t0; delete btn.dataset.t0; }, 1500); }
@@ -872,7 +975,7 @@ const { initMenus, animMenus, showEnd } = (() => {
     const out = [[], []];
     for (const p of roster()) {
       const side = p.side === null || p.side === undefined ? (p.team === 0 ? 0 : 1) : p.side, k = (d.picks && d.picks[p.pid]) || {};
-      if (out[side].length < 4) out[side].push({ who: p.pid, name: p.name, champ: k.champ || null, role: k.role || null, build: k.build, finish: k.finish, trail: k.trail, recall: k.recall, tier: k.tier || 0, human: true, locked: !!k.locked, online: p.online !== false });
+      if (out[side].length < 4) out[side].push({ who: p.pid, name: p.name, champ: k.champ || null, role: k.role || null, build: k.build, prof: k.prof, finish: k.finish, trail: k.trail, recall: k.recall, tier: k.tier || 0, human: true, locked: !!k.locked, online: p.online !== false });
     }
     for (const t of [0, 1]) while (out[t].length < 4) out[t].push({ who: null, bot: true, champ: null, role: null, name: 'Bot', tier: 0, human: false });
     return out;
@@ -889,7 +992,7 @@ const { initMenus, animMenus, showEnd } = (() => {
   }
   function sendMine() {
     const m = mine(); wearMine(m);
-    try { Net.pick({ champ: m.champ, role: m.role, build: m.build, tier: seatTier(m), finish: m.finish, trail: m.trail, recall: m.recall }); } catch (e) { }
+    try { Net.pick({ champ: m.champ, role: m.role, build: m.build, prof: seatProf(m), tier: seatTier(m), finish: m.finish, trail: m.trail, recall: m.recall }); } catch (e) { }
   }
   function paintDraft() {
     const d = N.draft; if (!d) return;
@@ -911,7 +1014,7 @@ const { initMenus, animMenus, showEnd } = (() => {
     const foe = 1 - L.team, me = roster().find(p => p.pid === N.pid), mates = roster().filter(p => p.side === L.team || (p.side === null && me && p.team === me.team)), box = $('bCards');
     const votes = d.votes || {}, myV = votes[N.pid], banned = bannedFrom(d, foe);
     $('bT').innerHTML = `<b>Ban a ${foe ? 'villain' : 'hero'}</b><span>Your team removes its most voted pick</span>`;
-    box.textContent = '';
+    box.textContent = ''; box.style.setProperty('--n', Math.ceil(rosterOf(foe).length / 2));
     rosterOf(foe).forEach((kit, i) => {
       const nm = charName(foe, kit), b = document.createElement('button'), n = mates.filter(p => votes[p.pid] === kit).length, gone = banned.includes(kit);
       b.className = 'bcard stick' + (gone ? ' gone' : ''); b.style.setProperty('--i', i); b.setAttribute('aria-pressed', myV === kit); b.setAttribute('aria-label', `Ban ${nm}`);
@@ -1146,6 +1249,16 @@ const { initMenus, animMenus, showEnd } = (() => {
     shiv: [['Open from Vanish: score 7 solo takedowns', 'kills', 7], ['Shank and leave: finish with 3 deaths or fewer', 'safe', 3], ['Finish the job: take 2 towers or bosses', 'pressure', 2]],
     ironjaw: [['Grab them into your team: land 12 abilities', 'hits', 12], ['Let Rage build: take 16,000 damage', 'taken', 16000], ['Demolish a whole team: score 10 assists', 'assists', 10]],
   };
+  // A kit with no hand-written set still gets three that fit its best lane and name its own abilities.
+  function champList(id) {
+    if (CHAMP_M[id]) return CHAMP_M[id];
+    const k = Sim.KITS[id]; if (!k) return [];
+    const a = k.kit[0].name, ult = k.kit[2].name, best = Sim.ROLES.slice().sort((x, y) => k.fit[y] - k.fit[x])[0];
+    return best === 'support' ? [[`Keep ${a} flowing: 10 assists`, 'assists', 10], [`Save a fight with ${ult}: heal or shield 3,000`, 'heal', 3000], ['Stay on your feet: finish with 3 deaths or fewer', 'safe', 3]]
+      : best === 'top' ? [[`Land ${a}: 12 abilities in one match`, 'hits', 12], ['Hold the line: take 15,000 damage', 'taken', 15000], [`End it with ${ult}: score 8 takedowns`, 'takedowns', 8]]
+      : best === 'jungle' ? [[`Hunt with ${a}: score 10 takedowns`, 'takedowns', 10], ['Own the map: help win 2 objectives', 'objs', 2], [`Slip away after ${ult}: finish with 3 deaths or fewer`, 'safe', 3]]
+      : [[`Line up ${a}: land 14 abilities`, 'hits', 14], [`Cash in ${ult}: deal 13,000 damage`, 'dmg', 13000], ['Stay alive to carry: finish with 3 deaths or fewer', 'safe', 3]];
+  }
   const champReward = i => [60, 80, 120][i] || 60;
   const champCheck = (key, n, m) => key === 'safe' ? m.st.deaths <= n : key === 'win' ? m.won : key === 'pressure' ? m.st.towers + m.st.objs >= n : (m.st[key] || 0) >= n;
   const champValue = (key, m) => key === 'safe' ? m.st.deaths : key === 'win' ? (m.won ? 1 : 0) : key === 'pressure' ? m.st.towers + m.st.objs : (m.st[key] || 0);
@@ -1171,7 +1284,7 @@ const { initMenus, animMenus, showEnd } = (() => {
       d.p = Math.min(def.n, d.p + def.f(m));
       if (d.p >= def.n) { d.done = true; gain += def.v; out.push({ t: def.t, v: def.v }); }
     }
-    const list = CHAMP_M[r.me.champ] || [], rec = M.champ[r.me.champ] || (M.champ[r.me.champ] = {});
+    const list = champList(r.me.champ), rec = M.champ[r.me.champ] || (M.champ[r.me.champ] = {});
     list.forEach((c, i) => { if (rec[i] || !champCheck(c[1], c[2], m)) return; rec[i] = 1; const v = champReward(i); gain += v; out.push({ t: `${charName(r.me.team, r.me.champ)}: ${c[0]}`, v }); });
     if (gain) { save.marks = (save.marks || 0) + gain; }
     persist();
@@ -1188,11 +1301,11 @@ const { initMenus, animMenus, showEnd } = (() => {
     $('msNew').textContent = `New missions in ${hrs} hour${hrs === 1 ? '' : 's'}. Marks pay for the store.`;
     $('msDaily').innerHTML = M.daily.map(d => { const def = dailyDef(d.id); return def ? missCard(def.t, def.v, d.done ? 1 : d.p / def.n, d.done, `${fmtN(d.p)} / ${fmtN(def.n)}`) : ''; }).join('');
     if (!Ms.champ) Ms.champ = wantFor(L.team);
-    const t = [0, 1].find(x => rosterOf(x).includes(Ms.champ)), rec = M.champ[Ms.champ] || {}, list = CHAMP_M[Ms.champ] || [];
+    const t = [0, 1].find(x => rosterOf(x).includes(Ms.champ)), rec = M.champ[Ms.champ] || {}, list = champList(Ms.champ);
     $('msCT').textContent = charName(t, Ms.champ);
-    const pick = $('msPick'); pick.textContent = '';
+    const pick = $('msPick'); pick.textContent = ''; pick.style.setProperty('--n', Math.ceil((rosterOf(0).length + rosterOf(1).length) / 2));
     [0, 1].forEach(side => rosterOf(side).forEach(id => {
-      const b = document.createElement('button'), r = M.champ[id] || {}, done = (CHAMP_M[id] || []).filter((_, i) => r[i]).length;
+      const b = document.createElement('button'), r = M.champ[id] || {}, done = champList(id).filter((_, i) => r[i]).length;
       b.setAttribute('aria-pressed', id === Ms.champ); b.setAttribute('aria-label', charName(side, id));
       b.append(coinCanvas(Art.champCoin(id, side, Sim.tierOf(pts(id)), 34), 80));
       if (done) b.insertAdjacentHTML('beforeend', `<u>${done}/3</u>`);
@@ -1316,7 +1429,13 @@ const { initMenus, animMenus, showEnd } = (() => {
 
     // main menu
     // Every press answers on touch-down, before the browser decides it was a click.
-    addEventListener('pointerdown', e => { const b = e.target.closest && e.target.closest('button'); if (b) { b.classList.add('down'); pressed = b; } }, true);
+    const rings = Array.from({ length: 4 }, () => { const r = document.createElement('i'); r.className = 'tapr'; stage.append(r); return r; }); let ringAt = 0;
+    const tapRing = e => {
+      if (calm) return;
+      const p = Ctl.pt(e), r = rings[ringAt++ % rings.length]; r.style.left = p.x + 'px'; r.style.top = p.y + 'px';
+      r.animate([{ transform: 'scale(.25)', opacity: .75 }, { transform: 'scale(1)', opacity: 0 }], { duration: 380, easing: 'cubic-bezier(.16,1,.3,1)' });
+    };
+    addEventListener('pointerdown', e => { const b = e.target.closest && e.target.closest('button'); if (b) { b.classList.add('down'); pressed = b; tapRing(e); } }, true);
     const lift = () => { if (pressed) { pressed.classList.remove('down'); pressed = null; } };
     addEventListener('pointerup', lift, true); addEventListener('pointercancel', lift, true);
     if (isStandalone()) { try { screen.orientation.lock('landscape').catch(() => { }); } catch (e) { } }
@@ -1373,6 +1492,23 @@ const { initMenus, animMenus, showEnd } = (() => {
     $('sLeft').onclick = () => { setLeft(!(save.hud && save.hud.left)); Sound.play('tap'); syncToggles(); };
     document.querySelectorAll('#sAim [data-a]').forEach(b => { b.onclick = () => { save.aimSens = +b.dataset.a; persist(); Sound.play('tap'); syncToggles(); }; });
     $('sEdit').onclick = openHudEd;
+    const setTgt = v => { save.targetPref = v; persist(); if (G) G.me.q.push({ t: 'pref', v }); syncToggles(); };
+    document.querySelectorAll('#sTgt [data-v]').forEach(b => { b.onclick = () => setTgt(b.dataset.v); });
+    $('pTgt').onclick = () => setTgt(save.targetPref === 'pct' ? 'hp' : 'pct');
+    $('sXfer').onclick = openXfer;
+    $('sReset').onclick = resetAccount;
+    $('xBack').onclick = () => { Sound.play('tap'); hide('xfer'); };
+    $('xCopy').onclick = async () => {
+      const ok = await copyText($('xOut').value);
+      if (!ok) Sound.play('importBad');
+      if (ok) { flash($('xCopy'), 'Copied'); xferMsg('Copied. Now paste it into Receive on your other device.'); }
+      else { const t = $('xOut'); try { t.focus(); t.select(); t.setSelectionRange(0, t.value.length); } catch (e) { } xferMsg('Could not copy automatically. The code is selected: copy it by hand.', true); }
+    };
+    $('xPaste').onclick = async () => {
+      try { const t = await navigator.clipboard.readText(); $('xIn').value = t; Sound.play('tap'); xferMsg(''); }
+      catch (e) { $('xIn').focus(); xferMsg('Press and hold in the box to paste.', true); }
+    };
+    $('xLoad').onclick = loadXfer;
     $('hDone').onclick = () => { Sound.play('tap'); hide('hudEd'); persist(); hud(); syncToggles(); show('settings'); };
     $('hReset').onclick = () => { hudSave().pos = {}; persist(); hud(); buildHudEd(); Sound.play('coin'); };
     $('hLeft').onclick = () => { setLeft(!hudSave().left); buildHudEd(); Sound.play('tap'); };
