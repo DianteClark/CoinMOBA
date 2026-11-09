@@ -830,6 +830,8 @@ const Sim = (() => {
     if (a.shape === 'dash' || a.shape === 'line') { aim.tx = c.x + dx * r; aim.ty = c.y + dy * r; }
     // Ground-targeted circles need line of sight and land at the last visible point.
     if (a.shape === 'circle' && !a.over && aim.d > 0) { aim.d = rayWall(c.x, c.y, dx, dy, aim.d); aim.tx = c.x + dx * aim.d; aim.ty = c.y + dy * aim.d; }
+    // Over-the-wall leaps skip the line of sight clamp above, so keep every landing point on the map.
+    if (a.shape === 'circle') { aim.tx = clamp(aim.tx, 60, W - 60); aim.ty = clamp(aim.ty, 130, H - 130); }
     // Press time feedback: the cast event always fires on the press, before any wind-up or travel.
     const says = extra => { s.ev.push(Object.assign({ e: 'cast', u: c.id, fx: a.fx, dx, dy, slot: q.slot }, extra)); };
     curAbil = a.name;
