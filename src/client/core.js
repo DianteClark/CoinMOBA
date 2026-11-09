@@ -18,14 +18,30 @@ Sound.setOn(save.music, save.sfx);
 
 function applyQuality() { quality = save.gfx === 'low' ? 0 : save.gfx === 'high' ? 2 : quality; resize(); }
 function resize() { dpr = Math.min(devicePixelRatio || 1, quality >= 2 ? 2 : quality === 1 ? 1.5 : 1); view.width = VW * dpr; view.height = VH * dpr; }
+// How far the stage starts from the physical screen edge, and the physical width used for touch mapping.
+let stageX = 0, physW = 0;
+const safeProbe = (() => { const d = document.createElement('div'); d.id = 'safeProbe'; d.style.cssText = 'position:fixed;left:0;top:0;width:0;height:0;visibility:hidden;pointer-events:none;padding:env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left)'; document.documentElement.appendChild(d); return d; })();
+function safeInsets() { const s = getComputedStyle(safeProbe), n = v => parseFloat(v) || 0; return { t: n(s.paddingTop), r: n(s.paddingRight), b: n(s.paddingBottom), l: n(s.paddingLeft) }; }
+const IOS = /iP(hone|od|ad)/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+// The UI already keeps this much clear at each side of the stage.
+const UI_MARGIN = 44;
 function layout() {
-  const w = innerWidth, h = innerHeight; rotated = h > w;
-  VW = rotated ? h : w; VH = rotated ? w : h;
+  let w = innerWidth, h = innerHeight;
+  // An installed iPhone app can report a height short by the status bar, which left a dead band at the bottom.
+  if (navigator.standalone && screen.width && screen.height) { const lo = Math.min(screen.width, screen.height), hi = Math.max(screen.width, screen.height); if (h >= w) { w = Math.max(w, lo); h = Math.max(h, hi); } else { w = Math.max(w, hi); h = Math.max(h, lo); } }
+  rotated = h > w; physW = w;
+  const ins = safeInsets();
+  // iOS keeps taps for itself in and just below the status bar, so that edge needs a little more than the reported inset.
+  const topNeed = IOS && rotated ? Math.max(ins.t, navigator.standalone ? 20 : 0) + 14 : ins.t;
+  const needA = rotated ? topNeed : ins.l, needB = rotated ? ins.b : ins.r;
+  const shiftA = Math.ceil(Math.max(0, needA - UI_MARGIN)), shiftB = Math.ceil(Math.max(0, needB - UI_MARGIN));
+  stageX = shiftA;
+  VW = (rotated ? h : w) - shiftA - shiftB; VH = rotated ? w : h;
   stage.style.width = VW + 'px'; stage.style.height = VH + 'px';
-  stage.style.transform = rotated ? `translate(${w}px,0) rotate(90deg)` : 'none';
+  stage.style.transform = rotated ? `translate(${w}px,${shiftA}px) rotate(90deg)` : `translateX(${shiftA}px)`;
   resize(); ZB = VW / 1340; Z = ZB; hud();
 }
-addEventListener('resize', layout); addEventListener('orientationchange', () => setTimeout(layout, 120));
+addEventListener('resize', layout); addEventListener('orientationchange', () => setTimeout(layout, 120)); addEventListener('pageshow', () => setTimeout(layout, 60)); setTimeout(() => { if (typeof hud === 'function') layout(); }, 400);
 document.addEventListener('gesturestart', e => e.preventDefault());
 document.addEventListener('touchmove', e => { if (!e.target.closest('.scroll')) e.preventDefault(); }, { passive: false });
 

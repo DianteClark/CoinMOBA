@@ -3,7 +3,7 @@ const { Ctl, applyInput, aimDir } = (() => {
   const Ctl = {
     p: new Map(), stick: null, aim: null, atk: null, atkMode: 'champ', beacon: null, ping: null, mapHold: null,
     reset() { this.p.clear(); this.stick = null; this.aim = null; this.atk = null; this.atkMode = 'champ'; this.beacon = null; this.ping = null; this.mapHold = null; },
-    pt(e) { return rotated ? { x: e.clientY, y: innerWidth - e.clientX } : { x: e.clientX, y: e.clientY }; },
+    pt(e) { return rotated ? { x: e.clientY - stageX, y: physW - e.clientX } : { x: e.clientX - stageX, y: e.clientY }; },
   };
   const near = (b, p, pad) => Math.hypot(p.x - b.x, p.y - b.y) < b.r + pad;
   const STICK = 58, MOVE_PX = 16, FULL_PX = 96, HOLD_MS = 240, RADIAL_DEAD = 20;
