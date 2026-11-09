@@ -973,6 +973,52 @@ button.down{transform:translateY(1px) scale(.955);filter:brightness(1.28);transi
 .shd b.long{font-size:16px}.sm .shd b.long{font-size:13.5px}
 #pTgt{white-space:nowrap}
 .sm .pcol{gap:4px}.sm .pcol h2{font-size:28px}.sm .pcol .go,.sm .pcol .ghost,.sm .pcol .tog{height:36px;min-height:36px;font-size:14px}.sm .pcol .go{font-size:19px}
+
+/* ---------- 10.0 round two ---------- */
+.wsub{display:flex;align-items:baseline;justify-content:space-between;gap:12px;margin-top:-3px;white-space:nowrap;flex:none}
+.wsub .blurb{flex:0 1 auto;min-width:0}
+.wsub .best{flex:0 0 auto}
+.whead{align-items:center}
+.sm .wsub{margin-top:-2px}
+/* Overlays leave as deliberately as they arrive. */
+.leaving{animation:fadeout .15s ease-in forwards!important;pointer-events:none}
+.leaving .plate{animation:sheetout .15s ease-in forwards!important}
+@keyframes sheetout{to{opacity:0;transform:translate3d(0,14px,0) scale(.98)}}
+#shop.closing{animation:shopout .13s ease-in forwards;pointer-events:none}
+@keyframes shopout{to{opacity:0;transform:translate3d(0,10px,0) scale(.988)}}
+/* Shop */
+.shfoot{position:relative}
+.shfoot::before{content:"";position:absolute;left:0;right:-9px;top:-8px;height:120px;background:radial-gradient(ellipse at 34% 0,var(--glow,transparent),transparent 72%);opacity:.42;pointer-events:none;transition:background .2s}
+.shfoot>*{position:relative}
+.it.leg.can::after{content:"";position:absolute;inset:0;pointer-events:none;background:linear-gradient(112deg,transparent 40%,rgba(255,226,160,.28) 50%,transparent 60%);transform:translateX(-120%);animation:legsheen 4.4s ease-in-out infinite;animation-delay:calc(var(--i,0)*190ms)}
+@keyframes legsheen{0%,70%{transform:translateX(-120%)}100%{transform:translateX(120%)}}
+.it.sel::before{background:linear-gradient(90deg,rgba(var(--edge),.2),transparent 62%),var(--fill)}
+.go.off::after{transform:none;animation:none;background:linear-gradient(90deg,rgba(230,210,154,.2) var(--p,0%),transparent 0)}
+.go.off .c{color:var(--mut)}
+/* End screen */
+#end.win .egrid{--line:linear-gradient(135deg,#fff3d1,var(--gold) 26%,rgba(148,167,194,.22) 55%,var(--gold2));--fill:linear-gradient(165deg,rgba(40,33,18,.96),rgba(10,12,18,.98) 46%)}
+#end.lose .egrid{--line:linear-gradient(135deg,rgba(148,167,194,.55),rgba(148,167,194,.14) 60%)}
+.ehead::before{content:"";position:absolute;left:-74px;top:-104px;width:300px;height:300px;border-radius:50%;background:repeating-conic-gradient(rgba(255,233,178,.17) 0 7deg,transparent 7deg 24deg);-webkit-mask-image:radial-gradient(circle,#000 18%,transparent 68%);mask-image:radial-gradient(circle,#000 18%,transparent 68%);animation:rays 30s linear infinite,fadein 1s .2s both;pointer-events:none;will-change:transform}
+#end.lose .ehead::before{display:none}
+@keyframes rays{to{transform:rotate(360deg)}}
+#endcoin{animation:coinslam .6s .05s var(--sp) both}
+@keyframes coinslam{from{opacity:0;transform:scale(1.9)}}
+#end.win .ehead h2{background-image:linear-gradient(105deg,transparent 42%,#fff 50%,transparent 58%),linear-gradient(180deg,#fff7df 0 48%,var(--gold) 48% 100%);background-size:260% 100%,100% 100%;background-repeat:no-repeat;background-position:170% 0,0 0;-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent;animation:settle .7s .05s var(--eo) both,wordshine 3.8s .9s ease-in-out infinite}
+#end .score tbody tr{animation:rowin .46s var(--eo) both;animation-delay:calc(var(--r,0)*42ms + .4s)}
+@keyframes rowin{from{opacity:0;transform:translate3d(20px,0,0)}}
+#end .score tbody.t0 tr:nth-child(1){--r:0}#end .score tbody.t0 tr:nth-child(2){--r:1}#end .score tbody.t0 tr:nth-child(3){--r:2}#end .score tbody.t0 tr:nth-child(4){--r:3}#end .score tbody.t1 tr:nth-child(1){--r:4}#end .score tbody.t1 tr:nth-child(2){--r:5}#end .score tbody.t1 tr:nth-child(3){--r:6}#end .score tbody.t1 tr:nth-child(4){--r:7}
+#endS,.endr,#endM,.prof,#endMk{animation:rise .5s var(--eo) both}
+#endS{animation-delay:.22s}.endr{animation-delay:.32s}.prof,#endM{animation-delay:.4s}#endMk{animation-delay:.5s}
+#end .row{animation:rise .5s .9s var(--eo) both}
+.prof b{background:linear-gradient(90deg,var(--acc3),#fff3d1)}
+#rDelta{animation:deltain .5s .7s var(--sp) both}
+@keyframes deltain{from{opacity:0;transform:scale(.4)}}
+.mission{overflow:hidden}
+.sm .lnet:not(.hide)~div #lRank{display:none}
+#shop.dead .shtop .ic{width:28px;height:28px}#shop.dead .shd b{font-size:14.5px;overflow-wrap:normal}#shop.dead .shd b.long{font-size:13px}
+.nm{flex:1 1 0;min-width:0}
+@keyframes namein{from{opacity:0;transform:translate3d(-24px,0,0)}}
+.bcard b{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-size:17px}.bcard b.long{font-size:14px}.sm .bcard b{font-size:13px}.sm .bcard b.long{font-size:11.5px}
 </style>
 </head>
 <body>
@@ -1037,7 +1083,8 @@ button.down{transform:translateY(1px) scale(.955);filter:brightness(1.28);transi
     <div class="roster scroll" id="picks"></div>
     <div class="hero"><canvas id="big" width="520" height="520"></canvas><div class="herotag"><div class="ladder" id="ladder"></div><p class="lad" id="wTier"></p></div></div>
     <div class="who">
-      <div class="whead"><div class="nm"><h2 id="wN"></h2><p class="sub"><span class="blurb" id="wB"></span><span class="best" id="wBest"></span></p></div><div class="seg wtab" id="wTab"><button data-t="builds">Builds</button><button data-t="kit">Abilities</button><button data-t="prof">Lane</button></div></div>
+      <div class="whead"><div class="nm"><h2 id="wN"></h2></div><div class="seg wtab" id="wTab"><button data-t="builds">Builds</button><button data-t="kit">Abilities</button><button data-t="prof">Lane</button></div></div>
+      <p class="wsub"><span class="blurb" id="wB"></span><span class="best" id="wBest"></span></p>
       <div class="lpass" id="wP"></div>
       <div class="lpane" id="wBuilds"></div>
       <div class="lpane hide" id="wKit"><div class="abilbox"><div class="abil scroll" id="wA"></div></div></div>

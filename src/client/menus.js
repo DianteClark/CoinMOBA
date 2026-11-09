@@ -9,7 +9,15 @@ const { initMenus, animMenus, showEnd } = (() => {
   const isMe = s => N.mode ? s.who === N.pid : !!s.human;
   const isFriend = s => !!N.mode && s.who !== null && s.who !== undefined && s.who !== N.pid;
   const shuffle = a => { for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; } return a; };
-  const show = id => $(id).classList.remove('hide'), hide = id => $(id).classList.add('hide'), hidden = id => $(id).classList.contains('hide');
+  // Dialogs fade out; everything else simply goes. A dialog counts as hidden straight away, so game logic never waits on the animation.
+  const SOFT = new Set(['settings', 'xfer', 'confirm', 'sheet', 'pause']);
+  const show = id => { const e = $(id); clearTimeout(e._leave); e.classList.remove('hide', 'leaving'); };
+  const hide = id => {
+    const e = $(id);
+    if (!SOFT.has(id) || calm || e.classList.contains('hide') || e.classList.contains('leaving')) { if (!e.classList.contains('leaving')) e.classList.add('hide'); return; }
+    e.classList.add('leaving'); clearTimeout(e._leave); e._leave = setTimeout(() => { e.classList.remove('leaving'); e.classList.add('hide'); }, 150);
+  };
+  const hidden = id => $(id).classList.contains('hide') || $(id).classList.contains('leaving');
   const mine = () => L.seats[L.team][L.slot];
   const pipsHtml = n => `<span class="pips" role="img" aria-label="Fit ${n} of 3">${[0, 1, 2].map(i => `<i${i < n ? ' class="on"' : ''}></i>`).join('')}</span>`;
   const icons = {};
@@ -69,7 +77,7 @@ const { initMenus, animMenus, showEnd } = (() => {
   function rollSeats() {
     const names = shuffle(BOT_NAMES.slice()); let n = 0;
     L.seats = [0, 1].map(team => {
-      const pool = shuffle(rosterOf(team).slice()).slice(0, 4);
+      const pool = Sim.sensiblePool ? Sim.sensiblePool(team, team === L.team ? wantFor(team) : null) : shuffle(rosterOf(team).slice()).slice(0, 4);
       if (team === L.team) { const want = wantFor(team), at = pool.indexOf(want); if (at >= 0) [pool[at], pool[L.slot]] = [pool[L.slot], pool[at]]; else pool[L.slot] = want; }
       const roles = Sim.autoRoles(pool);
       return pool.map((champ, i) => ({ champ, role: roles[i], tier: Math.min(5, Math.floor(Math.random() * Math.random() * 6)), human: false, name: names[n++], who: null, build: botBuild(champ, roles[i]) }));
@@ -700,8 +708,17 @@ const { initMenus, animMenus, showEnd } = (() => {
 
   // ---------- lobby hero ----------
   let flipT = 0, heroA = .3, heroSweep = 0;
+  // A long name scales to the room left beside the tabs, whichever font loaded.
+  function fitName() {
+    const n = $('wN'), key = `${n.textContent}|${VW}|${Deco.fontsReady()}`;
+    if (key === fitName.key || !n.parentElement.clientWidth) return;
+    fitName.key = key; n.style.fontSize = '';
+    const base = parseFloat(getComputedStyle(n).fontSize), k = Math.min(1, n.parentElement.clientWidth / n.scrollWidth);
+    if (k < 1) n.style.fontSize = Math.floor(base * k) + 'px';
+  }
   function heroStep(dt) {
     if (hidden('lobby') || !L.seats) return;
+    fitName();
     const c = $('big'), g = c.getContext('2d'), id = mine().champ, spr = Art.champCoin(id, L.team, Sim.tierOf(pts(id)), 230, mine().finish);
     if (!calm) { heroA += dt * .9; heroSweep = (heroSweep + dt / 4) % 1; }
     if (flipT > 0) flipT = Math.max(0, flipT - dt * 2.4);
@@ -1019,7 +1036,7 @@ const { initMenus, animMenus, showEnd } = (() => {
       const nm = charName(foe, kit), b = document.createElement('button'), n = mates.filter(p => votes[p.pid] === kit).length, gone = banned.includes(kit);
       b.className = 'bcard stick' + (gone ? ' gone' : ''); b.style.setProperty('--i', i); b.setAttribute('aria-pressed', myV === kit); b.setAttribute('aria-label', `Ban ${nm}`);
       b.append(coinCanvas(Art.champCoin(kit, foe, 2, 64), 152));
-      b.insertAdjacentHTML('beforeend', `<b>${shortName(nm)}</b><small>${Sim.charOf(foe, kit).title}</small><span class="vt">${Array.from({ length: n }, () => '<i></i>').join('')}</span>`);
+      b.insertAdjacentHTML('beforeend', `<b${shortName(nm).length >= 12 ? ' class="long"' : ''}>${shortName(nm)}</b><small>${Sim.charOf(foe, kit).title}</small><span class="vt">${Array.from({ length: n }, () => '<i></i>').join('')}</span>`);
       b.onclick = () => { if (gone) { Sound.play('cancel'); return; } Sound.play('banVote'); try { Net.ban(kit); } catch (e) { } if (N.draft.votes) { N.draft.votes[N.pid] = kit; renderBan(N.draft); } };
       box.append(b);
     });

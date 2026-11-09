@@ -334,6 +334,20 @@ const { hud, initHud, hudDraw, uiEvent } = (() => {
   }
 
   // ---------- player frame ----------
+  // The map is bright now. A soft dark band under the top readouts and a pool of shade under each thumb cluster keep the HUD off it, without a visible box.
+  let scrimTop = null, shade = null;
+  function drawScrims(k) {
+    if (!scrimTop) {
+      scrimTop = Art.cv(2, 96); let g = scrimTop.getContext('2d'), gr = g.createLinearGradient(0, 0, 0, 96);
+      gr.addColorStop(0, 'rgba(5,6,10,.72)'); gr.addColorStop(.55, 'rgba(5,6,10,.36)'); gr.addColorStop(1, 'rgba(5,6,10,0)'); g.fillStyle = gr; g.fillRect(0, 0, 2, 96);
+      shade = Art.cv(128, 128); g = shade.getContext('2d'); gr = g.createRadialGradient(64, 64, 18, 64, 64, 64);
+      gr.addColorStop(0, 'rgba(5,6,10,.58)'); gr.addColorStop(.62, 'rgba(5,6,10,.4)'); gr.addColorStop(1, 'rgba(5,6,10,0)'); g.fillStyle = gr; g.fillRect(0, 0, 128, 128);
+    }
+    ctx.globalAlpha = k;
+    ctx.drawImage(scrimTop, 0, 0, VW, U.compact ? 66 : 76);
+    for (const B of [U.atk, U.ab[0], U.ab[1], U.ab[2], U.beacon]) { const R = B.r * 1.62; ctx.drawImage(shade, B.x - R, B.y - R, R * 2, R * 2); }
+    ctx.globalAlpha = 1;
+  }
   function skewBar(x, y, w, h, s) { if (w <= 0) return; const sl = Math.min(w, s); ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x + w, y); ctx.lineTo(x + w - sl, y + h); ctx.lineTo(x, y + h); ctx.closePath(); ctx.fill(); }
   const barGrads = {};
   function barFill(low, y, h) { const k = (low ? 1 : 0) + '|' + y; return barGrads[k] || (barGrads[k] = (() => { const g = ctx.createLinearGradient(0, y, 0, y + h); if (low) { g.addColorStop(0, '#ff8d9c'); g.addColorStop(.28, '#ea3a52'); g.addColorStop(1, '#a51a30'); } else { g.addColorStop(0, '#a4f0c4'); g.addColorStop(.28, '#46c780'); g.addColorStop(1, '#23884f'); } return g; })()); }
@@ -417,8 +431,8 @@ const { hud, initHud, hudDraw, uiEvent } = (() => {
     const s = 1 - sq * .16, r = B.r * s;
     // Quiet until it matters.
     const acc = SIDE_ACC[G.me.team];
-    disc(B.x, B.y, r); ctx.fillStyle = GLASS; ctx.fill();
-    ctx.strokeStyle = hot ? acc : HAIR; ctx.lineWidth = 1.2; ctx.stroke();
+    disc(B.x, B.y, r); ctx.fillStyle = 'rgba(6,8,13,.92)'; ctx.fill();
+    ctx.strokeStyle = hot ? acc : 'rgba(233,237,244,.5)'; ctx.lineWidth = 1.4; ctx.stroke();
     icon(B.x, B.y, hot ? acc : PAPER);
     if (H.first) { ctx.font = fw(500, 10); ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; label(name, B.x, B.y + B.r + 7.5, WHITE); }
   }
@@ -493,7 +507,7 @@ const { hud, initHud, hudDraw, uiEvent } = (() => {
     const m = 1 + (calm ? 0 : H.hopeFlash) * .45;
     Deco.flip(ctx, mx, y + h / 2, 7 * m, H.hopeAng, 24, 0);
     ctx.font = fw(500, 11); ctx.textBaseline = 'middle'; ctx.textAlign = 'center';
-    if (H.first && s.t < 40 && !H.banner) label('The people', cx, y + h + 10, WHITE);
+    if (H.first && s.t < 40 && !H.banner && G.me.alive) label('The people', cx, y + h + 10, WHITE);
   }
 
   // ---------- minimap ----------
@@ -906,7 +920,7 @@ const { hud, initHud, hudDraw, uiEvent } = (() => {
     if ((h.i === 0 && Ctl.stick && h.t > .8) || (h.i === 1 && Ctl.atk !== null && h.t > .5) || (h.i === 2 && (me.stats.casts > 0 || h.t > 7)) || h.t > 8) { h.i++; h.t = 0; }
     if (h.i >= 3) { H.hint = null; return; }
     const s = HINTS()[h.i]; ctx.font = fw(500, 14); ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-    const w = Math.ceil(ctx.measureText(s).width + 24) & ~1, x = Math.round(VW / 2 - w / 2), y = VH - 34;
+    const w = Math.ceil(ctx.measureText(s).width + 24) & ~1, x = Math.round(VW / 2 - w / 2), y = H.evoH ? VH - 6 - H.evoH - 6 - 24 : VH - 34;
     ctx.globalAlpha = Math.min(1, h.t * 4) * .94;
     put(panel(w, 24, 5), x, y);
     ctx.fillStyle = PAPER; ctx.fillText(s, VW / 2, y + 12.5); ctx.globalAlpha = 1;
@@ -950,7 +964,7 @@ const { hud, initHud, hudDraw, uiEvent } = (() => {
     if (me.alive === !H.wasDead) return;
     H.wasDead = !me.alive;
     const f = $('shop');
-    if (H.wasDead) { if (G.outro || G.ended) return; H.shopAuto = true; f.classList.add('dead'); f.classList.toggle('solo', !H.recap); f.classList.remove('hide'); shopBuild(); }
+    if (H.wasDead) { if (G.outro || G.ended) return; H.shopAuto = true; clearTimeout(f._c); f.classList.add('dead'); f.classList.toggle('solo', !H.recap); f.classList.remove('hide', 'closing'); shopBuild(); }
     else { f.classList.remove('dead', 'solo'); if (H.shopAuto) f.classList.add('hide'); H.shopAuto = false; H.recap = null; $('recap').classList.add('hide'); }
   }
 
@@ -968,6 +982,7 @@ const { hud, initHud, hudDraw, uiEvent } = (() => {
       const p = calm ? .5 : (Math.sin(H.t * 3.4) + 1) / 2;
       ctx.globalAlpha = (.2 + p * .16) * e; ctx.drawImage(redEdge(), 0, 0, VW, VH); ctx.globalAlpha = 1;
     }
+    drawScrims(e);
     drawStick(s);
     offset(-300 * away, 0); drawFrame(dt, me); drawBuffs(dt, s, me); drawFeed(dt);
     offset(0, -90 * away); drawStrip(dt, s, me); drawPeople(dt, s); drawObjective(dt, s, me);
@@ -980,7 +995,7 @@ const { hud, initHud, hudDraw, uiEvent } = (() => {
     if (!me.alive) drawDeath(me);
     drawEmotes(dt, s, me); drawChat(dt); drawHint(dt, me); drawTips(dt, me); drawAimCard(me); drawBanner(dt); drawRadial(dt);
     H.frame++;
-    if (shopOpen() && H.frame % 10 === 0) shopSync(false);
+    if (shopOpen()) { const sg = Math.floor(H.goldShow); if (sg !== H.shopGoldV) { H.shopGoldV = sg; $('shGold').textContent = sg; } if (H.frame % 10 === 0) shopSync(false); }
     if (H.frame % 12 === 0) { evoSync(me, s); svSync(s, me); if (!me.alive) recapSync(me); }
     if (H.tips && H.frame % 6 === 0) practiceSync(s, me);
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
@@ -1171,7 +1186,7 @@ const { hud, initHud, hudDraw, uiEvent } = (() => {
   const CATS = [['rec', 'For you', 'star'], ['phys', 'Physical', 'sword'], ['magic', 'Magic', 'burst'], ['def', 'Defence', 'shield'], ['sup', 'Support', 'plus'], ['util', 'Utility', 'chevron'], ['leg', 'Legend', 'crown'], ['cons', 'Supplies', 'flask'], ['city', 'City', 'city']];
   const ROLE_F = [['all', 'All'], ['tank', 'Tank'], ['bruiser', 'Bruiser'], ['marksman', 'Marksman'], ['assassin', 'Assassin'], ['mage', 'Mage'], ['support', 'Support'], ['jungle', 'Jungle']];
   const TIER_NAME = ['', 'Starter', 'Core', 'Advanced', 'Legendary'];
-  const shopOpen = () => !$('shop').classList.contains('hide');
+  const shopOpen = () => { const c = $('shop').classList; return !c.contains('hide') && !c.contains('closing'); };
   const itemDb = () => Sim.ITEMS || [];
   const itemBy = id => id && Sim.ITEM_BY ? Sim.ITEM_BY[id] || null : itemDb().find(i => i.id === id) || null;
   const isLeg = it => !!it.legendary;
@@ -1439,9 +1454,10 @@ const { hud, initHud, hudDraw, uiEvent } = (() => {
     // The panel only redraws when something on it changed, so a thumb can rest on Buy or scroll the text in peace.
     const footKey = `${it.id}|${slotMode ? sel.slot : ''}|${costOf(me, it)}|${canBuy(me, it)}|${slots.join()}|${(slotMode && bestUp(me, it.id)) ? canBuy(me, bestUp(me, it.id)) : ''}`;
     if (footKey === H.footKey && foot.querySelector('.shtop')) return;
-    H.footKey = footKey;
+    H.footKey = footKey; H.footItem = it;
+    foot.style.setProperty('--glow', { phys: 'rgba(255,138,76,.6)', magic: 'rgba(150,120,255,.65)', def: 'rgba(110,170,220,.55)', sup: 'rgba(100,220,160,.5)', util: 'rgba(230,210,154,.5)', cons: 'rgba(100,220,190,.5)' }[dmgKey(it)]);
     const tag = isLeg(it) ? 'Legendary' : isCons(it) ? 'Supply' : TIER_NAME[it.tier || 1] || `Tier ${it.tier || 1}`, stats = statsHtml(it);
-    const info = `<div class="shtop">${coinHtml(it)}<div class="shd"><em class="${tierClass(it)}">${tag}</em><b${it.name.length > 9 ? ' class="long"' : ''}>${it.name}</b></div></div><div class="shmore scroll"><div>${stats ? `<ul class="shst">${stats}</ul>` : ''}<p class="shdesc">${it.d}</p>${chain(it, me)}</div></div>`;
+    const info = `<div class="shtop">${coinHtml(it)}<div class="shd"><em class="${tierClass(it)}">${tag}</em><b${it.name.length >= 9 ? ' class="long"' : ''}>${it.name}</b></div></div><div class="shmore scroll"><div>${stats ? `<ul class="shst">${stats}</ul>` : ''}<p class="shdesc">${it.d}</p>${chain(it, me)}</div></div>`;
     if (slotMode) {
       const up = bestUp(me, it.id), price = up ? costOf(me, up) : null, can = !!up && canBuy(me, up);
       foot.innerHTML = info + `<div class="shact">${up ? `<button class="go${can ? ' hot' : ' off'}" id="shUp">Upgrade<span class="c"><i class="gc"></i>${price === null ? '' : price}</span></button>` : ''}<button class="ghost sell" id="shAct">Sell<span class="c"><i class="gc"></i>+${sellOf(me, sel.slot)}</span></button></div>`;
@@ -1455,11 +1471,16 @@ const { hud, initHud, hudDraw, uiEvent } = (() => {
     $('shAct').onpointerdown = () => { if (doBuy(it.id)) H.shopSel = null; };
     wirePath(foot);
   }
+  // An unaffordable Buy fills with gold as the purse catches up.
+  function paintBuyProgress(me) {
+    const b = $('shAct'), it = H.footItem;
+    if (!b || !it || !b.classList.contains('off')) return;
+    const c = costOf(me, it); if (c) b.style.setProperty('--p', `${Math.round(clamp01(me.gold / c) * 100)}%`);
+  }
   function shopSync(force) {
     if (!H || !G || !shopOpen() || !itemDb().length) return;
     const me = G.me, slots = slotsOf(me), g = Math.floor(me.gold), key = slots.join() + '|' + Math.floor(g / 5) + '|' + (H.shopSel ? JSON.stringify(H.shopSel) : '') + H.shopCat + me.alive;
-    $('shGold').textContent = g;
-    if (!force && key === H.shopKey) return;
+    if (!force && key === H.shopKey) { paintBuyProgress(me); return; }
     H.shopKey = key;
     document.querySelectorAll('#shList .it').forEach(b => { const it = itemBy(b.dataset.id), pr = costOf(me, it), el = b.querySelector('.p'); b.classList.toggle('can', canBuy(me, it)); b.classList.toggle('own', slots.includes(it.id)); if (el && pr !== null && pr !== undefined) el.textContent = pr; });
     document.querySelectorAll('#shList [data-p]').forEach(el => { el.textContent = cityPrice(el.dataset.p, me, G.s); });
@@ -1477,10 +1498,17 @@ const { hud, initHud, hudDraw, uiEvent } = (() => {
   }
   Hud.shopOpen = shopOpen;
   Hud.shopCat = k => { if (H) { H.shopCat = k; H.shopSel = null; if (shopOpen()) { shopTabs(); shopList(); } } };
-  Hud.closeShop = () => $('shop').classList.add('hide');
+  function shutShop() {
+    const f = $('shop'); clearTimeout(f._c);
+    if (calm || f.classList.contains('hide')) { f.classList.add('hide'); f.classList.remove('closing'); return; }
+    f.classList.add('closing'); f._c = setTimeout(() => { f.classList.remove('closing'); f.classList.add('hide'); }, 130);
+  }
+  Hud.closeShop = shutShop;
   Hud.toggleShop = () => {
-    const f = $('shop'); f.classList.toggle('hide'); f.classList.toggle('dead', !!G && !G.me.alive);
+    const f = $('shop'), opening = !shopOpen();
     H.shopAuto = false;
+    if (!opening) { shutShop(); Sound.play('shopClose'); return; }
+    clearTimeout(f._c); f.classList.remove('hide', 'closing'); f.classList.toggle('dead', !!G && !G.me.alive);
     if (!f.classList.contains('hide')) { shopBuild(); H.tipShop = true; Sound.play('shopOpen'); } else Sound.play('shopClose');
   };
 
@@ -1496,7 +1524,7 @@ const { hud, initHud, hudDraw, uiEvent } = (() => {
     const t = me.alive && !shopOpen() && !paused ? evoPending(me) : -1, box = $('evo');
     if (t !== H.evoLast) { H.evoLast = t; H.evoT = H.t; H.evoShut = false; H.evoKey = ''; }
     if (t >= 0 && !H.evoShut && H.t - H.evoT > 8) H.evoShut = true;
-    if (t < 0) { H.evoKey = ''; box.classList.add('hide'); box.textContent = ''; return; }
+    if (t < 0) { H.evoKey = ''; H.evoH = 0; box.classList.add('hide'); box.textContent = ''; return; }
     const key = `${t}|${H.evoShut ? 1 : 0}`;
     if (key === H.evoKey) return;
     H.evoKey = key; box.textContent = '';
@@ -1506,6 +1534,7 @@ const { hud, initHud, hudDraw, uiEvent } = (() => {
       const pill = document.createElement('button'); pill.className = 'evpill'; pill.textContent = 'Evolve';
       pill.onpointerdown = () => { H.evoShut = false; H.evoT = H.t; H.evoKey = ''; Sound.play('tap'); evoSync(G.me, G.s); };
       box.append(pill);
+      H.evoH = box.offsetHeight;
       return;
     }
     const opts = Sim.KITS[me.champ].evolves[t];
@@ -1513,9 +1542,10 @@ const { hud, initHud, hudDraw, uiEvent } = (() => {
       const b = document.createElement('button'); b.className = 'ev'; b.style.setProperty('--i', i);
       b.innerHTML = `<b>${o.name}</b><small>${o.d}</small>`;
       b.setAttribute('aria-label', `Evolve: ${o.name}. ${o.d}`);
-      b.onpointerdown = e => { e.stopPropagation(); if (!G) return; G.me.q.push({ t: 'evolve', tier: t, choice: i }); H.evoDone[t] = true; H.evoKey = 'x'; box.classList.add('hide'); box.textContent = ''; H.lvlFx = 1; Sound.play('level'); banner(o.name, { pri: 4, sub: 'Evolved', team: G.me.team, dur: 1.6 }); };
+      b.onpointerdown = e => { e.stopPropagation(); if (!G) return; G.me.q.push({ t: 'evolve', tier: t, choice: i }); H.evoDone[t] = true; H.evoKey = 'x'; H.evoH = 0; box.classList.add('hide'); box.textContent = ''; H.lvlFx = 1; Sound.play('level'); banner(o.name, { pri: 4, sub: 'Evolved', team: G.me.team, dur: 1.6 }); };
       box.append(b);
     });
+    H.evoH = box.offsetHeight;
   }
 
   // ---------- practice ----------
@@ -1580,7 +1610,7 @@ const { hud, initHud, hudDraw, uiEvent } = (() => {
     Hud.closeShop();
     Hud.scoreTable($('pBoard'), G.s, G.me);
     if (Hud.syncToggles) Hud.syncToggles();
-    $('pause').classList.remove('hide');
+    clearTimeout($('pause')._leave); $('pause').classList.remove('hide', 'leaving');
     Sound.play('tap');
   };
 

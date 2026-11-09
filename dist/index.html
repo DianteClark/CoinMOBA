@@ -973,6 +973,52 @@ button.down{transform:translateY(1px) scale(.955);filter:brightness(1.28);transi
 .shd b.long{font-size:16px}.sm .shd b.long{font-size:13.5px}
 #pTgt{white-space:nowrap}
 .sm .pcol{gap:4px}.sm .pcol h2{font-size:28px}.sm .pcol .go,.sm .pcol .ghost,.sm .pcol .tog{height:36px;min-height:36px;font-size:14px}.sm .pcol .go{font-size:19px}
+
+/* ---------- 10.0 round two ---------- */
+.wsub{display:flex;align-items:baseline;justify-content:space-between;gap:12px;margin-top:-3px;white-space:nowrap;flex:none}
+.wsub .blurb{flex:0 1 auto;min-width:0}
+.wsub .best{flex:0 0 auto}
+.whead{align-items:center}
+.sm .wsub{margin-top:-2px}
+/* Overlays leave as deliberately as they arrive. */
+.leaving{animation:fadeout .15s ease-in forwards!important;pointer-events:none}
+.leaving .plate{animation:sheetout .15s ease-in forwards!important}
+@keyframes sheetout{to{opacity:0;transform:translate3d(0,14px,0) scale(.98)}}
+#shop.closing{animation:shopout .13s ease-in forwards;pointer-events:none}
+@keyframes shopout{to{opacity:0;transform:translate3d(0,10px,0) scale(.988)}}
+/* Shop */
+.shfoot{position:relative}
+.shfoot::before{content:"";position:absolute;left:0;right:-9px;top:-8px;height:120px;background:radial-gradient(ellipse at 34% 0,var(--glow,transparent),transparent 72%);opacity:.42;pointer-events:none;transition:background .2s}
+.shfoot>*{position:relative}
+.it.leg.can::after{content:"";position:absolute;inset:0;pointer-events:none;background:linear-gradient(112deg,transparent 40%,rgba(255,226,160,.28) 50%,transparent 60%);transform:translateX(-120%);animation:legsheen 4.4s ease-in-out infinite;animation-delay:calc(var(--i,0)*190ms)}
+@keyframes legsheen{0%,70%{transform:translateX(-120%)}100%{transform:translateX(120%)}}
+.it.sel::before{background:linear-gradient(90deg,rgba(var(--edge),.2),transparent 62%),var(--fill)}
+.go.off::after{transform:none;animation:none;background:linear-gradient(90deg,rgba(230,210,154,.2) var(--p,0%),transparent 0)}
+.go.off .c{color:var(--mut)}
+/* End screen */
+#end.win .egrid{--line:linear-gradient(135deg,#fff3d1,var(--gold) 26%,rgba(148,167,194,.22) 55%,var(--gold2));--fill:linear-gradient(165deg,rgba(40,33,18,.96),rgba(10,12,18,.98) 46%)}
+#end.lose .egrid{--line:linear-gradient(135deg,rgba(148,167,194,.55),rgba(148,167,194,.14) 60%)}
+.ehead::before{content:"";position:absolute;left:-74px;top:-104px;width:300px;height:300px;border-radius:50%;background:repeating-conic-gradient(rgba(255,233,178,.17) 0 7deg,transparent 7deg 24deg);-webkit-mask-image:radial-gradient(circle,#000 18%,transparent 68%);mask-image:radial-gradient(circle,#000 18%,transparent 68%);animation:rays 30s linear infinite,fadein 1s .2s both;pointer-events:none;will-change:transform}
+#end.lose .ehead::before{display:none}
+@keyframes rays{to{transform:rotate(360deg)}}
+#endcoin{animation:coinslam .6s .05s var(--sp) both}
+@keyframes coinslam{from{opacity:0;transform:scale(1.9)}}
+#end.win .ehead h2{background-image:linear-gradient(105deg,transparent 42%,#fff 50%,transparent 58%),linear-gradient(180deg,#fff7df 0 48%,var(--gold) 48% 100%);background-size:260% 100%,100% 100%;background-repeat:no-repeat;background-position:170% 0,0 0;-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent;animation:settle .7s .05s var(--eo) both,wordshine 3.8s .9s ease-in-out infinite}
+#end .score tbody tr{animation:rowin .46s var(--eo) both;animation-delay:calc(var(--r,0)*42ms + .4s)}
+@keyframes rowin{from{opacity:0;transform:translate3d(20px,0,0)}}
+#end .score tbody.t0 tr:nth-child(1){--r:0}#end .score tbody.t0 tr:nth-child(2){--r:1}#end .score tbody.t0 tr:nth-child(3){--r:2}#end .score tbody.t0 tr:nth-child(4){--r:3}#end .score tbody.t1 tr:nth-child(1){--r:4}#end .score tbody.t1 tr:nth-child(2){--r:5}#end .score tbody.t1 tr:nth-child(3){--r:6}#end .score tbody.t1 tr:nth-child(4){--r:7}
+#endS,.endr,#endM,.prof,#endMk{animation:rise .5s var(--eo) both}
+#endS{animation-delay:.22s}.endr{animation-delay:.32s}.prof,#endM{animation-delay:.4s}#endMk{animation-delay:.5s}
+#end .row{animation:rise .5s .9s var(--eo) both}
+.prof b{background:linear-gradient(90deg,var(--acc3),#fff3d1)}
+#rDelta{animation:deltain .5s .7s var(--sp) both}
+@keyframes deltain{from{opacity:0;transform:scale(.4)}}
+.mission{overflow:hidden}
+.sm .lnet:not(.hide)~div #lRank{display:none}
+#shop.dead .shtop .ic{width:28px;height:28px}#shop.dead .shd b{font-size:14.5px;overflow-wrap:normal}#shop.dead .shd b.long{font-size:13px}
+.nm{flex:1 1 0;min-width:0}
+@keyframes namein{from{opacity:0;transform:translate3d(-24px,0,0)}}
+.bcard b{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-size:17px}.bcard b.long{font-size:14px}.sm .bcard b{font-size:13px}.sm .bcard b.long{font-size:11.5px}
 </style>
 </head>
 <body>
@@ -1037,7 +1083,8 @@ button.down{transform:translateY(1px) scale(.955);filter:brightness(1.28);transi
     <div class="roster scroll" id="picks"></div>
     <div class="hero"><canvas id="big" width="520" height="520"></canvas><div class="herotag"><div class="ladder" id="ladder"></div><p class="lad" id="wTier"></p></div></div>
     <div class="who">
-      <div class="whead"><div class="nm"><h2 id="wN"></h2><p class="sub"><span class="blurb" id="wB"></span><span class="best" id="wBest"></span></p></div><div class="seg wtab" id="wTab"><button data-t="builds">Builds</button><button data-t="kit">Abilities</button><button data-t="prof">Lane</button></div></div>
+      <div class="whead"><div class="nm"><h2 id="wN"></h2></div><div class="seg wtab" id="wTab"><button data-t="builds">Builds</button><button data-t="kit">Abilities</button><button data-t="prof">Lane</button></div></div>
+      <p class="wsub"><span class="blurb" id="wB"></span><span class="best" id="wBest"></span></p>
       <div class="lpass" id="wP"></div>
       <div class="lpane" id="wBuilds"></div>
       <div class="lpane hide" id="wKit"><div class="abilbox"><div class="abil scroll" id="wA"></div></div></div>
@@ -12423,6 +12470,20 @@ const { hud, initHud, hudDraw, uiEvent } = (() => {
   }
 
   // ---------- player frame ----------
+  // The map is bright now. A soft dark band under the top readouts and a pool of shade under each thumb cluster keep the HUD off it, without a visible box.
+  let scrimTop = null, shade = null;
+  function drawScrims(k) {
+    if (!scrimTop) {
+      scrimTop = Art.cv(2, 96); let g = scrimTop.getContext('2d'), gr = g.createLinearGradient(0, 0, 0, 96);
+      gr.addColorStop(0, 'rgba(5,6,10,.72)'); gr.addColorStop(.55, 'rgba(5,6,10,.36)'); gr.addColorStop(1, 'rgba(5,6,10,0)'); g.fillStyle = gr; g.fillRect(0, 0, 2, 96);
+      shade = Art.cv(128, 128); g = shade.getContext('2d'); gr = g.createRadialGradient(64, 64, 18, 64, 64, 64);
+      gr.addColorStop(0, 'rgba(5,6,10,.58)'); gr.addColorStop(.62, 'rgba(5,6,10,.4)'); gr.addColorStop(1, 'rgba(5,6,10,0)'); g.fillStyle = gr; g.fillRect(0, 0, 128, 128);
+    }
+    ctx.globalAlpha = k;
+    ctx.drawImage(scrimTop, 0, 0, VW, U.compact ? 66 : 76);
+    for (const B of [U.atk, U.ab[0], U.ab[1], U.ab[2], U.beacon]) { const R = B.r * 1.62; ctx.drawImage(shade, B.x - R, B.y - R, R * 2, R * 2); }
+    ctx.globalAlpha = 1;
+  }
   function skewBar(x, y, w, h, s) { if (w <= 0) return; const sl = Math.min(w, s); ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x + w, y); ctx.lineTo(x + w - sl, y + h); ctx.lineTo(x, y + h); ctx.closePath(); ctx.fill(); }
   const barGrads = {};
   function barFill(low, y, h) { const k = (low ? 1 : 0) + '|' + y; return barGrads[k] || (barGrads[k] = (() => { const g = ctx.createLinearGradient(0, y, 0, y + h); if (low) { g.addColorStop(0, '#ff8d9c'); g.addColorStop(.28, '#ea3a52'); g.addColorStop(1, '#a51a30'); } else { g.addColorStop(0, '#a4f0c4'); g.addColorStop(.28, '#46c780'); g.addColorStop(1, '#23884f'); } return g; })()); }
@@ -12506,8 +12567,8 @@ const { hud, initHud, hudDraw, uiEvent } = (() => {
     const s = 1 - sq * .16, r = B.r * s;
     // Quiet until it matters.
     const acc = SIDE_ACC[G.me.team];
-    disc(B.x, B.y, r); ctx.fillStyle = GLASS; ctx.fill();
-    ctx.strokeStyle = hot ? acc : HAIR; ctx.lineWidth = 1.2; ctx.stroke();
+    disc(B.x, B.y, r); ctx.fillStyle = 'rgba(6,8,13,.92)'; ctx.fill();
+    ctx.strokeStyle = hot ? acc : 'rgba(233,237,244,.5)'; ctx.lineWidth = 1.4; ctx.stroke();
     icon(B.x, B.y, hot ? acc : PAPER);
     if (H.first) { ctx.font = fw(500, 10); ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; label(name, B.x, B.y + B.r + 7.5, WHITE); }
   }
@@ -12582,7 +12643,7 @@ const { hud, initHud, hudDraw, uiEvent } = (() => {
     const m = 1 + (calm ? 0 : H.hopeFlash) * .45;
     Deco.flip(ctx, mx, y + h / 2, 7 * m, H.hopeAng, 24, 0);
     ctx.font = fw(500, 11); ctx.textBaseline = 'middle'; ctx.textAlign = 'center';
-    if (H.first && s.t < 40 && !H.banner) label('The people', cx, y + h + 10, WHITE);
+    if (H.first && s.t < 40 && !H.banner && G.me.alive) label('The people', cx, y + h + 10, WHITE);
   }
 
   // ---------- minimap ----------
@@ -12995,7 +13056,7 @@ const { hud, initHud, hudDraw, uiEvent } = (() => {
     if ((h.i === 0 && Ctl.stick && h.t > .8) || (h.i === 1 && Ctl.atk !== null && h.t > .5) || (h.i === 2 && (me.stats.casts > 0 || h.t > 7)) || h.t > 8) { h.i++; h.t = 0; }
     if (h.i >= 3) { H.hint = null; return; }
     const s = HINTS()[h.i]; ctx.font = fw(500, 14); ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-    const w = Math.ceil(ctx.measureText(s).width + 24) & ~1, x = Math.round(VW / 2 - w / 2), y = VH - 34;
+    const w = Math.ceil(ctx.measureText(s).width + 24) & ~1, x = Math.round(VW / 2 - w / 2), y = H.evoH ? VH - 6 - H.evoH - 6 - 24 : VH - 34;
     ctx.globalAlpha = Math.min(1, h.t * 4) * .94;
     put(panel(w, 24, 5), x, y);
     ctx.fillStyle = PAPER; ctx.fillText(s, VW / 2, y + 12.5); ctx.globalAlpha = 1;
@@ -13039,7 +13100,7 @@ const { hud, initHud, hudDraw, uiEvent } = (() => {
     if (me.alive === !H.wasDead) return;
     H.wasDead = !me.alive;
     const f = $('shop');
-    if (H.wasDead) { if (G.outro || G.ended) return; H.shopAuto = true; f.classList.add('dead'); f.classList.toggle('solo', !H.recap); f.classList.remove('hide'); shopBuild(); }
+    if (H.wasDead) { if (G.outro || G.ended) return; H.shopAuto = true; clearTimeout(f._c); f.classList.add('dead'); f.classList.toggle('solo', !H.recap); f.classList.remove('hide', 'closing'); shopBuild(); }
     else { f.classList.remove('dead', 'solo'); if (H.shopAuto) f.classList.add('hide'); H.shopAuto = false; H.recap = null; $('recap').classList.add('hide'); }
   }
 
@@ -13057,6 +13118,7 @@ const { hud, initHud, hudDraw, uiEvent } = (() => {
       const p = calm ? .5 : (Math.sin(H.t * 3.4) + 1) / 2;
       ctx.globalAlpha = (.2 + p * .16) * e; ctx.drawImage(redEdge(), 0, 0, VW, VH); ctx.globalAlpha = 1;
     }
+    drawScrims(e);
     drawStick(s);
     offset(-300 * away, 0); drawFrame(dt, me); drawBuffs(dt, s, me); drawFeed(dt);
     offset(0, -90 * away); drawStrip(dt, s, me); drawPeople(dt, s); drawObjective(dt, s, me);
@@ -13069,7 +13131,7 @@ const { hud, initHud, hudDraw, uiEvent } = (() => {
     if (!me.alive) drawDeath(me);
     drawEmotes(dt, s, me); drawChat(dt); drawHint(dt, me); drawTips(dt, me); drawAimCard(me); drawBanner(dt); drawRadial(dt);
     H.frame++;
-    if (shopOpen() && H.frame % 10 === 0) shopSync(false);
+    if (shopOpen()) { const sg = Math.floor(H.goldShow); if (sg !== H.shopGoldV) { H.shopGoldV = sg; $('shGold').textContent = sg; } if (H.frame % 10 === 0) shopSync(false); }
     if (H.frame % 12 === 0) { evoSync(me, s); svSync(s, me); if (!me.alive) recapSync(me); }
     if (H.tips && H.frame % 6 === 0) practiceSync(s, me);
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
@@ -13260,7 +13322,7 @@ const { hud, initHud, hudDraw, uiEvent } = (() => {
   const CATS = [['rec', 'For you', 'star'], ['phys', 'Physical', 'sword'], ['magic', 'Magic', 'burst'], ['def', 'Defence', 'shield'], ['sup', 'Support', 'plus'], ['util', 'Utility', 'chevron'], ['leg', 'Legend', 'crown'], ['cons', 'Supplies', 'flask'], ['city', 'City', 'city']];
   const ROLE_F = [['all', 'All'], ['tank', 'Tank'], ['bruiser', 'Bruiser'], ['marksman', 'Marksman'], ['assassin', 'Assassin'], ['mage', 'Mage'], ['support', 'Support'], ['jungle', 'Jungle']];
   const TIER_NAME = ['', 'Starter', 'Core', 'Advanced', 'Legendary'];
-  const shopOpen = () => !$('shop').classList.contains('hide');
+  const shopOpen = () => { const c = $('shop').classList; return !c.contains('hide') && !c.contains('closing'); };
   const itemDb = () => Sim.ITEMS || [];
   const itemBy = id => id && Sim.ITEM_BY ? Sim.ITEM_BY[id] || null : itemDb().find(i => i.id === id) || null;
   const isLeg = it => !!it.legendary;
@@ -13528,9 +13590,10 @@ const { hud, initHud, hudDraw, uiEvent } = (() => {
     // The panel only redraws when something on it changed, so a thumb can rest on Buy or scroll the text in peace.
     const footKey = `${it.id}|${slotMode ? sel.slot : ''}|${costOf(me, it)}|${canBuy(me, it)}|${slots.join()}|${(slotMode && bestUp(me, it.id)) ? canBuy(me, bestUp(me, it.id)) : ''}`;
     if (footKey === H.footKey && foot.querySelector('.shtop')) return;
-    H.footKey = footKey;
+    H.footKey = footKey; H.footItem = it;
+    foot.style.setProperty('--glow', { phys: 'rgba(255,138,76,.6)', magic: 'rgba(150,120,255,.65)', def: 'rgba(110,170,220,.55)', sup: 'rgba(100,220,160,.5)', util: 'rgba(230,210,154,.5)', cons: 'rgba(100,220,190,.5)' }[dmgKey(it)]);
     const tag = isLeg(it) ? 'Legendary' : isCons(it) ? 'Supply' : TIER_NAME[it.tier || 1] || `Tier ${it.tier || 1}`, stats = statsHtml(it);
-    const info = `<div class="shtop">${coinHtml(it)}<div class="shd"><em class="${tierClass(it)}">${tag}</em><b${it.name.length > 9 ? ' class="long"' : ''}>${it.name}</b></div></div><div class="shmore scroll"><div>${stats ? `<ul class="shst">${stats}</ul>` : ''}<p class="shdesc">${it.d}</p>${chain(it, me)}</div></div>`;
+    const info = `<div class="shtop">${coinHtml(it)}<div class="shd"><em class="${tierClass(it)}">${tag}</em><b${it.name.length >= 9 ? ' class="long"' : ''}>${it.name}</b></div></div><div class="shmore scroll"><div>${stats ? `<ul class="shst">${stats}</ul>` : ''}<p class="shdesc">${it.d}</p>${chain(it, me)}</div></div>`;
     if (slotMode) {
       const up = bestUp(me, it.id), price = up ? costOf(me, up) : null, can = !!up && canBuy(me, up);
       foot.innerHTML = info + `<div class="shact">${up ? `<button class="go${can ? ' hot' : ' off'}" id="shUp">Upgrade<span class="c"><i class="gc"></i>${price === null ? '' : price}</span></button>` : ''}<button class="ghost sell" id="shAct">Sell<span class="c"><i class="gc"></i>+${sellOf(me, sel.slot)}</span></button></div>`;
@@ -13544,11 +13607,16 @@ const { hud, initHud, hudDraw, uiEvent } = (() => {
     $('shAct').onpointerdown = () => { if (doBuy(it.id)) H.shopSel = null; };
     wirePath(foot);
   }
+  // An unaffordable Buy fills with gold as the purse catches up.
+  function paintBuyProgress(me) {
+    const b = $('shAct'), it = H.footItem;
+    if (!b || !it || !b.classList.contains('off')) return;
+    const c = costOf(me, it); if (c) b.style.setProperty('--p', `${Math.round(clamp01(me.gold / c) * 100)}%`);
+  }
   function shopSync(force) {
     if (!H || !G || !shopOpen() || !itemDb().length) return;
     const me = G.me, slots = slotsOf(me), g = Math.floor(me.gold), key = slots.join() + '|' + Math.floor(g / 5) + '|' + (H.shopSel ? JSON.stringify(H.shopSel) : '') + H.shopCat + me.alive;
-    $('shGold').textContent = g;
-    if (!force && key === H.shopKey) return;
+    if (!force && key === H.shopKey) { paintBuyProgress(me); return; }
     H.shopKey = key;
     document.querySelectorAll('#shList .it').forEach(b => { const it = itemBy(b.dataset.id), pr = costOf(me, it), el = b.querySelector('.p'); b.classList.toggle('can', canBuy(me, it)); b.classList.toggle('own', slots.includes(it.id)); if (el && pr !== null && pr !== undefined) el.textContent = pr; });
     document.querySelectorAll('#shList [data-p]').forEach(el => { el.textContent = cityPrice(el.dataset.p, me, G.s); });
@@ -13566,10 +13634,17 @@ const { hud, initHud, hudDraw, uiEvent } = (() => {
   }
   Hud.shopOpen = shopOpen;
   Hud.shopCat = k => { if (H) { H.shopCat = k; H.shopSel = null; if (shopOpen()) { shopTabs(); shopList(); } } };
-  Hud.closeShop = () => $('shop').classList.add('hide');
+  function shutShop() {
+    const f = $('shop'); clearTimeout(f._c);
+    if (calm || f.classList.contains('hide')) { f.classList.add('hide'); f.classList.remove('closing'); return; }
+    f.classList.add('closing'); f._c = setTimeout(() => { f.classList.remove('closing'); f.classList.add('hide'); }, 130);
+  }
+  Hud.closeShop = shutShop;
   Hud.toggleShop = () => {
-    const f = $('shop'); f.classList.toggle('hide'); f.classList.toggle('dead', !!G && !G.me.alive);
+    const f = $('shop'), opening = !shopOpen();
     H.shopAuto = false;
+    if (!opening) { shutShop(); Sound.play('shopClose'); return; }
+    clearTimeout(f._c); f.classList.remove('hide', 'closing'); f.classList.toggle('dead', !!G && !G.me.alive);
     if (!f.classList.contains('hide')) { shopBuild(); H.tipShop = true; Sound.play('shopOpen'); } else Sound.play('shopClose');
   };
 
@@ -13585,7 +13660,7 @@ const { hud, initHud, hudDraw, uiEvent } = (() => {
     const t = me.alive && !shopOpen() && !paused ? evoPending(me) : -1, box = $('evo');
     if (t !== H.evoLast) { H.evoLast = t; H.evoT = H.t; H.evoShut = false; H.evoKey = ''; }
     if (t >= 0 && !H.evoShut && H.t - H.evoT > 8) H.evoShut = true;
-    if (t < 0) { H.evoKey = ''; box.classList.add('hide'); box.textContent = ''; return; }
+    if (t < 0) { H.evoKey = ''; H.evoH = 0; box.classList.add('hide'); box.textContent = ''; return; }
     const key = `${t}|${H.evoShut ? 1 : 0}`;
     if (key === H.evoKey) return;
     H.evoKey = key; box.textContent = '';
@@ -13595,6 +13670,7 @@ const { hud, initHud, hudDraw, uiEvent } = (() => {
       const pill = document.createElement('button'); pill.className = 'evpill'; pill.textContent = 'Evolve';
       pill.onpointerdown = () => { H.evoShut = false; H.evoT = H.t; H.evoKey = ''; Sound.play('tap'); evoSync(G.me, G.s); };
       box.append(pill);
+      H.evoH = box.offsetHeight;
       return;
     }
     const opts = Sim.KITS[me.champ].evolves[t];
@@ -13602,9 +13678,10 @@ const { hud, initHud, hudDraw, uiEvent } = (() => {
       const b = document.createElement('button'); b.className = 'ev'; b.style.setProperty('--i', i);
       b.innerHTML = `<b>${o.name}</b><small>${o.d}</small>`;
       b.setAttribute('aria-label', `Evolve: ${o.name}. ${o.d}`);
-      b.onpointerdown = e => { e.stopPropagation(); if (!G) return; G.me.q.push({ t: 'evolve', tier: t, choice: i }); H.evoDone[t] = true; H.evoKey = 'x'; box.classList.add('hide'); box.textContent = ''; H.lvlFx = 1; Sound.play('level'); banner(o.name, { pri: 4, sub: 'Evolved', team: G.me.team, dur: 1.6 }); };
+      b.onpointerdown = e => { e.stopPropagation(); if (!G) return; G.me.q.push({ t: 'evolve', tier: t, choice: i }); H.evoDone[t] = true; H.evoKey = 'x'; H.evoH = 0; box.classList.add('hide'); box.textContent = ''; H.lvlFx = 1; Sound.play('level'); banner(o.name, { pri: 4, sub: 'Evolved', team: G.me.team, dur: 1.6 }); };
       box.append(b);
     });
+    H.evoH = box.offsetHeight;
   }
 
   // ---------- practice ----------
@@ -13669,7 +13746,7 @@ const { hud, initHud, hudDraw, uiEvent } = (() => {
     Hud.closeShop();
     Hud.scoreTable($('pBoard'), G.s, G.me);
     if (Hud.syncToggles) Hud.syncToggles();
-    $('pause').classList.remove('hide');
+    clearTimeout($('pause')._leave); $('pause').classList.remove('hide', 'leaving');
     Sound.play('tap');
   };
 
@@ -13687,7 +13764,15 @@ const { initMenus, animMenus, showEnd } = (() => {
   const isMe = s => N.mode ? s.who === N.pid : !!s.human;
   const isFriend = s => !!N.mode && s.who !== null && s.who !== undefined && s.who !== N.pid;
   const shuffle = a => { for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; } return a; };
-  const show = id => $(id).classList.remove('hide'), hide = id => $(id).classList.add('hide'), hidden = id => $(id).classList.contains('hide');
+  // Dialogs fade out; everything else simply goes. A dialog counts as hidden straight away, so game logic never waits on the animation.
+  const SOFT = new Set(['settings', 'xfer', 'confirm', 'sheet', 'pause']);
+  const show = id => { const e = $(id); clearTimeout(e._leave); e.classList.remove('hide', 'leaving'); };
+  const hide = id => {
+    const e = $(id);
+    if (!SOFT.has(id) || calm || e.classList.contains('hide') || e.classList.contains('leaving')) { if (!e.classList.contains('leaving')) e.classList.add('hide'); return; }
+    e.classList.add('leaving'); clearTimeout(e._leave); e._leave = setTimeout(() => { e.classList.remove('leaving'); e.classList.add('hide'); }, 150);
+  };
+  const hidden = id => $(id).classList.contains('hide') || $(id).classList.contains('leaving');
   const mine = () => L.seats[L.team][L.slot];
   const pipsHtml = n => `<span class="pips" role="img" aria-label="Fit ${n} of 3">${[0, 1, 2].map(i => `<i${i < n ? ' class="on"' : ''}></i>`).join('')}</span>`;
   const icons = {};
@@ -13747,7 +13832,7 @@ const { initMenus, animMenus, showEnd } = (() => {
   function rollSeats() {
     const names = shuffle(BOT_NAMES.slice()); let n = 0;
     L.seats = [0, 1].map(team => {
-      const pool = shuffle(rosterOf(team).slice()).slice(0, 4);
+      const pool = Sim.sensiblePool ? Sim.sensiblePool(team, team === L.team ? wantFor(team) : null) : shuffle(rosterOf(team).slice()).slice(0, 4);
       if (team === L.team) { const want = wantFor(team), at = pool.indexOf(want); if (at >= 0) [pool[at], pool[L.slot]] = [pool[L.slot], pool[at]]; else pool[L.slot] = want; }
       const roles = Sim.autoRoles(pool);
       return pool.map((champ, i) => ({ champ, role: roles[i], tier: Math.min(5, Math.floor(Math.random() * Math.random() * 6)), human: false, name: names[n++], who: null, build: botBuild(champ, roles[i]) }));
@@ -14378,8 +14463,17 @@ const { initMenus, animMenus, showEnd } = (() => {
 
   // ---------- lobby hero ----------
   let flipT = 0, heroA = .3, heroSweep = 0;
+  // A long name scales to the room left beside the tabs, whichever font loaded.
+  function fitName() {
+    const n = $('wN'), key = `${n.textContent}|${VW}|${Deco.fontsReady()}`;
+    if (key === fitName.key || !n.parentElement.clientWidth) return;
+    fitName.key = key; n.style.fontSize = '';
+    const base = parseFloat(getComputedStyle(n).fontSize), k = Math.min(1, n.parentElement.clientWidth / n.scrollWidth);
+    if (k < 1) n.style.fontSize = Math.floor(base * k) + 'px';
+  }
   function heroStep(dt) {
     if (hidden('lobby') || !L.seats) return;
+    fitName();
     const c = $('big'), g = c.getContext('2d'), id = mine().champ, spr = Art.champCoin(id, L.team, Sim.tierOf(pts(id)), 230, mine().finish);
     if (!calm) { heroA += dt * .9; heroSweep = (heroSweep + dt / 4) % 1; }
     if (flipT > 0) flipT = Math.max(0, flipT - dt * 2.4);
@@ -14697,7 +14791,7 @@ const { initMenus, animMenus, showEnd } = (() => {
       const nm = charName(foe, kit), b = document.createElement('button'), n = mates.filter(p => votes[p.pid] === kit).length, gone = banned.includes(kit);
       b.className = 'bcard stick' + (gone ? ' gone' : ''); b.style.setProperty('--i', i); b.setAttribute('aria-pressed', myV === kit); b.setAttribute('aria-label', `Ban ${nm}`);
       b.append(coinCanvas(Art.champCoin(kit, foe, 2, 64), 152));
-      b.insertAdjacentHTML('beforeend', `<b>${shortName(nm)}</b><small>${Sim.charOf(foe, kit).title}</small><span class="vt">${Array.from({ length: n }, () => '<i></i>').join('')}</span>`);
+      b.insertAdjacentHTML('beforeend', `<b${shortName(nm).length >= 12 ? ' class="long"' : ''}>${shortName(nm)}</b><small>${Sim.charOf(foe, kit).title}</small><span class="vt">${Array.from({ length: n }, () => '<i></i>').join('')}</span>`);
       b.onclick = () => { if (gone) { Sound.play('cancel'); return; } Sound.play('banVote'); try { Net.ban(kit); } catch (e) { } if (N.draft.votes) { N.draft.votes[N.pid] = kit; renderBan(N.draft); } };
       box.append(b);
     });
