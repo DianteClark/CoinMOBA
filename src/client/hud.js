@@ -136,7 +136,7 @@ const Hud = {
     ab: [{ x: 0, y: 0, r: 33 }, { x: 0, y: 0, r: 33 }, { x: 0, y: 0, r: 37 }],
     atkM: { x: 0, y: 0, r: 19 }, atkT: { x: 0, y: 0, r: 19 }, beacon: { x: 0, y: 0, r: 20 },
     cancel: { x: 0, y: 70, r: 34 }, pause: { x: 0, y: 20, r: 14 },
-    shop: { x: 63, y: 76, r: 17 }, recall: { x: 106, y: 76, r: 17 }, ping: { x: 149, y: 76, r: 17 }, chat: { x: 192, y: 76, r: 17 },
+    shop: { x: 63, y: 76, r: 17 }, recall: { x: 106, y: 76, r: 17 }, ping: { x: 149, y: 76, r: 17 }, chat: { x: 192, y: 76, r: 17 }, ptt: { x: 235, y: 76, r: 17 },
     map: { x: 0, y: 6, w: 140, h: 84 },
     stripX: 400, miniR: 8, miniGap: 20, midHalf: 40, hpW: 104, compact: false,
   },
@@ -144,7 +144,9 @@ const Hud = {
 
 const { hud, initHud, hudDraw, uiEvent } = (() => {
   const U = Hud.ui, HPI = Math.PI / 2, UIFONT = '"Barlow Semi Condensed","Arial Narrow","Roboto Condensed","DejaVu Sans Condensed",sans-serif';
-  const { INK, PAPER, MUTE, GOLD, STEEL, BLUE, NAVY, GUN, CRIM, ACID } = Deco;
+  const { INK, PAPER, MUTE, GOLD, STEEL, NAVY, GUN, ACID } = Deco;
+  // Team colours follow the colorblind palette, so these two are live (see the Art.onCB hook below).
+  let BLUE = Deco.BLUE, CRIM = Deco.CRIM, LOSS_BAR = '#7d1626';
   const WHITE = '#ffffff', GLASS = 'rgba(8,10,16,.86)', HAIR = 'rgba(148,167,194,.34)', WELL = 'rgba(148,167,194,.2)', PX = 65, PY = 27, PR = 21, HP_X = 92, GOLD_X = 101, GOLD_Y = 44;
   const fcache = {};
   const fw = (w, s) => fcache[w * 1000 + s] || (fcache[w * 1000 + s] = `${w} ${s}px ${UIFONT}`);
@@ -155,7 +157,9 @@ const { hud, initHud, hudDraw, uiEvent } = (() => {
   const clamp01 = v => v < 0 ? 0 : v > 1 ? 1 : v;
   const maxLvl = () => Sim.MAX_LEVEL || Sim.MAX_LVL || 15;
   const outBack = t => { const k = 1.9; t -= 1; return 1 + (k + 1) * t * t * t + k * t * t; };
-  const SIDE_ACC = [GOLD, CRIM], TEAM_DOT = [BLUE, CRIM];
+  const SIDE_ACC = [GOLD, CRIM], TEAM_DOT = [BLUE, CRIM]; // TEAM_DOT is relative: [0] you and your allies, [1] enemies
+  // A spectator has full vision, on the minimap and everywhere else the HUD asks what can be seen.
+  const sees = (s, u) => !!G.spectator || Sim.canSee(s, G.me.team, u);
 
   let H = null;
 
@@ -192,8 +196,8 @@ const { hud, initHud, hudDraw, uiEvent } = (() => {
   // ---------- layout ----------
   // Every movable control, with its default offset from the attack coin (or its fixed spot) at full size.
   const CLUSTER = { atk: [0, 0, 46], atkM: [-66, -20, 19], atkT: [-26, -64, 19], ab0: [-106, 20, 33], ab1: [-82, -76, 33], ab2: [2, -114, 37], beacon: [-162, -52, 20] };
-  const CORNER = { shop: [63, 76, 17], recall: [106, 76, 17], ping: [149, 76, 17], chat: [192, 76, 17] };
-  const LABELS = { atk: 'Attack', atkM: 'Minion', atkT: 'Tower', ab0: 'Ability 1', ab1: 'Ability 2', ab2: 'Ultimate', beacon: 'Beacon', shop: 'Shop', recall: 'Recall', ping: 'Ping', chat: 'Chat' };
+  const CORNER = { shop: [63, 76, 17], recall: [106, 76, 17], ping: [149, 76, 17], chat: [192, 76, 17], ptt: [235, 76, 17] };
+  const LABELS = { atk: 'Attack', atkM: 'Minion', atkT: 'Tower', ab0: 'Ability 1', ab1: 'Ability 2', ab2: 'Ultimate', beacon: 'Beacon', shop: 'Shop', recall: 'Recall', ping: 'Ping', chat: 'Chat', ptt: 'Talk' };
   const hudOf = () => save.hud || (save.hud = { left: false, pos: {} });
   const left = () => !!hudOf().left;
   // Default position of a control for this screen and handedness, before the player's own offset.
@@ -217,7 +221,7 @@ const { hud, initHud, hudDraw, uiEvent } = (() => {
     stage.classList.toggle('lh', left());
     put2(U.atk, 'atk'); put2(U.atkM, 'atkM'); put2(U.atkT, 'atkT'); put2(U.beacon, 'beacon');
     put2(U.ab[0], 'ab0'); put2(U.ab[1], 'ab1'); put2(U.ab[2], 'ab2');
-    put2(U.shop, 'shop'); put2(U.recall, 'recall'); put2(U.ping, 'ping'); put2(U.chat, 'chat');
+    put2(U.shop, 'shop'); put2(U.recall, 'recall'); put2(U.ping, 'ping'); put2(U.chat, 'chat'); put2(U.ptt, 'ptt');
     const cx = VW - 250; U.cancel.x = left() ? VW - cx : cx; U.cancel.y = 122;
     const M = U.map; M.w = U.compact ? 88 : 112; M.h = Math.round(M.w * Sim.H / Sim.W); M.x = VW - 44 - M.w; M.y = 6;
     U.pause.x = M.x - 21; U.pause.y = 20;
@@ -225,6 +229,7 @@ const { hud, initHud, hudDraw, uiEvent } = (() => {
     U.hpW = U.compact ? 84 : 104;
     if (H) H.mapC = H.fogC = null;
   }
+  Hud.pttShown = () => typeof Voice !== 'undefined' && Voice.state === 'on' && Voice.mode === 'ptt' && !!G && !G.spectator;
   Hud.left = left;
   Hud.layoutKeys = Object.keys(LABELS).map(k => [k, LABELS[k]]);
   Hud.basePos = basePos;
@@ -249,11 +254,12 @@ const { hud, initHud, hudDraw, uiEvent } = (() => {
       hpTrail: me.hp, hpHold: 0, hurt: 0, hpPrev: me.hp, goldShow: me.gold, goldStr: String(Math.floor(me.gold)), goldGain: 0, goldGainT: 0, goldGainStr: '', lvlFx: 0, first: save.hints < 1, guide: save.hints < 2, netStr: '', netKey: -2,
       prev: [0, 0, 0], cdMax: [1, 1, 1], recPrev: [0, 0, 0], recMax: [1, 1, 1], pop: [0, 0, 0], press: [0, 0, 0], deny: [0, 0, 0], flash: [0, 0, 0], spark: [.4, 1.2, 2.0],
       atkPress: 0, atkMax: 1, atkPrev: 0, cancelIn: 0,
-      feed: [], banner: null, queue: [], pings: [], pingAt: {}, towerAt: -99, mapC: null, kills: [s.kills[0], s.kills[1]], killBump: [0, 0], lvl: me.lvl, lvlBump: 0, sq: { shop: 0, recall: 0, pause: 0, ping: 0, beacon: 0, chat: 0 }, emotes: [], sayLog: [], recap: null, bountyShow: 0, objK: '', objStr: '', objSub: '', buffs: [], svKey: '',
+      feed: [], banner: null, queue: [], pings: [], pingAt: {}, towerAt: -99, mapC: null, kills: [s.kills[0], s.kills[1]], killBump: [0, 0], lvl: me.lvl, lvlBump: 0, sq: { shop: 0, recall: 0, pause: 0, ping: 0, beacon: 0, chat: 0, ptt: 0 }, emotes: [], sayLog: [], recap: null, bountyShow: 0, objK: '', objStr: '', objSub: '', buffs: [], svKey: '',
       clockSec: -1, clockStr: '0:00', hoardKey: -2, hoardStr: '', frame: 0,
       hint: save.hints < 2 ? { i: 0, t: 0, n: 0 } : null,
     };
     g.goldBump = 0; g.goldAnchor = { x: GOLD_X, y: GOLD_Y };
+    const lo = !G.spectator && Hud.loadoutFor && Hud.loadoutFor(me.champ); if (lo && lo.path && pathsOf(me)[lo.path]) H.shopPath = lo.path;
     me.q.push({ t: 'pref', v: save.targetPref === 'pct' ? 'pct' : 'hp' });
     hud();
   }
@@ -413,7 +419,7 @@ const { hud, initHud, hudDraw, uiEvent } = (() => {
     // The shop only draws the eye when something can be bought.
     if ((H.shopHotT -= dt) <= 0) { H.shopHotT = .25; H.shopHot = canAfford(me); }
     const open = shopOpen(), hot = H.shopHot && !open;
-    if (!me.alive && H.recap) return;
+    if ((!me.alive && H.recap) || G.spectator) return;
     smallCoin(U.shop, hot || open, 'Shop', drawUpgrade, H.sq.shop, dt, 'shop');
     if (hot) {
       if (!calm) { const p = (Math.sin(H.t * 3.6) + 1) / 2; arcLine(U.shop.x, U.shop.y, U.shop.r + 2 + p * 3, 0, TAU, SIDE_ACC[side], 1.2); }
@@ -424,6 +430,12 @@ const { hud, initHud, hudDraw, uiEvent } = (() => {
     if (chan) arcLine(U.recall.x, U.recall.y, U.recall.r + 2, -HPI, -HPI + TAU * (1 - chan.t / chan.total), SIDE_ACC[side], 2.5);
     smallCoin(U.ping, !!Ctl.ping, 'Ping', drawFlag, H.sq.ping, dt, 'ping');
     smallCoin(U.chat, qcOpen(), 'Chat', drawBubble, H.sq.chat, dt, 'chat');
+    if (Hud.pttShown()) { smallCoin(U.ptt, Ctl.talking, 'Talk', drawMic, H.sq.ptt, dt, 'ptt'); if (Ctl.talking) arcLine(U.ptt.x, U.ptt.y, U.ptt.r + 3, 0, TAU, SIDE_ACC[side], 2); }
+  }
+  function drawMic(x, y, col) {
+    ctx.fillStyle = col; ctx.strokeStyle = col; ctx.lineWidth = 1.6; ctx.lineCap = 'butt';
+    ctx.beginPath(); ctx.roundRect(x - 3, y - 8, 6, 11, 3); ctx.fill();
+    ctx.beginPath(); ctx.arc(x, y - 1.5, 6, .15, Math.PI - .15); ctx.moveTo(x, y + 5); ctx.lineTo(x, y + 8.5); ctx.stroke();
   }
 
   function smallCoin(B, hot, name, icon, sq, dt, key) {
@@ -497,7 +509,7 @@ const { hud, initHud, hudDraw, uiEvent } = (() => {
     const f = clamp01(H.hope / 100), mx = x + bw * f, pulse = calm ? 1 : .7 + Math.sin(H.t * 5) * .3;
     ctx.fillStyle = GLASS; ctx.fillRect(x - 1, y - 1, bw + 2, h + 2);
     ctx.fillStyle = high ? GOLD : '#2f5a9e'; ctx.fillRect(x, y, mx - x, h);
-    ctx.fillStyle = low ? CRIM : '#7d1626'; ctx.fillRect(mx, y, x + bw - mx, h);
+    ctx.fillStyle = low ? CRIM : LOSS_BAR; ctx.fillRect(mx, y, x + bw - mx, h);
     if (high || low) { ctx.globalAlpha = pulse * .4; ctx.fillStyle = '#fff'; ctx.fillRect(high ? x : mx, y, high ? mx - x : x + bw - mx, h); ctx.globalAlpha = 1; }
     ctx.fillStyle = INK; ctx.fillRect(x + bw * .3 - .5, y, 1, h); ctx.fillRect(x + bw * .7 - .5, y, 1, h);
     // The marker coin flips as the balance tips.
@@ -536,11 +548,11 @@ const { hud, initHud, hudDraw, uiEvent } = (() => {
     for (let i = H.pings.length - 1; i >= 0; i--) {
       const p = H.pings[i]; p.t += dt;
       if (p.t >= 1) { H.pings[i] = H.pings[H.pings.length - 1]; H.pings.pop(); continue; }
-      disc(M.x + p.x * kx, M.y + p.y * ky, 3 + p.t * 12); ctx.strokeStyle = `rgba(236,58,82,${1 - p.t})`; ctx.lineWidth = 1.5; ctx.stroke();
+      disc(M.x + p.x * kx, M.y + p.y * ky, 3 + p.t * 12); ctx.globalAlpha = 1 - p.t; ctx.strokeStyle = CRIM; ctx.lineWidth = 1.5; ctx.stroke(); ctx.globalAlpha = 1;
     }
     drawMapPings(M, kx, ky);
     for (const c of s.champs) {
-      if (!c.alive || !Sim.canSee(s, me.team, c)) continue;
+      if (!c.alive || !sees(s, c)) continue;
       const mine = c === me, X = M.x + c.x * kx, Y = M.y + c.y * ky;
       if (c.team !== me.team) H.lastSeen.set(c.id, { x: c.x, y: c.y, t: s.t });
       disc(X, Y, mine ? 4.2 : 3.2); ctx.fillStyle = mine ? PAPER : TEAM_DOT[c.team === me.team ? 0 : 1]; ctx.fill(); ctx.strokeStyle = INK; ctx.lineWidth = 1; ctx.stroke();
@@ -581,7 +593,7 @@ const { hud, initHud, hudDraw, uiEvent } = (() => {
     ctx.globalAlpha = 1;
     for (const c of s.champs) {
       if (c.team === me.team || !c.alive) continue;
-      const vis = Sim.canSee(s, me.team, c), L0 = vis ? c : H.lastSeen.get(c.id);
+      const vis = sees(s, c), L0 = vis ? c : H.lastSeen.get(c.id);
       if (!L0 || (!vis && s.t - L0.t > 8)) continue;
       if ((L0.x - me.x) * (L0.x - me.x) + (L0.y - me.y) * (L0.y - me.y) > range * range) continue;
       const cx0 = M.x + L0.x * kx, cy0 = M.y + L0.y * ky;
@@ -591,7 +603,7 @@ const { hud, initHud, hudDraw, uiEvent } = (() => {
   }
   // Vision fog: a tiny layer, refreshed a few times a second and scaled up.
   function drawFog(dt, s, me, M, kx, ky) {
-    if (!Sim.visionSources) return;
+    if (!Sim.visionSources || G.spectator) return;
     if (!H.fogC) { H.fogC = Art.cv(M.w, M.h); H.fogT = 0; }
     H.fogT -= dt;
     if (H.fogT <= 0) {
@@ -970,7 +982,7 @@ const { hud, initHud, hudDraw, uiEvent } = (() => {
 
   // ---------- frame ----------
   function hudDraw(dt) {
-    if (!H || !G) return;
+    if (!H || !G || G.replay) return;
     const me = G.me, s = G.s, want = G.intro > 0 || G.outro || G.ended ? 0 : 1;
     H.t += dt;
     H.enter = clamp01(H.enter + (want ? dt * 3.2 : -dt * 4));
@@ -983,20 +995,19 @@ const { hud, initHud, hudDraw, uiEvent } = (() => {
       ctx.globalAlpha = (.2 + p * .16) * e; ctx.drawImage(redEdge(), 0, 0, VW, VH); ctx.globalAlpha = 1;
     }
     drawScrims(e);
-    drawStick(s);
+    if (!G.spectator) drawStick(s);
     offset(-300 * away, 0); drawFrame(dt, me); drawBuffs(dt, s, me); drawFeed(dt);
     offset(0, -90 * away); drawStrip(dt, s, me); drawPeople(dt, s); drawObjective(dt, s, me);
     offset(300 * away, 0); drawMap(dt, s, me); drawCancel(dt);
-    offset((left() ? -320 : 320) * away, 0); lastHitTick(dt, me, s); drawAttack(dt, me); for (let i = 0; i < 3; i++) drawAbility(i, dt, me); drawBeacon(dt, me); drawRipples(dt);
+    offset((left() ? -320 : 320) * away, 0); if (!G.spectator) { lastHitTick(dt, me, s); drawAttack(dt, me); for (let i = 0; i < 3; i++) drawAbility(i, dt, me); drawBeacon(dt, me); } drawRipples(dt);
     offset(0, 0);
     if (want) drawWorldPings(dt, s, me);
     drawBeaconAim(me);
-    deathShop(me);
-    if (!me.alive) drawDeath(me);
-    drawEmotes(dt, s, me); drawChat(dt); drawHint(dt, me); drawTips(dt, me); drawAimCard(me); drawBanner(dt); drawRadial(dt);
+    if (!G.spectator) { deathShop(me); if (!me.alive) drawDeath(me); }
+    drawEmotes(dt, s, me); drawChat(dt); if (!G.spectator) { drawHint(dt, me); drawTips(dt, me); drawAimCard(me); } drawBanner(dt); drawRadial(dt);
     H.frame++;
     if (shopOpen()) { const sg = Math.floor(H.goldShow); if (sg !== H.shopGoldV) { H.shopGoldV = sg; $('shGold').textContent = sg; } if (H.frame % 10 === 0) shopSync(false); }
-    if (H.frame % 12 === 0) { evoSync(me, s); svSync(s, me); if (!me.alive) recapSync(me); }
+    if (H.frame % 12 === 0 && !G.spectator) { evoSync(me, s); svSync(s, me); if (!me.alive) recapSync(me); }
     if (H.tips && H.frame % 6 === 0) practiceSync(s, me);
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   }
@@ -1078,7 +1089,7 @@ const { hud, initHud, hudDraw, uiEvent } = (() => {
       const e = H.emotes[i]; e.t += dt;
       const u = H.byId.get(e.u);
       if (e.t > 2.2 || !u || !u.alive) { H.emotes.splice(i, 1); continue; }
-      if (u.team !== G.me.team && !Sim.canSee(s, G.me.team, u)) continue;
+      if (u.team !== G.me.team && !sees(s, u)) continue;
       const p = calm ? 1 : outBack(clamp01(e.t / .22)), a = clamp01((2.2 - e.t) * 3), X = sx(u.x), Y = sy(u.y) - 66 - (calm ? 0 : Math.sin(e.t * 2.4) * 2.5), R = 15 * p;
       ctx.globalAlpha = a; disc(X, Y, R); ctx.fillStyle = INK; ctx.fill(); ctx.strokeStyle = SIDE_ACC[u.team]; ctx.lineWidth = 1.6; ctx.stroke();
       ctx.save(); ctx.translate(X - 12 * p * .8, Y - 12 * p * .8); ctx.scale(p * .8, p * .8); ctx.fillStyle = SIDE_ACC[u.team]; ctx.fill(pathOfE(e.id), 'evenodd'); ctx.restore();
@@ -1143,6 +1154,11 @@ const { hud, initHud, hudDraw, uiEvent } = (() => {
   }
   // Team boons and timed tonics: small diamonds beside the purse, each draining as it runs out.
   const BUFF_COL = { warlord: '#ff8a4c', foreman: GOLD, sentinel: BLUE, colossus: '#ffc454', heist: '#7fd6a4', convoy: '#7fd6a4', blackout: STEEL, drop: '#7fd6a4', pot: '#ff7a8a', elix: '#d2a3ff', tonic: '#9fe8ff' };
+  Art.onCB((on, P) => {
+    BLUE = on ? P.ally : Deco.BLUE; CRIM = on ? P.enemy : Deco.CRIM; LOSS_BAR = on ? P.teamDark[1] : '#7d1626';
+    SIDE_ACC[1] = CRIM; TEAM_DOT[0] = BLUE; TEAM_DOT[1] = CRIM; PING.danger[1] = CRIM; PING.omw[1] = BLUE; BUFF_COL.sentinel = BLUE;
+    if (H) H.mapC = H.fogC = null;
+  });
   function teamBuffs(s, me) {
     const out = [], b = s.boons && s.boons[me.team];
     if (b) for (const k of Object.keys(b)) if (b[k] > 0) out.push({ kind: k, left: b[k], max: 120 });
@@ -1520,11 +1536,28 @@ const { hud, initHud, hudDraw, uiEvent } = (() => {
     for (let t = 0; t < 2; t++) if (me.lvl >= EVOLVE_AT[t] && me.evolved[t] === -1 && !H.evoDone[t] && ev[t]) return t;
     return -1;
   }
+  const EVO_AUTO_S = 2.2;
+  function autoEvo(me, t) { const lo = Hud.loadoutFor && Hud.loadoutFor(me.champ), i = lo && lo.evo ? lo.evo[t] : -1, o = i >= 0 && Sim.KITS[me.champ].evolves[t][i]; return o ? { i, o } : null; }
+  function pickEvo(t, i, o, box) { if (!G) return; G.me.q.push({ t: 'evolve', tier: t, choice: i }); H.evoDone[t] = true; H.evoKey = 'x'; H.evoH = 0; box.classList.add('hide'); box.textContent = ''; H.lvlFx = 1; Sound.play('level'); banner(o.name, { pri: 4, sub: 'Evolved', team: G.me.team, dur: 1.6 }); }
   function evoSync(me, s) {
     const t = me.alive && !shopOpen() && !paused ? evoPending(me) : -1, box = $('evo');
     if (t !== H.evoLast) { H.evoLast = t; H.evoT = H.t; H.evoShut = false; H.evoKey = ''; }
     if (t >= 0 && !H.evoShut && H.t - H.evoT > 8) H.evoShut = true;
     if (t < 0) { H.evoKey = ''; H.evoH = 0; box.classList.add('hide'); box.textContent = ''; return; }
+    // A saved Evolve pick applies itself after a beat, which is the window to tap and choose differently.
+    const auto = H.evoAsk !== t ? autoEvo(me, t) : null;
+    if (auto) {
+      box.classList.remove('shut');
+      if (H.t - H.evoT >= EVO_AUTO_S) { pickEvo(t, H.evoAuto = auto.i, auto.o, box); return; }
+      if (H.evoKey !== `a${t}`) {
+        H.evoKey = `a${t}`; box.textContent = ''; box.classList.remove('hide'); box.classList.add('shut');
+        const pill = document.createElement('button'); pill.className = 'evpill auto'; pill.innerHTML = `<small>Evolving</small>${auto.o.name}<em>Change</em>`;
+        pill.setAttribute('aria-label', `Evolving into ${auto.o.name}. Tap to choose differently.`);
+        pill.onpointerdown = e => { e.stopPropagation(); H.evoAsk = t; H.evoShut = false; H.evoT = H.t; H.evoKey = ''; Sound.play('tap'); evoSync(G.me, G.s); };
+        box.append(pill); H.evoH = box.offsetHeight;
+      }
+      return;
+    }
     const key = `${t}|${H.evoShut ? 1 : 0}`;
     if (key === H.evoKey) return;
     H.evoKey = key; box.textContent = '';
@@ -1542,7 +1575,7 @@ const { hud, initHud, hudDraw, uiEvent } = (() => {
       const b = document.createElement('button'); b.className = 'ev'; b.style.setProperty('--i', i);
       b.innerHTML = `<b>${o.name}</b><small>${o.d}</small>`;
       b.setAttribute('aria-label', `Evolve: ${o.name}. ${o.d}`);
-      b.onpointerdown = e => { e.stopPropagation(); if (!G) return; G.me.q.push({ t: 'evolve', tier: t, choice: i }); H.evoDone[t] = true; H.evoKey = 'x'; H.evoH = 0; box.classList.add('hide'); box.textContent = ''; H.lvlFx = 1; Sound.play('level'); banner(o.name, { pri: 4, sub: 'Evolved', team: G.me.team, dur: 1.6 }); };
+      b.onpointerdown = e => { e.stopPropagation(); pickEvo(t, i, o, box); };
       box.append(b);
     });
     H.evoH = box.offsetHeight;
@@ -1604,7 +1637,7 @@ const { hud, initHud, hudDraw, uiEvent } = (() => {
     const net = Hud.isLive();
     if (!net) paused = true;
     $('pT').textContent = net ? 'Menu' : 'Paused';
-    const canVote = !!Sim.SURRENDER_AT && G.s.t >= Sim.SURRENDER_AT && !G.s.practice && !(G.s.votes && G.s.votes[G.me.team]);
+    const canVote = !G.spectator && !!Sim.SURRENDER_AT && G.s.t >= Sim.SURRENDER_AT && !G.s.practice && !(G.s.votes && G.s.votes[G.me.team]);
     $('pSur').classList.toggle('hide', !canVote);
     $('pNote').classList.toggle('hide', !net);
     Hud.closeShop();

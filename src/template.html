@@ -42,8 +42,8 @@ h1,h2,h3,p{margin:0;font-weight:inherit}
 .ltop h1,.mission b,.nm h2,.abil em,.shead h3,.srole b,.pcol h2,.ehead h2,.vside h2,.vcell b,.vmark,#mbub,.mlogo,.mb b,.htop h1,.hc h3,.rtop h1,.bigcode,.rp b,.rp+span,.rp .rq,.jslots i,.kr button,.nbox h3,.team h3,.go,.rank b,.rkup b{font-family:var(--disp);font-weight:700;font-synthesis:none;text-transform:uppercase;letter-spacing:.06em;line-height:1}
 
 /* Cut-corner plates. The element is the hairline; ::before is the fill. */
-.city,.qem button,.qch button,.bcard,.rrowp,.mcard,.plate,.go,.ghost,.tok,.bk,.mb,.hc,.tog,.schamp,.srole button,.kr button,.jslots i,.abilbox,.team,.bld,.lpass,.it,.stc,.lane,.sit,.you,.seg button,.rank,.tags span,.lnet em,#mbub,.ev{--cut:8px;position:relative;isolation:isolate;background:var(--line);clip-path:polygon(var(--cut) 0,100% 0,100% calc(100% - var(--cut)),calc(100% - var(--cut)) 100%,0 100%,0 var(--cut))}
-.city::before,.qem button::before,.qch button::before,.bcard::before,.rrowp::before,.mcard::before,.plate::before,.go::before,.ghost::before,.tok::before,.bk::before,.mb::before,.hc::before,.tog::before,.schamp::before,.srole button::before,.kr button::before,.jslots i::before,.abilbox::before,.team::before,.bld::before,.lpass::before,.it::before,.stc::before,.lane::before,.sit::before,.you::before,.seg button::before,.rank::before,.tags span::before,.lnet em::before,#mbub::before,.ev::before{content:"";position:absolute;inset:1px;z-index:-1;background:var(--fill);clip-path:polygon(calc(var(--cut) - .4px) 0,100% 0,100% calc(100% - var(--cut) + .4px),calc(100% - var(--cut) + .4px) 100%,0 100%,0 calc(var(--cut) - .4px))}
+.arslot,.archips button,.dk,.city,.qem button,.qch button,.bcard,.rrowp,.mcard,.plate,.go,.ghost,.tok,.bk,.mb,.hc,.tog,.schamp,.srole button,.kr button,.jslots i,.abilbox,.team,.bld,.lpass,.it,.stc,.lane,.sit,.you,.seg button,.rank,.tags span,.lnet em,#mbub,.ev{--cut:8px;position:relative;isolation:isolate;background:var(--line);clip-path:polygon(var(--cut) 0,100% 0,100% calc(100% - var(--cut)),calc(100% - var(--cut)) 100%,0 100%,0 var(--cut))}
+.arslot::before,.archips button::before,.dk::before,.city::before,.qem button::before,.qch button::before,.bcard::before,.rrowp::before,.mcard::before,.plate::before,.go::before,.ghost::before,.tok::before,.bk::before,.mb::before,.hc::before,.tog::before,.schamp::before,.srole button::before,.kr button::before,.jslots i::before,.abilbox::before,.team::before,.bld::before,.lpass::before,.it::before,.stc::before,.lane::before,.sit::before,.you::before,.seg button::before,.rank::before,.tags span::before,.lnet em::before,#mbub::before,.ev::before{content:"";position:absolute;inset:1px;z-index:-1;background:var(--fill);clip-path:polygon(calc(var(--cut) - .4px) 0,100% 0,100% calc(100% - var(--cut) + .4px),calc(100% - var(--cut) + .4px) 100%,0 100%,0 calc(var(--cut) - .4px))}
 .plate{--cut:14px;color:var(--txt)}
 button{transition:transform .14s cubic-bezier(.2,.9,.3,1.2),filter .14s;touch-action:manipulation}
 button.down{transform:translateY(1px) scale(.965);filter:brightness(1.3);transition:none}
@@ -1019,6 +1019,158 @@ button.down{transform:translateY(1px) scale(.955);filter:brightness(1.28);transi
 .nm{flex:1 1 0;min-width:0}
 @keyframes namein{from{opacity:0;transform:translate3d(-24px,0,0)}}
 .bcard b{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-size:17px}.bcard b.long{font-size:14px}.sm .bcard b{font-size:13px}.sm .bcard b.long{font-size:11.5px}
+
+/* Armory */
+#armory{display:flex;flex-direction:column;gap:7px;padding:8px 44px}
+.arbody{flex:1;min-height:0;display:grid;grid-template-columns:172px minmax(0,1fr);gap:10px}
+.arslots{min-height:0;display:flex;flex-direction:column;gap:5px;position:relative}
+.arslot{--cut:7px;--fill:var(--panel2);display:flex;align-items:center;gap:7px;flex:none;min-height:52px;padding:4px 8px;text-align:left;min-width:0}
+.arslot canvas{width:38px;height:38px;flex:none}
+.arslot .t{display:flex;flex-direction:column;gap:1px;min-width:0}
+.arslot small{font-size:12px;font-weight:500;line-height:1.05;color:var(--mut)}
+.arslot b{font-size:15px;font-weight:600;line-height:1.05;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.arslot[aria-pressed=true]{--line:var(--acc);--fill:var(--a)}
+.arslot .plus{flex:none;width:38px;height:38px;background:linear-gradient(var(--mut),var(--mut)) center/16px 2px no-repeat,linear-gradient(var(--mut),var(--mut)) center/2px 16px no-repeat}
+.arslot.empty b{color:var(--mut)}.arslot.buy b{color:var(--gold)}.arslot.buy.no{opacity:.55}
+.ared{--cut:12px;min-height:0;display:flex;padding:2px}.arscr{flex:1;min-width:0;min-height:0;padding:7px 11px;display:flex;flex-direction:column;gap:9px}
+.arrow{flex:none;min-width:0;display:flex;flex-direction:column;gap:4px}
+.arrow h4{margin:0;font-family:var(--disp);font-size:16px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;line-height:1.05;font-synthesis:none;color:var(--acc)}
+.arrow h4 small{font-family:var(--ui);font-size:13px;font-weight:500;letter-spacing:0;text-transform:none;color:var(--txt);margin-left:8px}
+.arrow>p{margin:0;font-size:13px;font-weight:500;line-height:1.15;color:var(--mut)}
+.archips{display:flex;flex-wrap:wrap;gap:4px}
+.archips button{--cut:6px;--fill:var(--panel2);min-height:40px;padding:0 11px;font-size:14.5px;font-weight:600;color:var(--mut)}
+.archips button[aria-pressed=true]{--line:var(--acc);--fill:var(--acc);color:var(--on)}
+.arempty{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;text-align:center}
+.arempty p{max-width:380px;font-size:15px;line-height:1.2;color:var(--mut)}
+.arfoot{flex:none;display:flex;justify-content:flex-end}
+.bgrid.los .bld small{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#wTab button.lit{color:var(--acc)}#wTab button.lit[aria-pressed=true]{color:var(--on)}
+.sm #armory{gap:5px;padding:6px 44px}.sm .arbody{grid-template-columns:138px minmax(0,1fr);gap:7px}.sm .arslot{min-height:44px;padding:3px 6px;gap:5px}.sm .arslot canvas,.sm .arslot .plus{width:30px;height:30px}.sm .arslot b{font-size:13.5px}.sm .arslot small{font-size:11px}.sm .arscr{padding:5px 8px;gap:7px}.sm .arrow h4{font-size:14px}.sm .arrow>p{font-size:12px}.sm .archips button{min-height:38px;padding:0 9px;font-size:13px}
+.mrow:has(#mArm){grid-template-columns:1fr 1fr .78fr 1.12fr}.mrow:has(#mArm) .mb{min-width:0}
+.sm .mrow:has(#mArm) .mb{padding-left:5px;padding-right:4px}.sm .mrow:has(#mArm) .mb b{font-size:13.5px;letter-spacing:.015em}
+.mrow:has(#mArm) .mb b{font-size:16px;white-space:nowrap}
+.evpill.auto{display:inline-flex;align-items:center;gap:8px;white-space:nowrap}.evpill.auto small{font-family:var(--ui);font-size:11.5px;font-weight:500;letter-spacing:0;text-transform:none;opacity:.8}.evpill.auto em{font-family:var(--ui);font-style:normal;font-size:12px;font-weight:600;letter-spacing:0;text-transform:none;border-left:1px solid currentColor;padding-left:8px}
+
+/* Profile */
+#profile{display:flex;flex-direction:column;gap:7px;padding:8px 44px}
+#pfTab button{min-width:0;padding:0 10px}
+.pfbody{flex:1;min-height:0;min-width:0;display:flex;gap:10px}
+.pfscr{flex:1;min-width:0;min-height:0;display:flex;flex-direction:column;gap:7px;position:relative}
+.pfh{margin:0;font-family:var(--disp);font-size:16px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;line-height:1.05;font-synthesis:none;color:var(--acc);flex:none}
+.pftiles{flex:none;display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:5px}
+.dk{--cut:7px;--fill:var(--panel2);--line:var(--hair)}
+.pftile{padding:5px 8px}.pftile b{display:block;font-size:21px;font-weight:600;line-height:1.05;font-variant-numeric:tabular-nums}.pftile small{display:block;font-size:12px;font-weight:500;line-height:1.05;color:var(--mut)}
+.pfcols{flex:none;display:grid;grid-template-columns:minmax(0,.85fr) minmax(0,1.15fr);gap:12px}
+.pfbars{display:flex;flex-direction:column;gap:5px}
+.pfb{display:grid;grid-template-columns:30px minmax(0,1fr);align-items:center;gap:7px;min-height:32px}
+.pfb canvas{width:28px;height:28px;display:block}
+.pfb .glane{width:28px;height:28px;display:grid;place-items:center;font-family:var(--disp);font-size:15px;font-weight:700;color:var(--acc)}
+.pfb .tx{display:flex;justify-content:space-between;gap:8px;font-size:13.5px;font-weight:600;line-height:1.1}.pfb .tx span{color:var(--mut);font-weight:500;font-variant-numeric:tabular-nums;white-space:nowrap}
+.pfb i{display:block;height:3px;margin-top:3px;background:rgba(148,167,194,.22)}.pfb i u{display:block;height:100%;background:var(--acc)}
+.pfnone{margin:auto;padding:18px;text-align:center;font-size:15px;line-height:1.2;color:var(--mut)}
+.hrow{flex:none;display:grid;grid-template-columns:34px 62px minmax(0,1fr) 70px 58px;align-items:center;gap:8px;min-height:44px;padding:3px 10px 3px 8px}
+.hrow canvas{width:32px;height:32px;display:block}
+.hrow .res{font-family:var(--disp);font-size:15px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;font-synthesis:none;color:var(--mut)}.hrow.w .res{color:var(--acc)}
+.hrow .who{min-width:0}.hrow .who b{display:block;font-size:14px;font-weight:600;line-height:1.1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.hrow .who small{display:block;font-size:12px;font-weight:500;line-height:1.1;color:var(--mut);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.hrow .kda{font-size:14px;font-weight:600;text-align:right;font-variant-numeric:tabular-nums}.hrow .ago{font-size:12px;font-weight:500;text-align:right;color:var(--mut);white-space:nowrap}
+.hrow em{font-style:normal;color:var(--gold);font-weight:600}
+.namebox{width:100%;max-width:380px;align-self:flex-start;margin-top:6px}
+.namebox .xrow{display:flex;gap:6px}
+#nIn{flex:1;min-width:0;height:46px;padding:0 12px;font:inherit;font-size:18px;font-weight:600;color:var(--txt);background:var(--ink);border:1px solid var(--hair);outline:0;border-radius:0;-webkit-user-select:text;user-select:text;touch-action:manipulation}
+#nIn:focus{border-color:var(--acc)}
+.sm #profile{gap:5px;padding:6px 44px}.sm #pfTab button{min-height:36px;padding:0 7px;font-size:13.5px}.sm #profile .rtop h1{display:none}.sm .pftile{padding:3px 6px}.sm .pftile b{font-size:17px}.sm .pftile small{font-size:11px}.sm .hrow{min-height:40px;grid-template-columns:30px 52px minmax(0,1fr) 62px 48px;gap:6px}.sm .hrow canvas{width:28px;height:28px}
+
+/* Modes */
+#modes{display:flex;flex-direction:column;gap:7px;padding:8px 44px}
+.mogrid{flex:1;min-height:0;display:grid;grid-template-columns:repeat(3,minmax(0,1fr));grid-auto-rows:minmax(0,1fr);gap:7px}
+.moc{--cut:10px;--fill:rgba(16,19,28,.95);display:flex;flex-direction:column;justify-content:center;gap:3px;padding:6px 12px;text-align:left;min-height:0}
+.moc b{font-family:var(--disp);font-size:24px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;line-height:1;font-synthesis:none;color:var(--acc)}
+.moc small{font-size:13px;font-weight:500;line-height:1.14;color:var(--mut)}
+.moc.on{--line:var(--acc)}
+.sm #modes{gap:5px;padding:6px 44px}.sm .mogrid{gap:5px}.sm .moc{padding:4px 9px}.sm .moc b{font-size:19px}.sm .moc small{font-size:12px;line-height:1.08}
+.moc{position:relative;isolation:isolate}
+/* End screen additions */
+.eacts{flex:none;display:flex;gap:5px;justify-content:flex-end}.eacts .potgb{flex:1;min-width:0}.eshare{flex:none;min-height:40px}
+.ebonus{flex:none;font-size:12.5px;font-weight:600;line-height:1.15;color:var(--gold);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;animation:rise .3s .9s both}
+.mvprow{display:flex;gap:5px;flex:none;min-width:0}.mvprow .mvp{flex:1 1 0;min-width:0}
+.mvp.svp{background:linear-gradient(95deg,rgba(148,167,194,.26),rgba(148,167,194,.04) 75%);border-left-color:var(--steel)}.mvp.svp em{color:var(--steel)}
+.potgb{flex:none;display:flex;align-items:center;justify-content:space-between;gap:8px;min-height:40px;padding:3px 12px;text-align:left;--line:var(--acc);animation:rise .3s .55s var(--eo) both}
+.potgb em{display:block;font-style:normal;font-size:11.5px;font-weight:600;color:var(--acc);line-height:1}.potgb b{display:block;font-size:15px;font-weight:600;line-height:1.1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.potgb i{font-style:normal;font-size:14px;font-weight:600;color:var(--acc);flex:none}
+.sm .potgb{min-height:36px}.sm .potgb b{font-size:13px}.sm .ebonus{font-size:11.5px}.sm .eshare{min-height:36px;padding:0 9px;font-size:13px}.sm #endS{display:none}.sm #endM{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.sm .mvp small{display:none}.sm .endr{min-height:32px}
+/* Over the replay: the banner is painted by the game, only the way out is here. */
+#potgUI{position:absolute;right:44px;bottom:12px;z-index:30}
+#potgUI .tok{min-width:72px}
+/* Spectating */
+#specBar{position:absolute;left:50%;bottom:10px;transform:translateX(-50%);z-index:20;display:flex;align-items:center;gap:8px}
+#specBar span{display:flex;flex-direction:column;align-items:center;min-width:120px;text-align:center}#specBar small{font-size:11.5px;font-weight:500;color:var(--mut);line-height:1}#specBar b{font-family:var(--disp);font-size:20px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;line-height:1.1;font-synthesis:none;white-space:nowrap}
+/* Voice */
+#vox{position:absolute;left:44px;top:100px;z-index:12;display:flex;flex-direction:column;gap:3px;pointer-events:none}
+#vox span{display:flex;align-items:center;gap:5px;font-size:12.5px;font-weight:600;line-height:1;padding:3px 7px;background:rgba(6,8,13,.78);color:var(--txt);white-space:nowrap}
+#vox span::before{content:"";width:6px;height:6px;background:var(--acc);transform:rotate(45deg)}
+.pright{display:flex;flex-direction:column;gap:6px;min-width:0;min-height:0;max-height:100%}
+.pright .board{flex:1 1 auto}
+.pvox{flex:none;display:flex;flex-wrap:wrap;gap:4px}
+.pvox button{min-height:36px;font-size:13px}.pvox button.off{color:var(--mut);text-decoration:line-through}
+.pvox p{margin:0;font-size:12.5px;line-height:1.15;color:var(--mut)}
+#rMode{flex:none;min-height:42px;font-size:15px}#rVoice{flex:none;min-height:42px;font-size:14px;gap:8px}
+.sm #rMode,.sm #rVoice{min-height:36px;font-size:13px;padding:0 8px}
+.rtop .spring{flex:1}
+.rprow{flex:none;display:flex;align-items:center;gap:6px;min-height:46px;padding:3px 8px 3px 11px}.rprow .who{flex:1;min-width:0}.rprow .who b{display:block;font-size:15px;font-weight:600;line-height:1.1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.rprow .who small{display:block;font-size:12px;font-weight:500;line-height:1.1;color:var(--mut);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+
+/* Medals */
+.mdgrid{flex:1 1 auto;min-width:0;min-height:0;display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:4px;align-content:start;position:relative}
+.mdcat{grid-column:1/-1;margin-top:4px}.mdcat:first-child{margin-top:0}
+.mdc{position:relative;display:flex;flex-direction:column;align-items:center;gap:1px;min-height:84px;padding:4px 2px 5px;border-radius:6px;min-width:0}
+.mdc .mdl{display:block}
+.mdc>span{font-size:12px;font-weight:600;line-height:1.05;text-align:center;max-width:100%;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.mdc.sel{background:rgba(230,210,154,.16)}
+.mdc.lockd>span{color:var(--mut)}
+.pips3{display:flex;gap:2px}.pips3 u{display:block;width:10px;height:3px;background:rgba(148,167,194,.28)}
+.pips3 u.t0,.mdt u.t0{background:#c58a4e}.pips3 u.t1,.mdt u.t1{background:#cfd9e6}.pips3 u.t2,.mdt u.t2{background:#ffd76a}
+.pinm{position:absolute;right:6px;top:5px;width:8px;height:8px;background:var(--acc);transform:rotate(45deg)}
+.mddet{--cut:12px;flex:0 0 250px;min-width:0;min-height:0;display:flex;flex-direction:column;gap:5px;padding:9px 11px}
+.mdhead{display:flex;align-items:center;gap:9px;min-width:0}.mdhead>div{min-width:0}.mdhead b{display:block;font-family:var(--disp);font-size:19px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;line-height:1.05;font-synthesis:none}.mdhead small{display:block;font-size:12.5px;font-weight:600;color:var(--acc);line-height:1.1}
+.mdd{font-size:13px;line-height:1.15;color:var(--mut);flex:none}
+.mdtiers{flex:1 1 auto;min-height:0;display:flex;flex-direction:column;gap:3px;position:relative}
+.mdt{flex:none;display:grid;grid-template-columns:10px 50px minmax(0,1fr);align-items:center;gap:6px;font-size:12.5px;line-height:1.1;color:var(--mut)}.mdt u{display:block;width:8px;height:8px;transform:rotate(45deg);opacity:.45}.mdt b{font-weight:600}.mdt.got{color:var(--txt)}.mdt.got u{opacity:1}
+.mdbar{flex:none;display:flex;align-items:center;gap:7px;font-size:12px;font-weight:600;color:var(--mut);font-variant-numeric:tabular-nums;line-height:1}.mdbar i{flex:1;height:3px;background:rgba(148,167,194,.22);display:block}.mdbar i u{display:block;height:100%;background:var(--acc)}
+.mdfoot{flex:none;display:flex;align-items:center;justify-content:space-between;gap:7px}
+.mdpins{display:flex;gap:3px}.mdpin{width:32px;height:32px;display:grid;place-items:center}.mdpin.empty{border:1px dashed var(--hair);border-radius:50%;width:28px;height:28px;margin:2px;cursor:default}
+.mdfoot .go,.mdfoot .ghost{height:40px;min-height:40px;font-size:17px;padding:0 13px;white-space:nowrap}
+.med.earned canvas{width:44px;height:44px}.med.earned span{color:var(--gold)}
+.sm .med.earned canvas{width:34px;height:34px}
+.sm .mddet{flex-basis:208px;padding:6px 8px;gap:3px}.sm .mdhead b{font-size:15.5px}.sm .mdd{font-size:12px}.sm .mdt{font-size:11.5px}.sm .mdc{min-height:74px}.sm .mdc>span{font-size:11px}.sm .mdgrid{grid-template-columns:repeat(3,minmax(0,1fr))}.sm .mdfoot .go,.sm .mdfoot .ghost{height:38px;min-height:38px;font-size:15px;padding:0 9px}
+
+/* Player card */
+.pclft{flex:none;display:flex;flex-direction:column;align-items:center;gap:7px;justify-content:center}
+.pclft canvas{display:block}
+.pcrt{flex:1;min-width:0;min-height:0;display:flex;flex-direction:column;gap:5px}
+.pcgrid{flex:1;min-height:0;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:5px;align-content:start;position:relative}
+.pcc{display:flex;flex-direction:column;padding:3px;text-align:left;min-width:0}
+.pcc canvas{display:block;width:100%;height:auto}
+.pcc span{display:flex;justify-content:space-between;align-items:baseline;gap:5px;padding:2px 4px 1px}.pcc b{font-size:13px;font-weight:600;line-height:1.1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.pcc small{font-size:11.5px;font-weight:500;color:var(--mut);white-space:nowrap}.pcc small.cost{color:var(--gold);font-weight:600}
+.pcc.lockd canvas{filter:saturate(.5) brightness(.65)}.pcc.eq,.pct.eq{--line:var(--acc)}.pcc.sel{--line:#fff}.pcc.eq small{color:var(--acc)}
+.pct{min-height:42px;padding:0 12px;font-size:14.5px;font-weight:600;text-align:left}
+.pcfoot{flex:none;display:flex;align-items:center;justify-content:space-between;gap:8px}.pcfoot p{margin:0;font-size:13px;line-height:1.15;color:var(--mut);min-width:0}.pcfoot b{color:var(--txt);font-weight:600}.pcfoot .go{height:40px;font-size:18px;padding:0 13px;white-space:nowrap}.pcfoot .go .mks{font-family:var(--ui);font-size:15px;color:inherit;margin-left:6px;letter-spacing:0}.pcfoot .go .mks i{background:currentColor}
+.sm .pcc small,.sm .pcc b{font-size:11.5px}.sm .pcfoot .go{height:36px;font-size:15px;padding:0 9px}.sm .pcfoot p{font-size:12px}.sm .pclft .ghost{min-height:38px;font-size:14px}
+/* Origins */
+.orpick{flex:0 0 180px;min-height:0;grid-auto-rows:44px;align-content:start;position:relative}
+.orview{--cut:12px;flex:1;min-width:0;min-height:0;display:flex;flex-direction:column;gap:5px;padding:8px 10px}
+.orart{flex:1;min-height:0;display:grid;place-items:center;overflow:hidden}.orart canvas{display:block;max-width:100%;max-height:100%;width:auto;height:auto;object-fit:contain}.orart.lockd canvas{filter:blur(9px) brightness(.28) saturate(0)}
+.ortxt{flex:none;font-size:14.5px;line-height:1.18;min-height:17px}
+.ornav{flex:none;display:flex;align-items:center;justify-content:space-between;gap:8px}.ornav span{font-size:12.5px;font-weight:500;color:var(--mut)}
+.sm .orpick{flex-basis:150px;grid-auto-rows:40px}.sm .ortxt{font-size:13px}.sm .ornav .tok{min-height:36px}
+/* Versus card */
+.vtag{position:relative;display:block;width:124px;height:32px;margin-top:3px;overflow:hidden;font-style:normal}
+.vtag canvas{position:absolute;inset:0;width:100%!important;height:100%!important}
+.vtag b{position:relative;display:block;font-family:var(--ui)!important;font-size:12.5px!important;font-weight:600;letter-spacing:0;text-transform:none;color:#fff;line-height:1.05;padding-top:3px;text-shadow:0 1px 2px #000;max-width:none!important;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.vtag small{position:relative;display:block;font-size:10.5px;font-weight:600;line-height:1.05;color:var(--gold);text-shadow:0 1px 2px #000;white-space:nowrap}
+.sm .vtag{width:96px;height:27px;margin-top:2px}.sm .vtag b{font-size:11px!important;padding-top:2px}.sm .vtag small{font-size:9.5px}
+.rpins{flex:none;display:flex;gap:1px}.rpins canvas{display:block}
+.bgrid.los{align-content:start}
+.mrow:has(#mModes) small{font-size:11px}
+.egrid{grid-template-rows:minmax(0,1fr);height:min(100%,430px)}.eright{height:100%}.ecol{max-height:100%}
+#specBar span{background:rgba(6,8,13,.78);padding:3px 12px}
 </style>
 </head>
 <body>
@@ -1046,7 +1198,7 @@ button.down{transform:translateY(1px) scale(.955);filter:brightness(1.28);transi
         <button class="tog" id="pSfx">Effects</button>
         <button class="ghost" id="pTgt"></button>
       </div>
-      <div class="board scroll" id="pBoard"></div>
+      <div class="pright"><div class="pvox hide" id="pVox"></div><div class="board scroll" id="pBoard"></div></div>
     </div>
   </div>
 
@@ -1062,10 +1214,16 @@ button.down{transform:translateY(1px) scale(.955);filter:brightness(1.28);transi
         <p class="mks hide" id="endMk"><i></i><span id="endMks">0</span> Marks earned<small id="endBal" style="color:var(--mut);font-weight:500;margin-left:6px"></small></p>
         <div class="row"><button class="go" id="again">Play again</button><button class="ghost" id="tolobby">Main menu</button></div>
       </div>
-      <div class="eright"><div class="mvp hide" id="endMvp"></div><div class="board scroll" id="eBoard"></div><div class="emiss hide" id="endMiss"></div></div>
+      <div class="eright"><div class="mvprow"><div class="mvp hide" id="endMvp"></div><div class="mvp svp hide" id="endSvp"></div></div><div class="eacts"><button class="dk potgb hide" id="endPotg"><span><em>Play of the Game</em><b id="endPotgT"></b></span><i>Watch</i></button><button class="tok eshare" id="endShare">Share</button></div><div class="board scroll" id="eBoard"></div><p class="ebonus hide" id="endBonus"></p><div class="emiss hide" id="endMiss"></div></div>
     </div>
     <div id="rankup" class="hide" role="status"></div>
   </div>
+
+  <div id="potgUI" class="hide"><button class="tok" id="potgSkip">Skip</button></div>
+
+  <div id="specBar" class="hide" role="group" aria-label="Spectating"><button class="tok" id="spPrev" aria-label="Previous player">Prev</button><span><small>Watching</small><b id="spName"></b></span><button class="tok" id="spNext" aria-label="Next player">Next</button></div>
+
+  <div id="vox" class="hide" aria-live="off"></div>
 
   <div id="lobby" class="hide">
     <div class="ltop">
@@ -1083,12 +1241,13 @@ button.down{transform:translateY(1px) scale(.955);filter:brightness(1.28);transi
     <div class="roster scroll" id="picks"></div>
     <div class="hero"><canvas id="big" width="520" height="520"></canvas><div class="herotag"><div class="ladder" id="ladder"></div><p class="lad" id="wTier"></p></div></div>
     <div class="who">
-      <div class="whead"><div class="nm"><h2 id="wN"></h2></div><div class="seg wtab" id="wTab"><button data-t="builds">Builds</button><button data-t="kit">Abilities</button><button data-t="prof">Lane</button></div></div>
+      <div class="whead"><div class="nm"><h2 id="wN"></h2></div><div class="seg wtab" id="wTab"><button data-t="builds">Builds</button><button data-t="kit">Abilities</button><button data-t="prof">Lane</button><button data-t="lo">Loadout</button></div></div>
       <p class="wsub"><span class="blurb" id="wB"></span><span class="best" id="wBest"></span></p>
       <div class="lpass" id="wP"></div>
       <div class="lpane" id="wBuilds"></div>
       <div class="lpane hide" id="wKit"><div class="abilbox"><div class="abil scroll" id="wA"></div></div></div>
       <div class="lpane hide" id="wProf"></div>
+      <div class="lpane hide" id="wLo"></div>
     </div>
     <div class="lbar">
       <div class="team t0" role="group" aria-label="Heroes"><div class="seats" id="s0"></div></div>
@@ -1111,13 +1270,15 @@ button.down{transform:translateY(1px) scale(.955);filter:brightness(1.28);transi
         <button class="mb stick" id="mJoin" style="--i:3"><b>Join</b><small>Got a code? Type it in</small></button>
       </div>
       <div class="mrow">
-        <button class="mb ml stick" id="mPrac" style="--i:4"><b>Practice</b></button>
+        <button class="mb ml stick" id="mModes" style="--i:4"><b>Modes</b><small id="mMode" class="hide"></small></button>
         <button class="mb ml stick" id="mMiss" style="--i:5"><b>Missions</b><small id="mMissN"></small></button>
         <button class="mb ml stick" id="mStore" style="--i:6"><b>Store</b><small id="mMarks"></small></button>
       </div>
       <div class="mrow">
-        <button class="mb ml stick" id="mHow" style="--i:7"><b>How to play</b></button>
-        <button class="mb ml stick" id="mSet" style="--i:8"><b>Settings</b></button>
+        <button class="mb ml stick" id="mArm" style="--i:7"><b>Armory</b></button>
+        <button class="mb ml stick" id="mProf" style="--i:8"><b>Profile</b></button>
+        <button class="mb ml stick" id="mHow" style="--i:9" aria-label="How to play"><b>Learn</b></button>
+        <button class="mb ml stick" id="mSet" style="--i:10"><b>Settings</b></button>
       </div>
     </div>
   </div>
@@ -1147,7 +1308,7 @@ button.down{transform:translateY(1px) scale(.955);filter:brightness(1.28);transi
         <div class="rcol" id="rB"></div>
       </div>
     </div>
-    <div class="rfoot stick" style="--i:2"><button class="ghost" id="rShuf">Shuffle teams</button><p class="stat2" id="rHint"></p><button class="go" id="rFlip">Flip for sides</button></div>
+    <div class="rfoot stick" style="--i:2"><button class="ghost" id="rShuf">Shuffle teams</button><button class="ghost" id="rMode"></button><button class="tog hide" id="rVoice">Voice</button><p class="stat2" id="rHint"></p><button class="go" id="rFlip">Flip for sides</button></div>
   </div>
 
   <div id="ban" class="hide" role="dialog" aria-label="Ban phase">
@@ -1191,6 +1352,11 @@ button.down{transform:translateY(1px) scale(.955);filter:brightness(1.28);transi
           <button class="ghost" id="sEdit">Move HUD buttons</button>
           <div class="setrow wide"><span>Aim speed</span><div class="seg" id="sAim"><button data-a=".7">1</button><button data-a=".85">2</button><button data-a="1">3</button><button data-a="1.25">4</button><button data-a="1.6">5</button></div></div>
         </div></section>
+        <section class="setsec"><h4>Team voice</h4><div class="setgrid">
+          <button class="tog" id="sVoice">Voice chat</button>
+          <div class="setrow"><span>Microphone</span><div class="seg" id="sVMode"><button data-m="open">Open</button><button data-m="ptt">Push to talk</button></div></div>
+        </div><p class="tip" id="sVMsg"></p></section>
+        <section class="setsec"><h4>Accessibility</h4><button class="tog" id="sCb">Colorblind palette</button></section>
         <section class="setsec"><h4>Targeting</h4>
           <div class="setrow"><span>Focus the enemy with<small>Tap-to-fire and the main attack take players first, then what is around you</small></span><div class="seg" id="sTgt"><button data-v="hp" data-snd="targetPref">Least health</button><button data-v="pct" data-snd="targetPref">Lowest %</button></div></div>
         </section>
@@ -1239,6 +1405,28 @@ button.down{transform:translateY(1px) scale(.955);filter:brightness(1.28);transi
       <div class="mscol stick"><h4>Today</h4><div class="mslist" id="msDaily"></div></div>
       <div class="mscol stick" style="--i:1"><h4 id="msCT"></h4><div class="mspick" id="msPick"></div><div class="mslist" id="msChamp"></div></div>
     </div>
+  </div>
+
+  <div id="armory" class="scr hide" role="dialog" aria-label="Armory">
+    <div class="rtop"><button class="bk" id="arBack" aria-label="Back"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 4 7 12l8 8" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/></svg>Back</button><h1>Armory</h1><p class="stat">Pick a champion in the lobby and their loadout applies itself.</p><span class="mks" style="font-size:20px"><i></i><span id="arMarks">0</span></span></div>
+    <div class="arbody">
+      <div class="arslots scroll stick" id="arSlots"></div>
+      <div class="plate ared stick" style="--i:1"><div class="arscr scroll" id="arEd"></div></div>
+    </div>
+  </div>
+
+  <div id="modes" class="scr hide" role="dialog" aria-label="Game modes">
+    <div class="rtop"><button class="bk" id="moBack" aria-label="Back"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 4 7 12l8 8" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/></svg>Back</button><h1>Modes</h1><p class="stat">Bots fill every empty seat. Friends can play these from a room too.</p></div>
+    <div class="mogrid stick" id="moGrid"></div>
+  </div>
+
+  <div id="profile" class="scr hide" role="dialog" aria-label="Profile">
+    <div class="rtop"><button class="bk" id="pfBack" aria-label="Back"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 4 7 12l8 8" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/></svg>Back</button><h1>Profile</h1><span class="spring"></span><div class="seg" id="pfTab"><button data-p="card">Card</button><button data-p="stats">Stats</button><button data-p="hist">History</button><button data-p="medals">Medals</button><button data-p="origin">Origins</button><button data-p="recent">Players</button></div></div>
+    <div class="pfbody" id="pfBody"></div>
+  </div>
+
+  <div id="nameD" class="over hide" role="dialog" aria-label="Change name">
+    <div class="plate nbox namebox"><h3>Your name</h3><div class="xrow"><input id="nIn" maxlength="16" autocomplete="off" autocapitalize="words" spellcheck="false" aria-label="Your name"><button class="ghost" id="nRoll" aria-label="Random name">Random</button></div><div class="row"><button class="ghost" id="nNo">Cancel</button><button class="go" id="nOk">Save</button></div></div>
   </div>
 
   <div id="notice" class="over hide" role="alertdialog" aria-label="Notice">

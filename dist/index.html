@@ -42,8 +42,8 @@ h1,h2,h3,p{margin:0;font-weight:inherit}
 .ltop h1,.mission b,.nm h2,.abil em,.shead h3,.srole b,.pcol h2,.ehead h2,.vside h2,.vcell b,.vmark,#mbub,.mlogo,.mb b,.htop h1,.hc h3,.rtop h1,.bigcode,.rp b,.rp+span,.rp .rq,.jslots i,.kr button,.nbox h3,.team h3,.go,.rank b,.rkup b{font-family:var(--disp);font-weight:700;font-synthesis:none;text-transform:uppercase;letter-spacing:.06em;line-height:1}
 
 /* Cut-corner plates. The element is the hairline; ::before is the fill. */
-.city,.qem button,.qch button,.bcard,.rrowp,.mcard,.plate,.go,.ghost,.tok,.bk,.mb,.hc,.tog,.schamp,.srole button,.kr button,.jslots i,.abilbox,.team,.bld,.lpass,.it,.stc,.lane,.sit,.you,.seg button,.rank,.tags span,.lnet em,#mbub,.ev{--cut:8px;position:relative;isolation:isolate;background:var(--line);clip-path:polygon(var(--cut) 0,100% 0,100% calc(100% - var(--cut)),calc(100% - var(--cut)) 100%,0 100%,0 var(--cut))}
-.city::before,.qem button::before,.qch button::before,.bcard::before,.rrowp::before,.mcard::before,.plate::before,.go::before,.ghost::before,.tok::before,.bk::before,.mb::before,.hc::before,.tog::before,.schamp::before,.srole button::before,.kr button::before,.jslots i::before,.abilbox::before,.team::before,.bld::before,.lpass::before,.it::before,.stc::before,.lane::before,.sit::before,.you::before,.seg button::before,.rank::before,.tags span::before,.lnet em::before,#mbub::before,.ev::before{content:"";position:absolute;inset:1px;z-index:-1;background:var(--fill);clip-path:polygon(calc(var(--cut) - .4px) 0,100% 0,100% calc(100% - var(--cut) + .4px),calc(100% - var(--cut) + .4px) 100%,0 100%,0 calc(var(--cut) - .4px))}
+.arslot,.archips button,.dk,.city,.qem button,.qch button,.bcard,.rrowp,.mcard,.plate,.go,.ghost,.tok,.bk,.mb,.hc,.tog,.schamp,.srole button,.kr button,.jslots i,.abilbox,.team,.bld,.lpass,.it,.stc,.lane,.sit,.you,.seg button,.rank,.tags span,.lnet em,#mbub,.ev{--cut:8px;position:relative;isolation:isolate;background:var(--line);clip-path:polygon(var(--cut) 0,100% 0,100% calc(100% - var(--cut)),calc(100% - var(--cut)) 100%,0 100%,0 var(--cut))}
+.arslot::before,.archips button::before,.dk::before,.city::before,.qem button::before,.qch button::before,.bcard::before,.rrowp::before,.mcard::before,.plate::before,.go::before,.ghost::before,.tok::before,.bk::before,.mb::before,.hc::before,.tog::before,.schamp::before,.srole button::before,.kr button::before,.jslots i::before,.abilbox::before,.team::before,.bld::before,.lpass::before,.it::before,.stc::before,.lane::before,.sit::before,.you::before,.seg button::before,.rank::before,.tags span::before,.lnet em::before,#mbub::before,.ev::before{content:"";position:absolute;inset:1px;z-index:-1;background:var(--fill);clip-path:polygon(calc(var(--cut) - .4px) 0,100% 0,100% calc(100% - var(--cut) + .4px),calc(100% - var(--cut) + .4px) 100%,0 100%,0 calc(var(--cut) - .4px))}
 .plate{--cut:14px;color:var(--txt)}
 button{transition:transform .14s cubic-bezier(.2,.9,.3,1.2),filter .14s;touch-action:manipulation}
 button.down{transform:translateY(1px) scale(.965);filter:brightness(1.3);transition:none}
@@ -1019,6 +1019,158 @@ button.down{transform:translateY(1px) scale(.955);filter:brightness(1.28);transi
 .nm{flex:1 1 0;min-width:0}
 @keyframes namein{from{opacity:0;transform:translate3d(-24px,0,0)}}
 .bcard b{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-size:17px}.bcard b.long{font-size:14px}.sm .bcard b{font-size:13px}.sm .bcard b.long{font-size:11.5px}
+
+/* Armory */
+#armory{display:flex;flex-direction:column;gap:7px;padding:8px 44px}
+.arbody{flex:1;min-height:0;display:grid;grid-template-columns:172px minmax(0,1fr);gap:10px}
+.arslots{min-height:0;display:flex;flex-direction:column;gap:5px;position:relative}
+.arslot{--cut:7px;--fill:var(--panel2);display:flex;align-items:center;gap:7px;flex:none;min-height:52px;padding:4px 8px;text-align:left;min-width:0}
+.arslot canvas{width:38px;height:38px;flex:none}
+.arslot .t{display:flex;flex-direction:column;gap:1px;min-width:0}
+.arslot small{font-size:12px;font-weight:500;line-height:1.05;color:var(--mut)}
+.arslot b{font-size:15px;font-weight:600;line-height:1.05;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.arslot[aria-pressed=true]{--line:var(--acc);--fill:var(--a)}
+.arslot .plus{flex:none;width:38px;height:38px;background:linear-gradient(var(--mut),var(--mut)) center/16px 2px no-repeat,linear-gradient(var(--mut),var(--mut)) center/2px 16px no-repeat}
+.arslot.empty b{color:var(--mut)}.arslot.buy b{color:var(--gold)}.arslot.buy.no{opacity:.55}
+.ared{--cut:12px;min-height:0;display:flex;padding:2px}.arscr{flex:1;min-width:0;min-height:0;padding:7px 11px;display:flex;flex-direction:column;gap:9px}
+.arrow{flex:none;min-width:0;display:flex;flex-direction:column;gap:4px}
+.arrow h4{margin:0;font-family:var(--disp);font-size:16px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;line-height:1.05;font-synthesis:none;color:var(--acc)}
+.arrow h4 small{font-family:var(--ui);font-size:13px;font-weight:500;letter-spacing:0;text-transform:none;color:var(--txt);margin-left:8px}
+.arrow>p{margin:0;font-size:13px;font-weight:500;line-height:1.15;color:var(--mut)}
+.archips{display:flex;flex-wrap:wrap;gap:4px}
+.archips button{--cut:6px;--fill:var(--panel2);min-height:40px;padding:0 11px;font-size:14.5px;font-weight:600;color:var(--mut)}
+.archips button[aria-pressed=true]{--line:var(--acc);--fill:var(--acc);color:var(--on)}
+.arempty{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;text-align:center}
+.arempty p{max-width:380px;font-size:15px;line-height:1.2;color:var(--mut)}
+.arfoot{flex:none;display:flex;justify-content:flex-end}
+.bgrid.los .bld small{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#wTab button.lit{color:var(--acc)}#wTab button.lit[aria-pressed=true]{color:var(--on)}
+.sm #armory{gap:5px;padding:6px 44px}.sm .arbody{grid-template-columns:138px minmax(0,1fr);gap:7px}.sm .arslot{min-height:44px;padding:3px 6px;gap:5px}.sm .arslot canvas,.sm .arslot .plus{width:30px;height:30px}.sm .arslot b{font-size:13.5px}.sm .arslot small{font-size:11px}.sm .arscr{padding:5px 8px;gap:7px}.sm .arrow h4{font-size:14px}.sm .arrow>p{font-size:12px}.sm .archips button{min-height:38px;padding:0 9px;font-size:13px}
+.mrow:has(#mArm){grid-template-columns:1fr 1fr .78fr 1.12fr}.mrow:has(#mArm) .mb{min-width:0}
+.sm .mrow:has(#mArm) .mb{padding-left:5px;padding-right:4px}.sm .mrow:has(#mArm) .mb b{font-size:13.5px;letter-spacing:.015em}
+.mrow:has(#mArm) .mb b{font-size:16px;white-space:nowrap}
+.evpill.auto{display:inline-flex;align-items:center;gap:8px;white-space:nowrap}.evpill.auto small{font-family:var(--ui);font-size:11.5px;font-weight:500;letter-spacing:0;text-transform:none;opacity:.8}.evpill.auto em{font-family:var(--ui);font-style:normal;font-size:12px;font-weight:600;letter-spacing:0;text-transform:none;border-left:1px solid currentColor;padding-left:8px}
+
+/* Profile */
+#profile{display:flex;flex-direction:column;gap:7px;padding:8px 44px}
+#pfTab button{min-width:0;padding:0 10px}
+.pfbody{flex:1;min-height:0;min-width:0;display:flex;gap:10px}
+.pfscr{flex:1;min-width:0;min-height:0;display:flex;flex-direction:column;gap:7px;position:relative}
+.pfh{margin:0;font-family:var(--disp);font-size:16px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;line-height:1.05;font-synthesis:none;color:var(--acc);flex:none}
+.pftiles{flex:none;display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:5px}
+.dk{--cut:7px;--fill:var(--panel2);--line:var(--hair)}
+.pftile{padding:5px 8px}.pftile b{display:block;font-size:21px;font-weight:600;line-height:1.05;font-variant-numeric:tabular-nums}.pftile small{display:block;font-size:12px;font-weight:500;line-height:1.05;color:var(--mut)}
+.pfcols{flex:none;display:grid;grid-template-columns:minmax(0,.85fr) minmax(0,1.15fr);gap:12px}
+.pfbars{display:flex;flex-direction:column;gap:5px}
+.pfb{display:grid;grid-template-columns:30px minmax(0,1fr);align-items:center;gap:7px;min-height:32px}
+.pfb canvas{width:28px;height:28px;display:block}
+.pfb .glane{width:28px;height:28px;display:grid;place-items:center;font-family:var(--disp);font-size:15px;font-weight:700;color:var(--acc)}
+.pfb .tx{display:flex;justify-content:space-between;gap:8px;font-size:13.5px;font-weight:600;line-height:1.1}.pfb .tx span{color:var(--mut);font-weight:500;font-variant-numeric:tabular-nums;white-space:nowrap}
+.pfb i{display:block;height:3px;margin-top:3px;background:rgba(148,167,194,.22)}.pfb i u{display:block;height:100%;background:var(--acc)}
+.pfnone{margin:auto;padding:18px;text-align:center;font-size:15px;line-height:1.2;color:var(--mut)}
+.hrow{flex:none;display:grid;grid-template-columns:34px 62px minmax(0,1fr) 70px 58px;align-items:center;gap:8px;min-height:44px;padding:3px 10px 3px 8px}
+.hrow canvas{width:32px;height:32px;display:block}
+.hrow .res{font-family:var(--disp);font-size:15px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;font-synthesis:none;color:var(--mut)}.hrow.w .res{color:var(--acc)}
+.hrow .who{min-width:0}.hrow .who b{display:block;font-size:14px;font-weight:600;line-height:1.1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.hrow .who small{display:block;font-size:12px;font-weight:500;line-height:1.1;color:var(--mut);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.hrow .kda{font-size:14px;font-weight:600;text-align:right;font-variant-numeric:tabular-nums}.hrow .ago{font-size:12px;font-weight:500;text-align:right;color:var(--mut);white-space:nowrap}
+.hrow em{font-style:normal;color:var(--gold);font-weight:600}
+.namebox{width:100%;max-width:380px;align-self:flex-start;margin-top:6px}
+.namebox .xrow{display:flex;gap:6px}
+#nIn{flex:1;min-width:0;height:46px;padding:0 12px;font:inherit;font-size:18px;font-weight:600;color:var(--txt);background:var(--ink);border:1px solid var(--hair);outline:0;border-radius:0;-webkit-user-select:text;user-select:text;touch-action:manipulation}
+#nIn:focus{border-color:var(--acc)}
+.sm #profile{gap:5px;padding:6px 44px}.sm #pfTab button{min-height:36px;padding:0 7px;font-size:13.5px}.sm #profile .rtop h1{display:none}.sm .pftile{padding:3px 6px}.sm .pftile b{font-size:17px}.sm .pftile small{font-size:11px}.sm .hrow{min-height:40px;grid-template-columns:30px 52px minmax(0,1fr) 62px 48px;gap:6px}.sm .hrow canvas{width:28px;height:28px}
+
+/* Modes */
+#modes{display:flex;flex-direction:column;gap:7px;padding:8px 44px}
+.mogrid{flex:1;min-height:0;display:grid;grid-template-columns:repeat(3,minmax(0,1fr));grid-auto-rows:minmax(0,1fr);gap:7px}
+.moc{--cut:10px;--fill:rgba(16,19,28,.95);display:flex;flex-direction:column;justify-content:center;gap:3px;padding:6px 12px;text-align:left;min-height:0}
+.moc b{font-family:var(--disp);font-size:24px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;line-height:1;font-synthesis:none;color:var(--acc)}
+.moc small{font-size:13px;font-weight:500;line-height:1.14;color:var(--mut)}
+.moc.on{--line:var(--acc)}
+.sm #modes{gap:5px;padding:6px 44px}.sm .mogrid{gap:5px}.sm .moc{padding:4px 9px}.sm .moc b{font-size:19px}.sm .moc small{font-size:12px;line-height:1.08}
+.moc{position:relative;isolation:isolate}
+/* End screen additions */
+.eacts{flex:none;display:flex;gap:5px;justify-content:flex-end}.eacts .potgb{flex:1;min-width:0}.eshare{flex:none;min-height:40px}
+.ebonus{flex:none;font-size:12.5px;font-weight:600;line-height:1.15;color:var(--gold);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;animation:rise .3s .9s both}
+.mvprow{display:flex;gap:5px;flex:none;min-width:0}.mvprow .mvp{flex:1 1 0;min-width:0}
+.mvp.svp{background:linear-gradient(95deg,rgba(148,167,194,.26),rgba(148,167,194,.04) 75%);border-left-color:var(--steel)}.mvp.svp em{color:var(--steel)}
+.potgb{flex:none;display:flex;align-items:center;justify-content:space-between;gap:8px;min-height:40px;padding:3px 12px;text-align:left;--line:var(--acc);animation:rise .3s .55s var(--eo) both}
+.potgb em{display:block;font-style:normal;font-size:11.5px;font-weight:600;color:var(--acc);line-height:1}.potgb b{display:block;font-size:15px;font-weight:600;line-height:1.1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.potgb i{font-style:normal;font-size:14px;font-weight:600;color:var(--acc);flex:none}
+.sm .potgb{min-height:36px}.sm .potgb b{font-size:13px}.sm .ebonus{font-size:11.5px}.sm .eshare{min-height:36px;padding:0 9px;font-size:13px}.sm #endS{display:none}.sm #endM{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.sm .mvp small{display:none}.sm .endr{min-height:32px}
+/* Over the replay: the banner is painted by the game, only the way out is here. */
+#potgUI{position:absolute;right:44px;bottom:12px;z-index:30}
+#potgUI .tok{min-width:72px}
+/* Spectating */
+#specBar{position:absolute;left:50%;bottom:10px;transform:translateX(-50%);z-index:20;display:flex;align-items:center;gap:8px}
+#specBar span{display:flex;flex-direction:column;align-items:center;min-width:120px;text-align:center}#specBar small{font-size:11.5px;font-weight:500;color:var(--mut);line-height:1}#specBar b{font-family:var(--disp);font-size:20px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;line-height:1.1;font-synthesis:none;white-space:nowrap}
+/* Voice */
+#vox{position:absolute;left:44px;top:100px;z-index:12;display:flex;flex-direction:column;gap:3px;pointer-events:none}
+#vox span{display:flex;align-items:center;gap:5px;font-size:12.5px;font-weight:600;line-height:1;padding:3px 7px;background:rgba(6,8,13,.78);color:var(--txt);white-space:nowrap}
+#vox span::before{content:"";width:6px;height:6px;background:var(--acc);transform:rotate(45deg)}
+.pright{display:flex;flex-direction:column;gap:6px;min-width:0;min-height:0;max-height:100%}
+.pright .board{flex:1 1 auto}
+.pvox{flex:none;display:flex;flex-wrap:wrap;gap:4px}
+.pvox button{min-height:36px;font-size:13px}.pvox button.off{color:var(--mut);text-decoration:line-through}
+.pvox p{margin:0;font-size:12.5px;line-height:1.15;color:var(--mut)}
+#rMode{flex:none;min-height:42px;font-size:15px}#rVoice{flex:none;min-height:42px;font-size:14px;gap:8px}
+.sm #rMode,.sm #rVoice{min-height:36px;font-size:13px;padding:0 8px}
+.rtop .spring{flex:1}
+.rprow{flex:none;display:flex;align-items:center;gap:6px;min-height:46px;padding:3px 8px 3px 11px}.rprow .who{flex:1;min-width:0}.rprow .who b{display:block;font-size:15px;font-weight:600;line-height:1.1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.rprow .who small{display:block;font-size:12px;font-weight:500;line-height:1.1;color:var(--mut);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+
+/* Medals */
+.mdgrid{flex:1 1 auto;min-width:0;min-height:0;display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:4px;align-content:start;position:relative}
+.mdcat{grid-column:1/-1;margin-top:4px}.mdcat:first-child{margin-top:0}
+.mdc{position:relative;display:flex;flex-direction:column;align-items:center;gap:1px;min-height:84px;padding:4px 2px 5px;border-radius:6px;min-width:0}
+.mdc .mdl{display:block}
+.mdc>span{font-size:12px;font-weight:600;line-height:1.05;text-align:center;max-width:100%;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.mdc.sel{background:rgba(230,210,154,.16)}
+.mdc.lockd>span{color:var(--mut)}
+.pips3{display:flex;gap:2px}.pips3 u{display:block;width:10px;height:3px;background:rgba(148,167,194,.28)}
+.pips3 u.t0,.mdt u.t0{background:#c58a4e}.pips3 u.t1,.mdt u.t1{background:#cfd9e6}.pips3 u.t2,.mdt u.t2{background:#ffd76a}
+.pinm{position:absolute;right:6px;top:5px;width:8px;height:8px;background:var(--acc);transform:rotate(45deg)}
+.mddet{--cut:12px;flex:0 0 250px;min-width:0;min-height:0;display:flex;flex-direction:column;gap:5px;padding:9px 11px}
+.mdhead{display:flex;align-items:center;gap:9px;min-width:0}.mdhead>div{min-width:0}.mdhead b{display:block;font-family:var(--disp);font-size:19px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;line-height:1.05;font-synthesis:none}.mdhead small{display:block;font-size:12.5px;font-weight:600;color:var(--acc);line-height:1.1}
+.mdd{font-size:13px;line-height:1.15;color:var(--mut);flex:none}
+.mdtiers{flex:1 1 auto;min-height:0;display:flex;flex-direction:column;gap:3px;position:relative}
+.mdt{flex:none;display:grid;grid-template-columns:10px 50px minmax(0,1fr);align-items:center;gap:6px;font-size:12.5px;line-height:1.1;color:var(--mut)}.mdt u{display:block;width:8px;height:8px;transform:rotate(45deg);opacity:.45}.mdt b{font-weight:600}.mdt.got{color:var(--txt)}.mdt.got u{opacity:1}
+.mdbar{flex:none;display:flex;align-items:center;gap:7px;font-size:12px;font-weight:600;color:var(--mut);font-variant-numeric:tabular-nums;line-height:1}.mdbar i{flex:1;height:3px;background:rgba(148,167,194,.22);display:block}.mdbar i u{display:block;height:100%;background:var(--acc)}
+.mdfoot{flex:none;display:flex;align-items:center;justify-content:space-between;gap:7px}
+.mdpins{display:flex;gap:3px}.mdpin{width:32px;height:32px;display:grid;place-items:center}.mdpin.empty{border:1px dashed var(--hair);border-radius:50%;width:28px;height:28px;margin:2px;cursor:default}
+.mdfoot .go,.mdfoot .ghost{height:40px;min-height:40px;font-size:17px;padding:0 13px;white-space:nowrap}
+.med.earned canvas{width:44px;height:44px}.med.earned span{color:var(--gold)}
+.sm .med.earned canvas{width:34px;height:34px}
+.sm .mddet{flex-basis:208px;padding:6px 8px;gap:3px}.sm .mdhead b{font-size:15.5px}.sm .mdd{font-size:12px}.sm .mdt{font-size:11.5px}.sm .mdc{min-height:74px}.sm .mdc>span{font-size:11px}.sm .mdgrid{grid-template-columns:repeat(3,minmax(0,1fr))}.sm .mdfoot .go,.sm .mdfoot .ghost{height:38px;min-height:38px;font-size:15px;padding:0 9px}
+
+/* Player card */
+.pclft{flex:none;display:flex;flex-direction:column;align-items:center;gap:7px;justify-content:center}
+.pclft canvas{display:block}
+.pcrt{flex:1;min-width:0;min-height:0;display:flex;flex-direction:column;gap:5px}
+.pcgrid{flex:1;min-height:0;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:5px;align-content:start;position:relative}
+.pcc{display:flex;flex-direction:column;padding:3px;text-align:left;min-width:0}
+.pcc canvas{display:block;width:100%;height:auto}
+.pcc span{display:flex;justify-content:space-between;align-items:baseline;gap:5px;padding:2px 4px 1px}.pcc b{font-size:13px;font-weight:600;line-height:1.1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.pcc small{font-size:11.5px;font-weight:500;color:var(--mut);white-space:nowrap}.pcc small.cost{color:var(--gold);font-weight:600}
+.pcc.lockd canvas{filter:saturate(.5) brightness(.65)}.pcc.eq,.pct.eq{--line:var(--acc)}.pcc.sel{--line:#fff}.pcc.eq small{color:var(--acc)}
+.pct{min-height:42px;padding:0 12px;font-size:14.5px;font-weight:600;text-align:left}
+.pcfoot{flex:none;display:flex;align-items:center;justify-content:space-between;gap:8px}.pcfoot p{margin:0;font-size:13px;line-height:1.15;color:var(--mut);min-width:0}.pcfoot b{color:var(--txt);font-weight:600}.pcfoot .go{height:40px;font-size:18px;padding:0 13px;white-space:nowrap}.pcfoot .go .mks{font-family:var(--ui);font-size:15px;color:inherit;margin-left:6px;letter-spacing:0}.pcfoot .go .mks i{background:currentColor}
+.sm .pcc small,.sm .pcc b{font-size:11.5px}.sm .pcfoot .go{height:36px;font-size:15px;padding:0 9px}.sm .pcfoot p{font-size:12px}.sm .pclft .ghost{min-height:38px;font-size:14px}
+/* Origins */
+.orpick{flex:0 0 180px;min-height:0;grid-auto-rows:44px;align-content:start;position:relative}
+.orview{--cut:12px;flex:1;min-width:0;min-height:0;display:flex;flex-direction:column;gap:5px;padding:8px 10px}
+.orart{flex:1;min-height:0;display:grid;place-items:center;overflow:hidden}.orart canvas{display:block;max-width:100%;max-height:100%;width:auto;height:auto;object-fit:contain}.orart.lockd canvas{filter:blur(9px) brightness(.28) saturate(0)}
+.ortxt{flex:none;font-size:14.5px;line-height:1.18;min-height:17px}
+.ornav{flex:none;display:flex;align-items:center;justify-content:space-between;gap:8px}.ornav span{font-size:12.5px;font-weight:500;color:var(--mut)}
+.sm .orpick{flex-basis:150px;grid-auto-rows:40px}.sm .ortxt{font-size:13px}.sm .ornav .tok{min-height:36px}
+/* Versus card */
+.vtag{position:relative;display:block;width:124px;height:32px;margin-top:3px;overflow:hidden;font-style:normal}
+.vtag canvas{position:absolute;inset:0;width:100%!important;height:100%!important}
+.vtag b{position:relative;display:block;font-family:var(--ui)!important;font-size:12.5px!important;font-weight:600;letter-spacing:0;text-transform:none;color:#fff;line-height:1.05;padding-top:3px;text-shadow:0 1px 2px #000;max-width:none!important;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.vtag small{position:relative;display:block;font-size:10.5px;font-weight:600;line-height:1.05;color:var(--gold);text-shadow:0 1px 2px #000;white-space:nowrap}
+.sm .vtag{width:96px;height:27px;margin-top:2px}.sm .vtag b{font-size:11px!important;padding-top:2px}.sm .vtag small{font-size:9.5px}
+.rpins{flex:none;display:flex;gap:1px}.rpins canvas{display:block}
+.bgrid.los{align-content:start}
+.mrow:has(#mModes) small{font-size:11px}
+.egrid{grid-template-rows:minmax(0,1fr);height:min(100%,430px)}.eright{height:100%}.ecol{max-height:100%}
+#specBar span{background:rgba(6,8,13,.78);padding:3px 12px}
 </style>
 </head>
 <body>
@@ -1046,7 +1198,7 @@ button.down{transform:translateY(1px) scale(.955);filter:brightness(1.28);transi
         <button class="tog" id="pSfx">Effects</button>
         <button class="ghost" id="pTgt"></button>
       </div>
-      <div class="board scroll" id="pBoard"></div>
+      <div class="pright"><div class="pvox hide" id="pVox"></div><div class="board scroll" id="pBoard"></div></div>
     </div>
   </div>
 
@@ -1062,10 +1214,16 @@ button.down{transform:translateY(1px) scale(.955);filter:brightness(1.28);transi
         <p class="mks hide" id="endMk"><i></i><span id="endMks">0</span> Marks earned<small id="endBal" style="color:var(--mut);font-weight:500;margin-left:6px"></small></p>
         <div class="row"><button class="go" id="again">Play again</button><button class="ghost" id="tolobby">Main menu</button></div>
       </div>
-      <div class="eright"><div class="mvp hide" id="endMvp"></div><div class="board scroll" id="eBoard"></div><div class="emiss hide" id="endMiss"></div></div>
+      <div class="eright"><div class="mvprow"><div class="mvp hide" id="endMvp"></div><div class="mvp svp hide" id="endSvp"></div></div><div class="eacts"><button class="dk potgb hide" id="endPotg"><span><em>Play of the Game</em><b id="endPotgT"></b></span><i>Watch</i></button><button class="tok eshare" id="endShare">Share</button></div><div class="board scroll" id="eBoard"></div><p class="ebonus hide" id="endBonus"></p><div class="emiss hide" id="endMiss"></div></div>
     </div>
     <div id="rankup" class="hide" role="status"></div>
   </div>
+
+  <div id="potgUI" class="hide"><button class="tok" id="potgSkip">Skip</button></div>
+
+  <div id="specBar" class="hide" role="group" aria-label="Spectating"><button class="tok" id="spPrev" aria-label="Previous player">Prev</button><span><small>Watching</small><b id="spName"></b></span><button class="tok" id="spNext" aria-label="Next player">Next</button></div>
+
+  <div id="vox" class="hide" aria-live="off"></div>
 
   <div id="lobby" class="hide">
     <div class="ltop">
@@ -1083,12 +1241,13 @@ button.down{transform:translateY(1px) scale(.955);filter:brightness(1.28);transi
     <div class="roster scroll" id="picks"></div>
     <div class="hero"><canvas id="big" width="520" height="520"></canvas><div class="herotag"><div class="ladder" id="ladder"></div><p class="lad" id="wTier"></p></div></div>
     <div class="who">
-      <div class="whead"><div class="nm"><h2 id="wN"></h2></div><div class="seg wtab" id="wTab"><button data-t="builds">Builds</button><button data-t="kit">Abilities</button><button data-t="prof">Lane</button></div></div>
+      <div class="whead"><div class="nm"><h2 id="wN"></h2></div><div class="seg wtab" id="wTab"><button data-t="builds">Builds</button><button data-t="kit">Abilities</button><button data-t="prof">Lane</button><button data-t="lo">Loadout</button></div></div>
       <p class="wsub"><span class="blurb" id="wB"></span><span class="best" id="wBest"></span></p>
       <div class="lpass" id="wP"></div>
       <div class="lpane" id="wBuilds"></div>
       <div class="lpane hide" id="wKit"><div class="abilbox"><div class="abil scroll" id="wA"></div></div></div>
       <div class="lpane hide" id="wProf"></div>
+      <div class="lpane hide" id="wLo"></div>
     </div>
     <div class="lbar">
       <div class="team t0" role="group" aria-label="Heroes"><div class="seats" id="s0"></div></div>
@@ -1111,13 +1270,15 @@ button.down{transform:translateY(1px) scale(.955);filter:brightness(1.28);transi
         <button class="mb stick" id="mJoin" style="--i:3"><b>Join</b><small>Got a code? Type it in</small></button>
       </div>
       <div class="mrow">
-        <button class="mb ml stick" id="mPrac" style="--i:4"><b>Practice</b></button>
+        <button class="mb ml stick" id="mModes" style="--i:4"><b>Modes</b><small id="mMode" class="hide"></small></button>
         <button class="mb ml stick" id="mMiss" style="--i:5"><b>Missions</b><small id="mMissN"></small></button>
         <button class="mb ml stick" id="mStore" style="--i:6"><b>Store</b><small id="mMarks"></small></button>
       </div>
       <div class="mrow">
-        <button class="mb ml stick" id="mHow" style="--i:7"><b>How to play</b></button>
-        <button class="mb ml stick" id="mSet" style="--i:8"><b>Settings</b></button>
+        <button class="mb ml stick" id="mArm" style="--i:7"><b>Armory</b></button>
+        <button class="mb ml stick" id="mProf" style="--i:8"><b>Profile</b></button>
+        <button class="mb ml stick" id="mHow" style="--i:9" aria-label="How to play"><b>Learn</b></button>
+        <button class="mb ml stick" id="mSet" style="--i:10"><b>Settings</b></button>
       </div>
     </div>
   </div>
@@ -1147,7 +1308,7 @@ button.down{transform:translateY(1px) scale(.955);filter:brightness(1.28);transi
         <div class="rcol" id="rB"></div>
       </div>
     </div>
-    <div class="rfoot stick" style="--i:2"><button class="ghost" id="rShuf">Shuffle teams</button><p class="stat2" id="rHint"></p><button class="go" id="rFlip">Flip for sides</button></div>
+    <div class="rfoot stick" style="--i:2"><button class="ghost" id="rShuf">Shuffle teams</button><button class="ghost" id="rMode"></button><button class="tog hide" id="rVoice">Voice</button><p class="stat2" id="rHint"></p><button class="go" id="rFlip">Flip for sides</button></div>
   </div>
 
   <div id="ban" class="hide" role="dialog" aria-label="Ban phase">
@@ -1191,6 +1352,11 @@ button.down{transform:translateY(1px) scale(.955);filter:brightness(1.28);transi
           <button class="ghost" id="sEdit">Move HUD buttons</button>
           <div class="setrow wide"><span>Aim speed</span><div class="seg" id="sAim"><button data-a=".7">1</button><button data-a=".85">2</button><button data-a="1">3</button><button data-a="1.25">4</button><button data-a="1.6">5</button></div></div>
         </div></section>
+        <section class="setsec"><h4>Team voice</h4><div class="setgrid">
+          <button class="tog" id="sVoice">Voice chat</button>
+          <div class="setrow"><span>Microphone</span><div class="seg" id="sVMode"><button data-m="open">Open</button><button data-m="ptt">Push to talk</button></div></div>
+        </div><p class="tip" id="sVMsg"></p></section>
+        <section class="setsec"><h4>Accessibility</h4><button class="tog" id="sCb">Colorblind palette</button></section>
         <section class="setsec"><h4>Targeting</h4>
           <div class="setrow"><span>Focus the enemy with<small>Tap-to-fire and the main attack take players first, then what is around you</small></span><div class="seg" id="sTgt"><button data-v="hp" data-snd="targetPref">Least health</button><button data-v="pct" data-snd="targetPref">Lowest %</button></div></div>
         </section>
@@ -1239,6 +1405,28 @@ button.down{transform:translateY(1px) scale(.955);filter:brightness(1.28);transi
       <div class="mscol stick"><h4>Today</h4><div class="mslist" id="msDaily"></div></div>
       <div class="mscol stick" style="--i:1"><h4 id="msCT"></h4><div class="mspick" id="msPick"></div><div class="mslist" id="msChamp"></div></div>
     </div>
+  </div>
+
+  <div id="armory" class="scr hide" role="dialog" aria-label="Armory">
+    <div class="rtop"><button class="bk" id="arBack" aria-label="Back"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 4 7 12l8 8" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/></svg>Back</button><h1>Armory</h1><p class="stat">Pick a champion in the lobby and their loadout applies itself.</p><span class="mks" style="font-size:20px"><i></i><span id="arMarks">0</span></span></div>
+    <div class="arbody">
+      <div class="arslots scroll stick" id="arSlots"></div>
+      <div class="plate ared stick" style="--i:1"><div class="arscr scroll" id="arEd"></div></div>
+    </div>
+  </div>
+
+  <div id="modes" class="scr hide" role="dialog" aria-label="Game modes">
+    <div class="rtop"><button class="bk" id="moBack" aria-label="Back"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 4 7 12l8 8" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/></svg>Back</button><h1>Modes</h1><p class="stat">Bots fill every empty seat. Friends can play these from a room too.</p></div>
+    <div class="mogrid stick" id="moGrid"></div>
+  </div>
+
+  <div id="profile" class="scr hide" role="dialog" aria-label="Profile">
+    <div class="rtop"><button class="bk" id="pfBack" aria-label="Back"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 4 7 12l8 8" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/></svg>Back</button><h1>Profile</h1><span class="spring"></span><div class="seg" id="pfTab"><button data-p="card">Card</button><button data-p="stats">Stats</button><button data-p="hist">History</button><button data-p="medals">Medals</button><button data-p="origin">Origins</button><button data-p="recent">Players</button></div></div>
+    <div class="pfbody" id="pfBody"></div>
+  </div>
+
+  <div id="nameD" class="over hide" role="dialog" aria-label="Change name">
+    <div class="plate nbox namebox"><h3>Your name</h3><div class="xrow"><input id="nIn" maxlength="16" autocomplete="off" autocapitalize="words" spellcheck="false" aria-label="Your name"><button class="ghost" id="nRoll" aria-label="Random name">Random</button></div><div class="row"><button class="ghost" id="nNo">Cancel</button><button class="go" id="nOk">Save</button></div></div>
   </div>
 
   <div id="notice" class="over hide" role="alertdialog" aria-label="Notice">
@@ -6545,12 +6733,12 @@ const Art = (() => {
 
   // ---------- origin comics: three panels per champion, flat ink and one accent ----------
   const ORIGINS = {
-    vesper: [['rooftop', 'wide', 'From the clock tower Vesper counted the streetlights. Each night, fewer came back on.'], ['alley', 'mid', 'She learned why: the Kingpin was buying the dark, one block at a time.'], ['rooftop', 'close', 'So she took a long rifle and a longer view. Nobody buys the dark on her street.']],
+    vesper: [['rooftop', 'wide', 'From the clock tower Longshot counted the streetlights. Each night, fewer came back on.'], ['alley', 'mid', 'She learned why: the Kingpin was buying the dark, one block at a time.'], ['rooftop', 'close', 'So she took a long rifle and a longer view. Nobody buys the dark on her street.']],
     kade: [['stage', 'mid', 'Captain Riposte was a fencing-hall joke: all flourish, no blood.'], ['alley', 'wide', 'Then six men came for the hall’s takings, and every one of them lunged first.'], ['stage', 'close', 'He still bows. The bow is now a warning.']],
-    ione: [['nave', 'wide', 'Ione catalogued the sealed archive under the old cathedral. One book read her back.'], ['storm', 'mid', 'It left a mark on her that would pass to anything she touched.'], ['nave', 'close', 'She has since learned which things to touch, and when to let the mark break.']],
-    solenne: [['ward', 'wide', 'In the blackout winter, Solenne ran the only lit ward in the Lower Mint.'], ['ward', 'mid', 'She ran out of medicine in a week. She did not run out of patients.'], ['nave', 'close', 'What she found instead has to be aimed. She has never once been allowed to miss.']],
-    sable: [['alley', 'mid', 'Sable took messages for whoever paid. Then a message named her sister.'], ['rooftop', 'wide', 'She delivered the reply in person, to all eleven addresses.'], ['alley', 'close', 'The Heroes offered her a badge. She took the work and left the badge.']],
-    gravel: [['foundry', 'wide', 'Gravel hauled ingots at the Great Press for thirty years, hook in hand.'], ['foundry', 'mid', 'When the Press came down, he held the gantry until the last shift got out.'], ['rooftop', 'close', 'They say his back never straightened. His hook never needed it to.']],
+    ione: [['nave', 'wide', 'Starling catalogued the sealed archive under the old cathedral. One book read her back.'], ['storm', 'mid', 'It left a mark on her that would pass to anything she touched.'], ['nave', 'close', 'She has since learned which things to touch, and when to let the mark break.']],
+    solenne: [['ward', 'wide', 'In the blackout winter, Dawnbringer ran the only lit ward in the Lower Mint.'], ['ward', 'mid', 'She ran out of medicine in a week. She did not run out of patients.'], ['nave', 'close', 'What she found instead has to be aimed. She has never once been allowed to miss.']],
+    sable: [['alley', 'mid', 'Nightfall took messages for whoever paid. Then a message named her sister.'], ['rooftop', 'wide', 'She delivered the reply in person, to all eleven addresses.'], ['alley', 'close', 'The Heroes offered her a badge. She took the work and left the badge.']],
+    gravel: [['foundry', 'wide', 'Bulwark hauled ingots at the Great Press for thirty years, hook in hand.'], ['foundry', 'mid', 'When the Press came down, he held the gantry until the last shift got out.'], ['rooftop', 'close', 'They say his back never straightened. His hook never needed it to.']],
     deadbolt: [['alley', 'wide', 'Deadbolt fitted locks for people who were afraid. The pay was excellent.'], ['ward', 'mid', 'He noticed fear pays better when you sell it twice.'], ['alley', 'close', 'Now the wire goes up first. The bill comes after.']],
     duelist: [['stage', 'wide', 'The Duelist fought for the amusement of the Villains’ private clubs.'], ['stage', 'mid', 'Ninety-nine salutes. Ninety-nine bodies. The audience asked for more.'], ['alley', 'close', 'He stopped wondering who he was fighting for. Only how well.']],
     hex: [['nave', 'mid', 'Hex was a clerk of debts, and she wrote very neatly.'], ['storm', 'wide', 'One ledger was written in something that was not ink. It balanced anyway.'], ['nave', 'close', 'Every curse is an entry. She collects with interest.']],
@@ -8462,6 +8650,26 @@ const Sound = (() => {
     emote() { tone(880, .12, 'sine', .06, 1.3, 1); },
     medal() { tone(1047, .4, 'triangle', .08, 1, 1); FX.clink(1.1); },
     medalMvp() { [659, 880, 1109, 1319, 1760].forEach((f, i) => tone(f, .44, 'triangle', .08, 1, 1, i * .07)); glint(.12, .24); },
+    potgStart() { tone(330, .5, 'sawtooth', .06, 2, 1); sam(B.boom, 1.2, .2); tone(1320, .5, 'triangle', .06, 1, 1, .22); },
+    potgSkip() { tone(600, .12, 'triangle', .05, .7); },
+    potgEnd() { tone(880, .4, 'triangle', .05, .75, 1); },
+    medalBronze() { tone(740, .4, 'triangle', .08, 1, 1); FX.clink(.9); },
+    medalSilver() { tone(880, .45, 'triangle', .08, 1, 1); tone(1320, .5, 'triangle', .07, 1, 1, .12); FX.clink(1.1); },
+    medalGold() { [659, 880, 1109, 1319, 1760].forEach((f, i) => tone(f, .7, 'triangle', .08, 1, 1, i * .09)); sam(B.boom, 1.5, .16); },
+    medalPin() { tone(1200, .12, 'sine', .06, 1.2, 1); },
+    medalUnpin() { tone(800, .12, 'sine', .05, .8); },
+    loadoutApply() { tone(520, .12, 'triangle', .06, 1.4, 1); tone(780, .16, 'triangle', .06, 1, 1, .08); },
+    loadoutBuy() { [523, 659, 784].forEach((f, i) => tone(f, .3, 'triangle', .07, 1, 1, i * .07)); },
+    evolveAuto() { tone(660, .22, 'sine', .05, 1.5, 1); },
+    modeSelect() { tone(440, .14, 'triangle', .06, 1.5, 1); },
+    rematchVote() { tone(587, .16, 'triangle', .07, 1, 1); tone(880, .2, 'triangle', .07, 1, 1, .09); },
+    shareDone() { tone(988, .2, 'sine', .06, 1.2, 1); },
+    voiceOn() { tone(500, .1, 'sine', .05, 1.5); }, voiceOff() { tone(600, .1, 'sine', .05, .7); }, voiceJoin() { tone(700, .14, 'sine', .05, 1.25, 1); },
+    pttDown() { tone(760, .05, 'square', .025); }, pttUp() { tone(520, .05, 'square', .02); },
+    cardEquip() { tone(620, .16, 'triangle', .06, 1.3, 1); },
+    originTurn() { hiss('highpass', 3200, .7, .06, .09); },
+    spectateSwitch() { tone(420, .08, 'triangle', .04, 1.3); },
+    medal_bronze() { FX.medalBronze(); }, medal_silver() { FX.medalSilver(); }, medal_gold() { FX.medalGold(); }, potg_sting() { FX.potgStart(); }, potg_shutter() { hiss('highpass', 4200, .7, .1, .05); },
     siren() { for (let i = 0; i < 6; i++) tone(i % 2 ? 560 : 720, .22, 'triangle', .06, 1.06, 1, i * .24); },
     powerDown() { tone(460, 1, 'sawtooth', .06, .1, 1); hiss('lowpass', 700, .5, .12, .5); sam(B.boom, 1.5, .16); },
     dropLand() { sam(B.boom, 1.1, .3); tone(240, .3, 'triangle', .09, .55, 1); },
@@ -11216,7 +11424,7 @@ const { FX, fxEvent } = (() => {
 const { Ctl, applyInput, aimDir } = (() => {
   const Ctl = {
     p: new Map(), stick: null, aim: null, atk: null, atkMode: 'champ', beacon: null, ping: null, mapHold: null,
-    reset() { this.p.clear(); this.stick = null; this.aim = null; this.atk = null; this.atkMode = 'champ'; this.beacon = null; this.ping = null; this.mapHold = null; },
+    reset() { if (this.talking) { this.talking = false; Voice.talk(false); } this.p.clear(); this.stick = null; this.aim = null; this.atk = null; this.atkMode = 'champ'; this.beacon = null; this.ping = null; this.mapHold = null; },
     pt(e) { return rotated ? { x: e.clientY - stageX, y: physW - e.clientX } : { x: e.clientX - stageX, y: e.clientY }; },
   };
   const near = (b, p, pad) => Math.hypot(p.x - b.x, p.y - b.y) < b.r + pad;
@@ -11382,6 +11590,8 @@ const { Ctl, applyInput, aimDir } = (() => {
       if (Hud.qcOpen() && !near(U.chat, p, 8)) Hud.qcClose();
       if (Ctl.aim && near(U.cancel, p, 6)) { cancelAim(); return; }
       if (near(U.pause, p, 10)) { Hud.squash('pause'); Hud.openPause(); return; }
+      if (G.spectator) return; // a spectator's only control here is the menu
+      if (Hud.pttShown() && near(U.ptt, p, 8)) { Hud.squash('ptt'); Ctl.p.set(e.pointerId, { role: 'ptt' }); Ctl.talking = true; Voice.talk(true); Sound.play('tap'); return; }
       if (near(U.shop, p, 8)) { Hud.squash('shop'); Hud.toggleShop(); return; }
       if (near(U.recall, p, 8)) { Hud.squash('recall'); if (me.alive) { me.q.push({ t: 'recall' }); Sound.play('recall'); } return; }
       if (near(U.chat, p, 8)) { Hud.squash('chat'); Hud.qcToggle(); return; }
@@ -11444,6 +11654,7 @@ const { Ctl, applyInput, aimDir } = (() => {
     const r = Ctl.p.get(e.pointerId); if (!r) return;
     Ctl.p.delete(e.pointerId);
     if (r.role === 'stick') Ctl.stick = null;
+    else if (r.role === 'ptt') { Ctl.talking = false; Voice.talk(false); }
     else if (r.role === 'atk') { Ctl.atk = null; Ctl.atkMode = 'champ'; G.me.atkMode = 'champ'; }
     else if (r.role === 'map') {
       const H_ = Ctl.mapHold;
@@ -13257,7 +13468,7 @@ const Hud = {
     ab: [{ x: 0, y: 0, r: 33 }, { x: 0, y: 0, r: 33 }, { x: 0, y: 0, r: 37 }],
     atkM: { x: 0, y: 0, r: 19 }, atkT: { x: 0, y: 0, r: 19 }, beacon: { x: 0, y: 0, r: 20 },
     cancel: { x: 0, y: 70, r: 34 }, pause: { x: 0, y: 20, r: 14 },
-    shop: { x: 63, y: 76, r: 17 }, recall: { x: 106, y: 76, r: 17 }, ping: { x: 149, y: 76, r: 17 }, chat: { x: 192, y: 76, r: 17 },
+    shop: { x: 63, y: 76, r: 17 }, recall: { x: 106, y: 76, r: 17 }, ping: { x: 149, y: 76, r: 17 }, chat: { x: 192, y: 76, r: 17 }, ptt: { x: 235, y: 76, r: 17 },
     map: { x: 0, y: 6, w: 140, h: 84 },
     stripX: 400, miniR: 8, miniGap: 20, midHalf: 40, hpW: 104, compact: false,
   },
@@ -13265,7 +13476,9 @@ const Hud = {
 
 const { hud, initHud, hudDraw, uiEvent } = (() => {
   const U = Hud.ui, HPI = Math.PI / 2, UIFONT = '"Barlow Semi Condensed","Arial Narrow","Roboto Condensed","DejaVu Sans Condensed",sans-serif';
-  const { INK, PAPER, MUTE, GOLD, STEEL, BLUE, NAVY, GUN, CRIM, ACID } = Deco;
+  const { INK, PAPER, MUTE, GOLD, STEEL, NAVY, GUN, ACID } = Deco;
+  // Team colours follow the colorblind palette, so these two are live (see the Art.onCB hook below).
+  let BLUE = Deco.BLUE, CRIM = Deco.CRIM, LOSS_BAR = '#7d1626';
   const WHITE = '#ffffff', GLASS = 'rgba(8,10,16,.86)', HAIR = 'rgba(148,167,194,.34)', WELL = 'rgba(148,167,194,.2)', PX = 65, PY = 27, PR = 21, HP_X = 92, GOLD_X = 101, GOLD_Y = 44;
   const fcache = {};
   const fw = (w, s) => fcache[w * 1000 + s] || (fcache[w * 1000 + s] = `${w} ${s}px ${UIFONT}`);
@@ -13276,7 +13489,9 @@ const { hud, initHud, hudDraw, uiEvent } = (() => {
   const clamp01 = v => v < 0 ? 0 : v > 1 ? 1 : v;
   const maxLvl = () => Sim.MAX_LEVEL || Sim.MAX_LVL || 15;
   const outBack = t => { const k = 1.9; t -= 1; return 1 + (k + 1) * t * t * t + k * t * t; };
-  const SIDE_ACC = [GOLD, CRIM], TEAM_DOT = [BLUE, CRIM];
+  const SIDE_ACC = [GOLD, CRIM], TEAM_DOT = [BLUE, CRIM]; // TEAM_DOT is relative: [0] you and your allies, [1] enemies
+  // A spectator has full vision, on the minimap and everywhere else the HUD asks what can be seen.
+  const sees = (s, u) => !!G.spectator || Sim.canSee(s, G.me.team, u);
 
   let H = null;
 
@@ -13313,8 +13528,8 @@ const { hud, initHud, hudDraw, uiEvent } = (() => {
   // ---------- layout ----------
   // Every movable control, with its default offset from the attack coin (or its fixed spot) at full size.
   const CLUSTER = { atk: [0, 0, 46], atkM: [-66, -20, 19], atkT: [-26, -64, 19], ab0: [-106, 20, 33], ab1: [-82, -76, 33], ab2: [2, -114, 37], beacon: [-162, -52, 20] };
-  const CORNER = { shop: [63, 76, 17], recall: [106, 76, 17], ping: [149, 76, 17], chat: [192, 76, 17] };
-  const LABELS = { atk: 'Attack', atkM: 'Minion', atkT: 'Tower', ab0: 'Ability 1', ab1: 'Ability 2', ab2: 'Ultimate', beacon: 'Beacon', shop: 'Shop', recall: 'Recall', ping: 'Ping', chat: 'Chat' };
+  const CORNER = { shop: [63, 76, 17], recall: [106, 76, 17], ping: [149, 76, 17], chat: [192, 76, 17], ptt: [235, 76, 17] };
+  const LABELS = { atk: 'Attack', atkM: 'Minion', atkT: 'Tower', ab0: 'Ability 1', ab1: 'Ability 2', ab2: 'Ultimate', beacon: 'Beacon', shop: 'Shop', recall: 'Recall', ping: 'Ping', chat: 'Chat', ptt: 'Talk' };
   const hudOf = () => save.hud || (save.hud = { left: false, pos: {} });
   const left = () => !!hudOf().left;
   // Default position of a control for this screen and handedness, before the player's own offset.
@@ -13338,7 +13553,7 @@ const { hud, initHud, hudDraw, uiEvent } = (() => {
     stage.classList.toggle('lh', left());
     put2(U.atk, 'atk'); put2(U.atkM, 'atkM'); put2(U.atkT, 'atkT'); put2(U.beacon, 'beacon');
     put2(U.ab[0], 'ab0'); put2(U.ab[1], 'ab1'); put2(U.ab[2], 'ab2');
-    put2(U.shop, 'shop'); put2(U.recall, 'recall'); put2(U.ping, 'ping'); put2(U.chat, 'chat');
+    put2(U.shop, 'shop'); put2(U.recall, 'recall'); put2(U.ping, 'ping'); put2(U.chat, 'chat'); put2(U.ptt, 'ptt');
     const cx = VW - 250; U.cancel.x = left() ? VW - cx : cx; U.cancel.y = 122;
     const M = U.map; M.w = U.compact ? 88 : 112; M.h = Math.round(M.w * Sim.H / Sim.W); M.x = VW - 44 - M.w; M.y = 6;
     U.pause.x = M.x - 21; U.pause.y = 20;
@@ -13346,6 +13561,7 @@ const { hud, initHud, hudDraw, uiEvent } = (() => {
     U.hpW = U.compact ? 84 : 104;
     if (H) H.mapC = H.fogC = null;
   }
+  Hud.pttShown = () => typeof Voice !== 'undefined' && Voice.state === 'on' && Voice.mode === 'ptt' && !!G && !G.spectator;
   Hud.left = left;
   Hud.layoutKeys = Object.keys(LABELS).map(k => [k, LABELS[k]]);
   Hud.basePos = basePos;
@@ -13370,11 +13586,12 @@ const { hud, initHud, hudDraw, uiEvent } = (() => {
       hpTrail: me.hp, hpHold: 0, hurt: 0, hpPrev: me.hp, goldShow: me.gold, goldStr: String(Math.floor(me.gold)), goldGain: 0, goldGainT: 0, goldGainStr: '', lvlFx: 0, first: save.hints < 1, guide: save.hints < 2, netStr: '', netKey: -2,
       prev: [0, 0, 0], cdMax: [1, 1, 1], recPrev: [0, 0, 0], recMax: [1, 1, 1], pop: [0, 0, 0], press: [0, 0, 0], deny: [0, 0, 0], flash: [0, 0, 0], spark: [.4, 1.2, 2.0],
       atkPress: 0, atkMax: 1, atkPrev: 0, cancelIn: 0,
-      feed: [], banner: null, queue: [], pings: [], pingAt: {}, towerAt: -99, mapC: null, kills: [s.kills[0], s.kills[1]], killBump: [0, 0], lvl: me.lvl, lvlBump: 0, sq: { shop: 0, recall: 0, pause: 0, ping: 0, beacon: 0, chat: 0 }, emotes: [], sayLog: [], recap: null, bountyShow: 0, objK: '', objStr: '', objSub: '', buffs: [], svKey: '',
+      feed: [], banner: null, queue: [], pings: [], pingAt: {}, towerAt: -99, mapC: null, kills: [s.kills[0], s.kills[1]], killBump: [0, 0], lvl: me.lvl, lvlBump: 0, sq: { shop: 0, recall: 0, pause: 0, ping: 0, beacon: 0, chat: 0, ptt: 0 }, emotes: [], sayLog: [], recap: null, bountyShow: 0, objK: '', objStr: '', objSub: '', buffs: [], svKey: '',
       clockSec: -1, clockStr: '0:00', hoardKey: -2, hoardStr: '', frame: 0,
       hint: save.hints < 2 ? { i: 0, t: 0, n: 0 } : null,
     };
     g.goldBump = 0; g.goldAnchor = { x: GOLD_X, y: GOLD_Y };
+    const lo = !G.spectator && Hud.loadoutFor && Hud.loadoutFor(me.champ); if (lo && lo.path && pathsOf(me)[lo.path]) H.shopPath = lo.path;
     me.q.push({ t: 'pref', v: save.targetPref === 'pct' ? 'pct' : 'hp' });
     hud();
   }
@@ -13534,7 +13751,7 @@ const { hud, initHud, hudDraw, uiEvent } = (() => {
     // The shop only draws the eye when something can be bought.
     if ((H.shopHotT -= dt) <= 0) { H.shopHotT = .25; H.shopHot = canAfford(me); }
     const open = shopOpen(), hot = H.shopHot && !open;
-    if (!me.alive && H.recap) return;
+    if ((!me.alive && H.recap) || G.spectator) return;
     smallCoin(U.shop, hot || open, 'Shop', drawUpgrade, H.sq.shop, dt, 'shop');
     if (hot) {
       if (!calm) { const p = (Math.sin(H.t * 3.6) + 1) / 2; arcLine(U.shop.x, U.shop.y, U.shop.r + 2 + p * 3, 0, TAU, SIDE_ACC[side], 1.2); }
@@ -13545,6 +13762,12 @@ const { hud, initHud, hudDraw, uiEvent } = (() => {
     if (chan) arcLine(U.recall.x, U.recall.y, U.recall.r + 2, -HPI, -HPI + TAU * (1 - chan.t / chan.total), SIDE_ACC[side], 2.5);
     smallCoin(U.ping, !!Ctl.ping, 'Ping', drawFlag, H.sq.ping, dt, 'ping');
     smallCoin(U.chat, qcOpen(), 'Chat', drawBubble, H.sq.chat, dt, 'chat');
+    if (Hud.pttShown()) { smallCoin(U.ptt, Ctl.talking, 'Talk', drawMic, H.sq.ptt, dt, 'ptt'); if (Ctl.talking) arcLine(U.ptt.x, U.ptt.y, U.ptt.r + 3, 0, TAU, SIDE_ACC[side], 2); }
+  }
+  function drawMic(x, y, col) {
+    ctx.fillStyle = col; ctx.strokeStyle = col; ctx.lineWidth = 1.6; ctx.lineCap = 'butt';
+    ctx.beginPath(); ctx.roundRect(x - 3, y - 8, 6, 11, 3); ctx.fill();
+    ctx.beginPath(); ctx.arc(x, y - 1.5, 6, .15, Math.PI - .15); ctx.moveTo(x, y + 5); ctx.lineTo(x, y + 8.5); ctx.stroke();
   }
 
   function smallCoin(B, hot, name, icon, sq, dt, key) {
@@ -13618,7 +13841,7 @@ const { hud, initHud, hudDraw, uiEvent } = (() => {
     const f = clamp01(H.hope / 100), mx = x + bw * f, pulse = calm ? 1 : .7 + Math.sin(H.t * 5) * .3;
     ctx.fillStyle = GLASS; ctx.fillRect(x - 1, y - 1, bw + 2, h + 2);
     ctx.fillStyle = high ? GOLD : '#2f5a9e'; ctx.fillRect(x, y, mx - x, h);
-    ctx.fillStyle = low ? CRIM : '#7d1626'; ctx.fillRect(mx, y, x + bw - mx, h);
+    ctx.fillStyle = low ? CRIM : LOSS_BAR; ctx.fillRect(mx, y, x + bw - mx, h);
     if (high || low) { ctx.globalAlpha = pulse * .4; ctx.fillStyle = '#fff'; ctx.fillRect(high ? x : mx, y, high ? mx - x : x + bw - mx, h); ctx.globalAlpha = 1; }
     ctx.fillStyle = INK; ctx.fillRect(x + bw * .3 - .5, y, 1, h); ctx.fillRect(x + bw * .7 - .5, y, 1, h);
     // The marker coin flips as the balance tips.
@@ -13657,11 +13880,11 @@ const { hud, initHud, hudDraw, uiEvent } = (() => {
     for (let i = H.pings.length - 1; i >= 0; i--) {
       const p = H.pings[i]; p.t += dt;
       if (p.t >= 1) { H.pings[i] = H.pings[H.pings.length - 1]; H.pings.pop(); continue; }
-      disc(M.x + p.x * kx, M.y + p.y * ky, 3 + p.t * 12); ctx.strokeStyle = `rgba(236,58,82,${1 - p.t})`; ctx.lineWidth = 1.5; ctx.stroke();
+      disc(M.x + p.x * kx, M.y + p.y * ky, 3 + p.t * 12); ctx.globalAlpha = 1 - p.t; ctx.strokeStyle = CRIM; ctx.lineWidth = 1.5; ctx.stroke(); ctx.globalAlpha = 1;
     }
     drawMapPings(M, kx, ky);
     for (const c of s.champs) {
-      if (!c.alive || !Sim.canSee(s, me.team, c)) continue;
+      if (!c.alive || !sees(s, c)) continue;
       const mine = c === me, X = M.x + c.x * kx, Y = M.y + c.y * ky;
       if (c.team !== me.team) H.lastSeen.set(c.id, { x: c.x, y: c.y, t: s.t });
       disc(X, Y, mine ? 4.2 : 3.2); ctx.fillStyle = mine ? PAPER : TEAM_DOT[c.team === me.team ? 0 : 1]; ctx.fill(); ctx.strokeStyle = INK; ctx.lineWidth = 1; ctx.stroke();
@@ -13702,7 +13925,7 @@ const { hud, initHud, hudDraw, uiEvent } = (() => {
     ctx.globalAlpha = 1;
     for (const c of s.champs) {
       if (c.team === me.team || !c.alive) continue;
-      const vis = Sim.canSee(s, me.team, c), L0 = vis ? c : H.lastSeen.get(c.id);
+      const vis = sees(s, c), L0 = vis ? c : H.lastSeen.get(c.id);
       if (!L0 || (!vis && s.t - L0.t > 8)) continue;
       if ((L0.x - me.x) * (L0.x - me.x) + (L0.y - me.y) * (L0.y - me.y) > range * range) continue;
       const cx0 = M.x + L0.x * kx, cy0 = M.y + L0.y * ky;
@@ -13712,7 +13935,7 @@ const { hud, initHud, hudDraw, uiEvent } = (() => {
   }
   // Vision fog: a tiny layer, refreshed a few times a second and scaled up.
   function drawFog(dt, s, me, M, kx, ky) {
-    if (!Sim.visionSources) return;
+    if (!Sim.visionSources || G.spectator) return;
     if (!H.fogC) { H.fogC = Art.cv(M.w, M.h); H.fogT = 0; }
     H.fogT -= dt;
     if (H.fogT <= 0) {
@@ -14091,7 +14314,7 @@ const { hud, initHud, hudDraw, uiEvent } = (() => {
 
   // ---------- frame ----------
   function hudDraw(dt) {
-    if (!H || !G) return;
+    if (!H || !G || G.replay) return;
     const me = G.me, s = G.s, want = G.intro > 0 || G.outro || G.ended ? 0 : 1;
     H.t += dt;
     H.enter = clamp01(H.enter + (want ? dt * 3.2 : -dt * 4));
@@ -14104,20 +14327,19 @@ const { hud, initHud, hudDraw, uiEvent } = (() => {
       ctx.globalAlpha = (.2 + p * .16) * e; ctx.drawImage(redEdge(), 0, 0, VW, VH); ctx.globalAlpha = 1;
     }
     drawScrims(e);
-    drawStick(s);
+    if (!G.spectator) drawStick(s);
     offset(-300 * away, 0); drawFrame(dt, me); drawBuffs(dt, s, me); drawFeed(dt);
     offset(0, -90 * away); drawStrip(dt, s, me); drawPeople(dt, s); drawObjective(dt, s, me);
     offset(300 * away, 0); drawMap(dt, s, me); drawCancel(dt);
-    offset((left() ? -320 : 320) * away, 0); lastHitTick(dt, me, s); drawAttack(dt, me); for (let i = 0; i < 3; i++) drawAbility(i, dt, me); drawBeacon(dt, me); drawRipples(dt);
+    offset((left() ? -320 : 320) * away, 0); if (!G.spectator) { lastHitTick(dt, me, s); drawAttack(dt, me); for (let i = 0; i < 3; i++) drawAbility(i, dt, me); drawBeacon(dt, me); } drawRipples(dt);
     offset(0, 0);
     if (want) drawWorldPings(dt, s, me);
     drawBeaconAim(me);
-    deathShop(me);
-    if (!me.alive) drawDeath(me);
-    drawEmotes(dt, s, me); drawChat(dt); drawHint(dt, me); drawTips(dt, me); drawAimCard(me); drawBanner(dt); drawRadial(dt);
+    if (!G.spectator) { deathShop(me); if (!me.alive) drawDeath(me); }
+    drawEmotes(dt, s, me); drawChat(dt); if (!G.spectator) { drawHint(dt, me); drawTips(dt, me); drawAimCard(me); } drawBanner(dt); drawRadial(dt);
     H.frame++;
     if (shopOpen()) { const sg = Math.floor(H.goldShow); if (sg !== H.shopGoldV) { H.shopGoldV = sg; $('shGold').textContent = sg; } if (H.frame % 10 === 0) shopSync(false); }
-    if (H.frame % 12 === 0) { evoSync(me, s); svSync(s, me); if (!me.alive) recapSync(me); }
+    if (H.frame % 12 === 0 && !G.spectator) { evoSync(me, s); svSync(s, me); if (!me.alive) recapSync(me); }
     if (H.tips && H.frame % 6 === 0) practiceSync(s, me);
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   }
@@ -14199,7 +14421,7 @@ const { hud, initHud, hudDraw, uiEvent } = (() => {
       const e = H.emotes[i]; e.t += dt;
       const u = H.byId.get(e.u);
       if (e.t > 2.2 || !u || !u.alive) { H.emotes.splice(i, 1); continue; }
-      if (u.team !== G.me.team && !Sim.canSee(s, G.me.team, u)) continue;
+      if (u.team !== G.me.team && !sees(s, u)) continue;
       const p = calm ? 1 : outBack(clamp01(e.t / .22)), a = clamp01((2.2 - e.t) * 3), X = sx(u.x), Y = sy(u.y) - 66 - (calm ? 0 : Math.sin(e.t * 2.4) * 2.5), R = 15 * p;
       ctx.globalAlpha = a; disc(X, Y, R); ctx.fillStyle = INK; ctx.fill(); ctx.strokeStyle = SIDE_ACC[u.team]; ctx.lineWidth = 1.6; ctx.stroke();
       ctx.save(); ctx.translate(X - 12 * p * .8, Y - 12 * p * .8); ctx.scale(p * .8, p * .8); ctx.fillStyle = SIDE_ACC[u.team]; ctx.fill(pathOfE(e.id), 'evenodd'); ctx.restore();
@@ -14264,6 +14486,11 @@ const { hud, initHud, hudDraw, uiEvent } = (() => {
   }
   // Team boons and timed tonics: small diamonds beside the purse, each draining as it runs out.
   const BUFF_COL = { warlord: '#ff8a4c', foreman: GOLD, sentinel: BLUE, colossus: '#ffc454', heist: '#7fd6a4', convoy: '#7fd6a4', blackout: STEEL, drop: '#7fd6a4', pot: '#ff7a8a', elix: '#d2a3ff', tonic: '#9fe8ff' };
+  Art.onCB((on, P) => {
+    BLUE = on ? P.ally : Deco.BLUE; CRIM = on ? P.enemy : Deco.CRIM; LOSS_BAR = on ? P.teamDark[1] : '#7d1626';
+    SIDE_ACC[1] = CRIM; TEAM_DOT[0] = BLUE; TEAM_DOT[1] = CRIM; PING.danger[1] = CRIM; PING.omw[1] = BLUE; BUFF_COL.sentinel = BLUE;
+    if (H) H.mapC = H.fogC = null;
+  });
   function teamBuffs(s, me) {
     const out = [], b = s.boons && s.boons[me.team];
     if (b) for (const k of Object.keys(b)) if (b[k] > 0) out.push({ kind: k, left: b[k], max: 120 });
@@ -14641,11 +14868,28 @@ const { hud, initHud, hudDraw, uiEvent } = (() => {
     for (let t = 0; t < 2; t++) if (me.lvl >= EVOLVE_AT[t] && me.evolved[t] === -1 && !H.evoDone[t] && ev[t]) return t;
     return -1;
   }
+  const EVO_AUTO_S = 2.2;
+  function autoEvo(me, t) { const lo = Hud.loadoutFor && Hud.loadoutFor(me.champ), i = lo && lo.evo ? lo.evo[t] : -1, o = i >= 0 && Sim.KITS[me.champ].evolves[t][i]; return o ? { i, o } : null; }
+  function pickEvo(t, i, o, box) { if (!G) return; G.me.q.push({ t: 'evolve', tier: t, choice: i }); H.evoDone[t] = true; H.evoKey = 'x'; H.evoH = 0; box.classList.add('hide'); box.textContent = ''; H.lvlFx = 1; Sound.play('level'); banner(o.name, { pri: 4, sub: 'Evolved', team: G.me.team, dur: 1.6 }); }
   function evoSync(me, s) {
     const t = me.alive && !shopOpen() && !paused ? evoPending(me) : -1, box = $('evo');
     if (t !== H.evoLast) { H.evoLast = t; H.evoT = H.t; H.evoShut = false; H.evoKey = ''; }
     if (t >= 0 && !H.evoShut && H.t - H.evoT > 8) H.evoShut = true;
     if (t < 0) { H.evoKey = ''; H.evoH = 0; box.classList.add('hide'); box.textContent = ''; return; }
+    // A saved Evolve pick applies itself after a beat, which is the window to tap and choose differently.
+    const auto = H.evoAsk !== t ? autoEvo(me, t) : null;
+    if (auto) {
+      box.classList.remove('shut');
+      if (H.t - H.evoT >= EVO_AUTO_S) { pickEvo(t, H.evoAuto = auto.i, auto.o, box); return; }
+      if (H.evoKey !== `a${t}`) {
+        H.evoKey = `a${t}`; box.textContent = ''; box.classList.remove('hide'); box.classList.add('shut');
+        const pill = document.createElement('button'); pill.className = 'evpill auto'; pill.innerHTML = `<small>Evolving</small>${auto.o.name}<em>Change</em>`;
+        pill.setAttribute('aria-label', `Evolving into ${auto.o.name}. Tap to choose differently.`);
+        pill.onpointerdown = e => { e.stopPropagation(); H.evoAsk = t; H.evoShut = false; H.evoT = H.t; H.evoKey = ''; Sound.play('tap'); evoSync(G.me, G.s); };
+        box.append(pill); H.evoH = box.offsetHeight;
+      }
+      return;
+    }
     const key = `${t}|${H.evoShut ? 1 : 0}`;
     if (key === H.evoKey) return;
     H.evoKey = key; box.textContent = '';
@@ -14663,7 +14907,7 @@ const { hud, initHud, hudDraw, uiEvent } = (() => {
       const b = document.createElement('button'); b.className = 'ev'; b.style.setProperty('--i', i);
       b.innerHTML = `<b>${o.name}</b><small>${o.d}</small>`;
       b.setAttribute('aria-label', `Evolve: ${o.name}. ${o.d}`);
-      b.onpointerdown = e => { e.stopPropagation(); if (!G) return; G.me.q.push({ t: 'evolve', tier: t, choice: i }); H.evoDone[t] = true; H.evoKey = 'x'; H.evoH = 0; box.classList.add('hide'); box.textContent = ''; H.lvlFx = 1; Sound.play('level'); banner(o.name, { pri: 4, sub: 'Evolved', team: G.me.team, dur: 1.6 }); };
+      b.onpointerdown = e => { e.stopPropagation(); pickEvo(t, i, o, box); };
       box.append(b);
     });
     H.evoH = box.offsetHeight;
@@ -14725,7 +14969,7 @@ const { hud, initHud, hudDraw, uiEvent } = (() => {
     const net = Hud.isLive();
     if (!net) paused = true;
     $('pT').textContent = net ? 'Menu' : 'Paused';
-    const canVote = !!Sim.SURRENDER_AT && G.s.t >= Sim.SURRENDER_AT && !G.s.practice && !(G.s.votes && G.s.votes[G.me.team]);
+    const canVote = !G.spectator && !!Sim.SURRENDER_AT && G.s.t >= Sim.SURRENDER_AT && !G.s.practice && !(G.s.votes && G.s.votes[G.me.team]);
     $('pSur').classList.toggle('hide', !canVote);
     $('pNote').classList.toggle('hide', !net);
     Hud.closeShop();
@@ -14750,7 +14994,7 @@ const { initMenus, animMenus, showEnd } = (() => {
   const isFriend = s => !!N.mode && s.who !== null && s.who !== undefined && s.who !== N.pid;
   const shuffle = a => { for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; } return a; };
   // Dialogs fade out; everything else simply goes. A dialog counts as hidden straight away, so game logic never waits on the animation.
-  const SOFT = new Set(['settings', 'xfer', 'confirm', 'sheet', 'pause']);
+  const SOFT = new Set(['settings', 'xfer', 'confirm', 'sheet', 'pause', 'nameD']);
   const show = id => { const e = $(id); clearTimeout(e._leave); e.classList.remove('hide', 'leaving'); };
   const hide = id => {
     const e = $(id);
@@ -14768,16 +15012,17 @@ const { initMenus, animMenus, showEnd } = (() => {
   // Names on the small coins lose their honorifics so they stay on one line.
   const shortName = n => n.replace(/^(The|Captain|Madame) /, '');
   const buildsOf = id => (Sim.KITS[id] && Sim.KITS[id].builds) || [];
-  const myBuild = id => { const b = buildsOf(id), v = save.builds && save.builds[id]; return b.some(x => x.id === v) ? v : b[0] ? b[0].id : undefined; };
+  const myBuild = id => { const b = buildsOf(id), lo = activeLo(id), v = lo && b.some(x => x.id === lo.build) ? lo.build : save.builds && save.builds[id]; return b.some(x => x.id === v) ? v : b[0] ? b[0].id : undefined; };
   const profsOf = role => (Sim.PROFS && Sim.PROFS[role]) || [];
   // The player's choice for each lane is remembered; a bot rolls one per seat.
-  const myProf = role => { const l = profsOf(role), v = save.profs && save.profs[role]; return l.some(p => p.id === v) ? v : l[0] ? l[0].id : undefined; };
+  const myProf = role => { const l = profsOf(role), lo = L.seats ? activeLo(mine().champ) : null, v = lo && lo.role === role && l.some(p => p.id === lo.prof) ? lo.prof : save.profs && save.profs[role]; return l.some(p => p.id === v) ? v : l[0] ? l[0].id : undefined; };
   const seatProf = s => { const l = profsOf(s.role); if (!l.length) return undefined; if (isMe(s)) return myProf(s.role); if (!l.some(p => p.id === s.prof)) s.prof = l[Math.floor(Math.random() * l.length)].id; return s.prof; };
   const botBuild = (id, role) => Sim.defaultBuild ? Sim.defaultBuild(id, role, Math.random()) : undefined;
   const cosmeticIds = kind => (Art.COSMETICS || []).filter(c => c.kind === kind).map(c => c.id);
   const equipOf = () => { const e = save.equip || {}, ok = k => e[k] && isOwned(e[k]) ? e[k] : undefined; return { finish: ok('finish'), trail: ok('trail'), recall: ok('recall') }; };
   const cleanCos = (kind, v) => cosmeticIds(kind).includes(v) ? v : undefined;
-  function wearMine(s) { const e = equipOf(); s.finish = e.finish; s.trail = e.trail; s.recall = e.recall; s.build = myBuild(s.champ); }
+  // A loadout's cosmetics win over the ones equipped in the store, as long as they are still owned.
+  function wearMine(s) { const e = equipOf(), lo = activeLo(s.champ), pick = k => lo && lo[k] && isOwned(lo[k]) ? lo[k] : e[k]; s.finish = pick('finish'); s.trail = pick('trail'); s.recall = pick('recall'); s.build = myBuild(s.champ); }
   // Fit for a role reads as a plain sentence: the best lane, and any other lane it does well in.
   function bestLine(k) {
     const r = Sim.ROLES.slice().sort((a, b) => k.fit[b] - k.fit[a]), first = r[0], also = r.filter((x, i) => i && k.fit[x] >= 2);
@@ -14822,13 +15067,13 @@ const { initMenus, animMenus, showEnd } = (() => {
       const roles = Sim.autoRoles(pool);
       return pool.map((champ, i) => ({ champ, role: roles[i], tier: Math.min(5, Math.floor(Math.random() * Math.random() * 6)), human: false, name: names[n++], who: null, build: botBuild(champ, roles[i]) }));
     });
-    const me = mine(); me.human = true; me.name = 'You'; wearMine(me);
+    const me = mine(); me.human = true; me.name = 'You'; applyLo(L.team, L.slot);
   }
   function setChamp(team, i, id) {
     const row = L.seats[team], s = row[i], other = N.mode ? null : row.find(o => o !== s && o.champ === id);
     if (other) other.champ = s.champ;
     s.champ = id;
-    if (isMe(s)) { save.last = id; (save.lastBy || (save.lastBy = {}))[team] = id; s.build = myBuild(id); persist(); flipT = 1; }
+    if (isMe(s)) { save.last = id; (save.lastBy || (save.lastBy = {}))[team] = id; persist(); applyLo(team, i); flipT = 1; }
     else s.build = botBuild(id, s.role);
   }
   function setRole(team, i, role) {
@@ -14847,10 +15092,18 @@ const { initMenus, animMenus, showEnd } = (() => {
   function rollSide() { L.team = Math.random() < .5 ? 0 : 1; rollSeats(); }
   function autoFill() { L.seats.forEach(row => { const r = Sim.autoRoles(row.map(s => s.champ)); row.forEach((s, i) => { s.role = r[i]; }); }); }
   // On your own team the friend's champion and role are off limits.
+  // Duel keeps one seat a side and Raid has no enemy players, which is what Sim.normalizeTeams will do to these seats.
+  const seatMode = () => N.mode ? (hasNet() && Net.room && Net.room.mode) || 'classic' : L.practice ? 'classic' : L.mode || 'classic';
+  function seatShown(team, i) {
+    const md = seatMode(), row = L.seats[team];
+    if (md === 'duel') { const keep = row.find(p => isMe(p) || isFriend(p)) || row[0]; return row[i] === keep; }
+    if (md === 'raid') return team === (row.some(isMe) ? team : 1 - team) && row.some(isMe);
+    return true;
+  }
   const friendHolds = (key, val) => !!N.mode && L.seats[L.team].some(o => o.who !== N.pid && o[key] === val);
   const isBanned = id => !!N.mode && !!N.draft && bannedFrom(N.draft, L.team).includes(id);
   const seatOut = s => ({ champ: s.champ, role: s.role, tier: seatTier(s), name: s.name, build: s.build, prof: seatProf(s), targetPref: isMe(s) ? save.targetPref : undefined, finish: s.finish, trail: s.trail, recall: s.recall });
-  const buildCfg = () => { wearMine(mine()); return withSkills({ seed: skillSeed(), practice: L.practice || undefined, teams: L.seats.map(row => row.map(s => Object.assign(seatOut(s), { human: s.human }))) }, myRank()); };
+  const buildCfg = () => { wearMine(mine()); return withSkills({ seed: skillSeed(), practice: L.practice || undefined, mode: L.practice ? undefined : L.mode || 'classic', teams: L.seats.map(row => row.map(s => Object.assign(seatOut(s), { human: s.human }))) }, myRank()); };
 
   // ---------- side ----------
   // Every menu colours itself from these two classes on the stage.
@@ -14886,6 +15139,7 @@ const { initMenus, animMenus, showEnd } = (() => {
     [0, 1].forEach(team => {
       const el = $('s' + team); el.textContent = '';
       L.seats[team].forEach((s, i) => {
+        if (!seatShown(team, i)) return;
         const me_ = isMe(s), fr = isFriend(s), d = document.createElement('div'); d.className = 'seat' + (me_ ? ' me' : fr ? ' fr' : '') + (s.locked ? ' lk' : '');
         const b = document.createElement('button'); b.className = 'seatc';
         if (s.champ) {
@@ -14912,7 +15166,7 @@ const { initMenus, animMenus, showEnd } = (() => {
   }
   // The part of the lobby that changes with a build or tab tap, redrawn on its own so the coins stay still.
   function renderWho(animate) {
-    const seat = mine(), id = seat.champ, k = Sim.KITS[id], builds = buildsOf(id), profs = profsOf(seat.role), tab = L.tab === 'prof' && profs.length ? 'prof' : L.tab === 'kit' || !builds.length ? 'kit' : 'builds', showKit = tab === 'kit';
+    const seat = mine(), id = seat.champ, k = Sim.KITS[id], builds = buildsOf(id), profs = profsOf(seat.role), tab = L.tab === 'lo' ? 'lo' : L.tab === 'prof' && profs.length ? 'prof' : L.tab === 'kit' || !builds.length ? 'kit' : 'builds', showKit = tab === 'kit';
     $('wBest').innerHTML = bestLine(k);
     const pass = $('wP');
     pass.classList.toggle('hide', !k.passive);
@@ -14920,14 +15174,16 @@ const { initMenus, animMenus, showEnd } = (() => {
     document.querySelectorAll('#wTab [data-t]').forEach(b => { b.setAttribute('aria-pressed', b.dataset.t === tab); if (b.dataset.t === 'prof') b.classList.toggle('hide', !profs.length); });
     $('wTab').classList.toggle('hide', !builds.length && !profs.length);
     const wb = $('wBuilds'), wk = $('wKit'), wp = $('wProf');
-    wb.classList.toggle('hide', tab !== 'builds'); wk.classList.toggle('hide', !showKit); wp.classList.toggle('hide', tab !== 'prof');
+    wb.classList.toggle('hide', tab !== 'builds'); wk.classList.toggle('hide', !showKit); wp.classList.toggle('hide', tab !== 'prof'); $('wLo').classList.toggle('hide', tab !== 'lo');
+    const on = activeLo(id), loB = document.querySelector('#wTab [data-t=lo]'); loB.classList.toggle('lit', !!on); loB.setAttribute('aria-label', on ? `Loadout: slot ${loData().list.indexOf(on) + 1}` : 'Loadout: none');
+    if (tab === 'lo') { paintLoPane(id, animate); return; }
     if (tab === 'prof') {
       const cur = myProf(seat.role), g = document.createElement('div'); g.className = 'bgrid profs';
       profs.slice(0, 3).forEach((pr, i) => {
         const b = document.createElement('button'); b.className = 'bld'; b.style.setProperty('--i', i); b.setAttribute('aria-pressed', pr.id === cur);
         b.innerHTML = `<span><b>${pr.name}</b></span><small>${pr.d}</small>`;
         b.setAttribute('aria-label', `${pr.name}. ${pr.d}`);
-        b.onclick = () => { const m = mine(); if (m.locked || myProf(m.role) === pr.id) return; (save.profs || (save.profs = {}))[m.role] = pr.id; m.prof = pr.id; persist(); netPicked(); renderWho(); paintLane(); };
+        b.onclick = () => { const m = mine(); if (m.locked || myProf(m.role) === pr.id) return; (save.profs || (save.profs = {}))[m.role] = pr.id; m.prof = pr.id; const lo = activeLo(m.champ); if (lo && lo.role === m.role) lo.prof = pr.id; persist(); netPicked(); renderWho(); paintLane(); };
         g.append(b);
       });
       wp.textContent = ''; wp.append(g);
@@ -14943,7 +15199,7 @@ const { initMenus, animMenus, showEnd } = (() => {
         const b = document.createElement('button'); b.className = 'bld'; b.style.setProperty('--i', i); b.setAttribute('aria-pressed', bu.id === seat.build);
         b.innerHTML = `<span><b>${bu.name}</b>${bu.tag ? `<em>${bu.tag}</em>` : ''}</span><small>${bu.d}</small>`;
         b.setAttribute('aria-label', `${bu.name} build. ${bu.d}`);
-        b.onclick = () => { if (mine().build === bu.id) return; mine().build = bu.id; (save.builds || (save.builds = {}))[id] = bu.id; persist(); Sound.play('clink'); netPicked(); renderWho(); };
+        b.onclick = () => { if (mine().build === bu.id) return; mine().build = bu.id; (save.builds || (save.builds = {}))[id] = bu.id; const lo = activeLo(id); if (lo) lo.build = bu.id; persist(); Sound.play('clink'); netPicked(); renderWho(); };
         g.append(b);
       });
       wb.textContent = ''; wb.append(g);
@@ -15012,6 +15268,8 @@ const { initMenus, animMenus, showEnd } = (() => {
     const pct = save.targetPref === 'pct';
     document.querySelectorAll('#sTgt [data-v]').forEach(b => b.setAttribute('aria-pressed', (b.dataset.v === 'pct') === pct));
     $('pTgt').textContent = pct ? 'Focus: lowest %' : 'Focus: least HP';
+    $('sCb').setAttribute('aria-pressed', !!save.cb);
+    paintVoice();
     paintTip();
   }
   // ---------- add to home screen ----------
@@ -15027,7 +15285,7 @@ const { initMenus, animMenus, showEnd } = (() => {
   }
   // ---------- account: transfer code and reset ----------
   // Copy and paste is the whole transport: there is no server. The code is the save squeezed with LZW, packed into bytes, base64 with a checksum.
-  const XFER_KEYS = ['m', 'music', 'sfx', 'diff', 'hints', 'rank', 'marks', 'owned', 'equip', 'builds', 'last', 'lastBy', 'missions', 'hud', 'aimSens', 'callsign', 'targetPref', 'profs'];
+  const XFER_KEYS = ['m', 'music', 'sfx', 'diff', 'hints', 'rank', 'marks', 'owned', 'equip', 'builds', 'last', 'lastBy', 'missions', 'hud', 'aimSens', 'callsign', 'targetPref', 'profs', 'loadouts', 'career', 'history', 'tally', 'pins', 'card', 'mode', 'cb', 'voice', 'recent'];
   const crc32 = bytes => { let c = ~0; for (let i = 0; i < bytes.length; i++) { c ^= bytes[i]; for (let k = 0; k < 8; k++) c = c >>> 1 ^ (0xEDB88320 & -(c & 1)); } return ~c >>> 0; };
   function lzwPack(bytes) {
     const dict = new Map(), out = []; let w = '', next = 256;
@@ -15412,16 +15670,24 @@ const { initMenus, animMenus, showEnd } = (() => {
     [0, 1].forEach(team => {
       const el = $('vs' + team); el.textContent = '';
       L.seats[team].forEach((s, i) => {
+        if (!seatShown(team, i)) return;
         const d = document.createElement('div'); d.className = 'vcell'; d.style.setProperty('--i', i);
         const cv = document.createElement('canvas'); cv.width = cv.height = 168;
         Hud.coinTo(cv, Art.champCoin(s.champ, team, seatTier(s), 80, s.finish));
         const b = document.createElement('b'); b.textContent = charName(team, s.champ);
         d.append(cv, b);
-        if (isMe(s)) { const y = document.createElement('i'); y.textContent = 'You'; d.append(y); }
-        else if (isFriend(s)) { const y = document.createElement('i'); y.textContent = 'Friend'; d.append(y); }
+        if (isMe(s) || isFriend(s)) d.append(vsTag(s));
         el.append(d);
       });
     });
+  }
+  // The player card on the splash: their banner with their name and title on it. A friend's comes from the room, so it is escaped by textContent.
+  function vsTag(s) {
+    const me_ = isMe(s), other = !me_ && hasNet() && Net.cardOf ? Net.cardOf(s.who) : null, c = me_ ? myCard() : (other && other.card) || {}, w = document.createElement('span'); w.className = 'vtag';
+    w.append(Art.cardArt(c.banner && cardDef(c.banner) ? c.banner : 'bar_plain', 240, 60));
+    const n = document.createElement('b'); n.textContent = me_ ? callsign() : (other && other.name) || s.name || 'Friend'; w.append(n);
+    if (c.title) { const t = document.createElement('small'); t.textContent = String(c.title).slice(0, 24); w.append(t); }
+    return w;
   }
   function versus(cfg) {
     renderVs(); $('vs').classList.remove('out'); show('vs');
@@ -15473,20 +15739,23 @@ const { initMenus, animMenus, showEnd } = (() => {
   let E = null;
   function showEnd(r) {
     const st = Object.assign({ kills: 0, deaths: 0, assists: 0, skillHits: 0, casts: 0, parries: 0 }, r.me.stats), tier = Sim.tierOf(r.before);
-    for (const id of ['shop', 'evo', 'prac', 'pause', 'recap', 'qc', 'sv']) hide(id); Ctl.reset();
+    for (const id of ['shop', 'evo', 'prac', 'pause', 'recap', 'qc', 'sv', 'specBar', 'vox']) hide(id); Ctl.reset();
     L.team = r.me.team; applySide();
-    $('again').textContent = N.mode === 'guest' ? 'Waiting for host' : N.mode ? 'Back to room' : 'Play again';
-    $('again').classList.toggle('off', N.mode === 'guest'); $('again').classList.toggle('hot', N.mode !== 'guest');
+    const canRe = !!N.mode && hasNet() && Net.canRematch && Net.canRematch();
+    $('again').textContent = canRe ? 'Rematch' : N.mode === 'guest' ? 'Waiting for host' : N.mode ? 'Back to room' : 'Play again';
+    $('again').classList.toggle('off', N.mode === 'guest' && !canRe); $('again').classList.toggle('hot', N.mode !== 'guest' || canRe);
     $('end').classList.toggle('win', r.won); $('end').classList.toggle('lose', !r.won);
     $('endT').textContent = r.won ? 'Victory' : 'Defeat';
     $('endT').style.color = '';
     $('endW').textContent = `${r.s.over.winner === 0 ? 'City saved' : 'City fallen'}${r.s.over.surrender ? ', by surrender' : ''}`;
     const pl = (n, w) => `${n} ${w}${n === 1 ? '' : 's'}`;
     $('endS').textContent = `${st.kills}/${st.deaths}/${st.assists}, ${st.skillHits} of ${st.casts} abilities landed${st.parries ? `, ${pl(st.parries, 'hit')} parried` : ''}`;
-    const mvp = mvpOf(r.s);
+    const hon = honours(r); r.mvp = hon.mvp; r.svp = hon.svp;
+    const mvp = hon.mvp;
+    recordMatch(r);
     Hud.scoreTable($('eBoard'), r.s, r.me, mvp);
-    paintMvp(mvp, r); paintMedals(r, mvp);
-    const ms = applyMissions(r, statsOf(r.me.stats)), mEl = $('endMiss');
+    paintHonour($('endMvp'), hon.mvp, 'MVP', r); paintHonour($('endSvp'), hon.svp, 'SVP', r); paintMedals(r, mvp);
+    const ms = r.spectator ? { list: [], gain: 0 } : applyMissions(r, statsOf(r.me.stats)), mEl = $('endMiss');
     mEl.classList.toggle('hide', !ms.list.length);
     mEl.innerHTML = ms.list.slice(0, 2).map(m => `<span>Mission done, +${m.v} Marks</span>`).join('') + (ms.list.length > 2 ? `<span>and ${ms.list.length - 2} more</span>` : '');
     const ranked = r.rankBefore !== undefined && r.rankAfter !== undefined;
@@ -15504,18 +15773,47 @@ const { initMenus, animMenus, showEnd } = (() => {
     $('endMk').classList.toggle('hide', !earned);
     if (earned) { $('endMks').textContent = '+0'; $('endBal').textContent = ''; }
     hide('rankup');
-    show('end');
-    Sound.play('thud');
+    paintPotg(); paintBonus(r);
+    for (const id of ['endRow', 'endMk', 'endShare']) if (r.spectator) $(id).classList.add('hide');
+    $('endShare').classList.toggle('hide', !!r.spectator); $('endM').classList.toggle('hide', !!r.spectator); document.querySelector('#end .prof').classList.toggle('hide', !!r.spectator);
+    if (r.spectator) { $('endT').textContent = 'Match over'; $('endW').textContent = `${Sim.TEAM_NAMES[r.s.over.winner]} win`; }
+    const tok = E, reveal = () => { if (E !== tok || !G) return; show('end'); Sound.play('thud'); medalCues(r, mvp); prepareShare(tok); };
+    // The Play of the Game comes first when it is already here. A clip that turns up later waits behind the Watch button.
+    if (Replay.ready && Replay.info) { tok.potgSeen = true; playPotg(reveal); } else reveal();
   }
+  // ---------- play of the game ----------
+  function paintPotg() {
+    const i = Replay.ready ? Replay.info : null, b = $('endPotg');
+    b.classList.toggle('hide', !i);
+    if (i) $('endPotgT').textContent = `${i.name}${i.label ? `, ${i.label}` : ''}`;
+  }
+  const iStarred = r => { const i = Replay.ready ? Replay.info : null; return !!i && !r.spectator && i.kit === r.me.champ && i.team === r.me.team; };
+  function paintBonus(r) {
+    const el = $('endBonus'), parts = r.bonusParts || [];
+    if (r.recorded && !r.potgPaid && iStarred(r) && Sim.MARK_BONUS && !(G && G.cfg.practice)) {
+      r.potgPaid = true; const v = Sim.MARK_BONUS.potg; parts.unshift({ label: 'Play of the Game', v }); r.bonusParts = parts;
+      save.marks = (save.marks || 0) + v; r.marks = (r.marks || 0) + v; persist();
+      if (E && E.r === r) { if (E.marks) { E.marks.to += v; E.marks.balance = save.marks; E.marks.done = false; } else { E.marks = { from: 0, to: v, shown: -1, balance: save.marks }; $('endMk').classList.remove('hide'); $('endMks').textContent = '+0'; $('endBal').textContent = ''; } }
+    }
+    el.classList.toggle('hide', !parts.length);
+    el.textContent = parts.slice(0, 3).map(p => `${p.label} +${p.v}`).join(', ') + (parts.length > 3 ? `, ${parts.length - 3} more` : '');
+  }
+  function playPotg(done) {
+    if (Replay.playing) return;
+    hide('end'); show('potgUI');
+    const finish = () => { hide('potgUI'); done(); };
+    Replay.play(finish);
+  }
+  Replay.on('ready', () => { if (E && G && G.ended) { paintPotg(); paintBonus(E.r); } });
   // ---------- MVP and medals ----------
   const scoreOf = (c, s) => { const st = statsOf(c.stats || {}); return st.kills * 3 + st.assists * 2 - st.deaths * 1.2 + st.dmg / 1500 + st.heal / 1000 + st.taken / 2500 + st.towers * 3 + st.objs * 4 + st.rescues * 1.5 + (s.over && s.over.winner === c.team ? 4 : 0); };
   const mvpOf = s => s.champs.slice().sort((a, b) => scoreOf(b, s) - scoreOf(a, s))[0];
-  function paintMvp(c, r) {
-    const el = $('endMvp'); el.textContent = '';
+  function paintHonour(el, c, label, r) {
+    el.textContent = '';
     if (!c) { el.classList.add('hide'); return; }
     const st = statsOf(c.stats || {});
     el.append(coinCanvas(Art.champCoin(c.champ, c.team, c.tier, 30, c.finish), 72));
-    el.insertAdjacentHTML('beforeend', `<div><em>Most valuable${c === r.me ? ', that was you' : ''}</em><b>${charName(c.team, c.champ)}</b></div><small>${st.kills}/${st.deaths}/${st.assists}</small>`);
+    el.insertAdjacentHTML('beforeend', `<div><em>${label}${c === r.me ? ', you' : ''}</em><b>${shortName(charName(c.team, c.champ))}</b></div><small>${st.kills}/${st.deaths}/${st.assists}</small>`);
     el.classList.remove('hide');
   }
   const MEDAL_G = {
@@ -15541,9 +15839,42 @@ const { initMenus, animMenus, showEnd } = (() => {
     return out;
   }
   function paintMedals(r, mvp) {
-    const list = medalsFor(r, mvp).slice(0, 4);
-    $('endMed').innerHTML = list.map((m, i) => `<div class="med" style="--i:${i}">${medalSvg(m.g, m.col)}<span>${m.name}</span></div>`).join('');
-    list.forEach((m, i) => setTimeout(() => { if (!hidden('end')) Sound.play(m.g === 'mvp' ? 'medalMvp' : 'medal'); }, 550 + i * 90));
+    // Career medals are the prize, so they lead; this match's honours fill what is left of the row.
+    const byMedal = new Map(); for (const m of r.earned || []) if (!byMedal.has(m.id) || byMedal.get(m.id).tier < m.tier) byMedal.set(m.id, m);
+    const earned = [...byMedal.values()].sort((a, b) => b.tier - a.tier).slice(0, 4), list = medalsFor(r, mvp).slice(0, Math.max(0, 4 - earned.length)), box = $('endMed');
+    box.innerHTML = list.map((m, i) => `<div class="med" style="--i:${i + earned.length}">${medalSvg(m.g, m.col)}<span>${m.name}</span></div>`).join('');
+    earned.reverse().forEach((m, n) => { const d = document.createElement('div'); d.className = `med earned t${m.tier}`; d.style.setProperty('--i', earned.length - 1 - n); d.setAttribute('aria-label', `New medal: ${m.name}, ${m.tierName}`); d.append(medalCanvas(m.id, m.tier, 22)); d.insertAdjacentHTML('beforeend', `<span>${m.name}</span>`); box.prepend(d); });
+  }
+  function medalCues(r, mvp) {
+    const n = Math.min(4, (r.earned || []).length), best = (r.earned || []).reduce((a, m) => Math.max(a, m.tier), -1);
+    if (n) setTimeout(() => { if (!hidden('end')) Sound.play(best >= 2 ? 'medalMvp' : 'medal'); }, 550);
+    medalsFor(r, mvp).slice(0, 4 - n).forEach((m, i) => setTimeout(() => { if (!hidden('end')) Sound.play(m.g === 'mvp' ? 'medalMvp' : 'medal'); }, 550 + (i + n) * 90));
+  }
+  // Sim.scoreMatch names the MVP (best winner) and SVP (best loser). Until it is there, the old score picks them.
+  function honours(r) {
+    const champs = r.s.champs;
+    if (Sim.scoreMatch) { const m = Sim.scoreMatch(r.s), of = id => id ? champs.find(c => c.id === id) || null : null; return { mvp: of(m.mvp), svp: of(m.svp) }; }
+    const w = r.s.over ? r.s.over.winner : r.me.team, top = t => champs.filter(c => c.team === t).sort((a, b) => scoreOf(b, r.s) - scoreOf(a, r.s))[0] || null;
+    return { mvp: top(w), svp: top(1 - w) };
+  }
+  // ---------- share card ----------
+  // Built as soon as the results show, so the tap can hand it straight to the share sheet while the gesture still counts.
+  function shareCanvas(r) {
+    const me = r.me, st = statsOf(me.stats || {}), c = myCard(), tags = [];
+    if (r.mvp === me) tags.push('MVP'); if (r.svp === me) tags.push('SVP'); if (iStarred(r)) tags.push('Play of the Game');
+    return Art.shareCard({ name: callsign(), title: c.title, card: c.card, banner: c.banner, champ: me.champ, result: r.won ? 'Victory' : 'Defeat', line: charName(me.team, me.champ), k: st.kills, d: st.deaths, a: st.assists, medals: (r.earned || []).slice(0, 3).map(m => ({ id: m.id, tier: m.tier })), marks: r.marks || 0, tags, mode: modeName(r.s.mode || 'classic') });
+  }
+  function prepareShare(tok) {
+    tok.blob = null;
+    try { shareCanvas(tok.r).toBlob(b => { tok.blob = b; }, 'image/png'); } catch (e) { }
+  }
+  function shareResult() {
+    const btn = $('endShare'), blob = E && E.blob;
+    if (!blob) { flash(btn, 'One moment'); Sound.play('tick'); return; }
+    const name = 'flipside-result.png', file = typeof File === 'function' ? new File([blob], name, { type: 'image/png' }) : null;
+    const save_ = () => { const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = name; document.body.append(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 4000); flash(btn, 'Saved'); Sound.play('coin'); };
+    if (file && navigator.canShare && navigator.canShare({ files: [file] })) { Sound.play('tap'); navigator.share({ files: [file], title: 'Flipside' }).catch(e => { if (e && e.name !== 'AbortError') save_(); }); return; }
+    save_();
   }
   function endFrac(p) { const t = Sim.tierOf(p), n = TIERS[t + 1]; return n ? (p - TIERS[t].at) / (n.at - TIERS[t].at) : 1; }
   function endText() {
@@ -15638,7 +15969,8 @@ const { initMenus, animMenus, showEnd } = (() => {
     show('notice'); Sound.play('cancel');
   }
   function clearAll() {
-    for (const id of ['lobby', 'ban', 'end', 'rankup', 'pause', 'shop', 'evo', 'prac', 'recap', 'qc', 'sv', 'sheet', 'settings', 'hudEd', 'notice', 'flip', 'vs']) hide(id);
+    E = null;
+    for (const id of ['potgUI', 'specBar', 'vox', 'lobby', 'ban', 'end', 'rankup', 'pause', 'shop', 'evo', 'prac', 'recap', 'qc', 'sv', 'sheet', 'settings', 'hudEd', 'notice', 'flip', 'vs']) hide(id);
     $('flip').classList.remove('out'); $('vs').classList.remove('out');
     V.on = false; F.on = false; F.done = null; L.sheet = null;
   }
@@ -15662,7 +15994,8 @@ const { initMenus, animMenus, showEnd } = (() => {
   const CALL_B = ['Comet', 'Dime', 'Fox', 'Falcon', 'Nickel', 'Mint', 'Sparrow', 'Rook', 'Tiger', 'Quarter', 'Ember', 'Otter', 'Raven', 'Ghost', 'Penny', 'Spark'];
   const rollCall = () => `${CALL_A[Math.floor(Math.random() * CALL_A.length)]} ${CALL_B[Math.floor(Math.random() * CALL_B.length)]}`;
   function callsign() { if (!save.callsign) { save.callsign = rollCall(); persist(); } return save.callsign; }
-  function sendProfile() { try { Net.profile({ name: callsign(), rank: myRank() }); } catch (e) { } }
+  function sendProfile() { try { Net.profile(myCardOut()); } catch (e) { } }
+  const myCardOut = () => { const t = tally(), c = save.card || {}; return { name: callsign(), rank: myRank(), card: { title: c.title, banner: c.banner }, pins: pinsOf().map(id => ({ id, tier: medalTierN(id) - 1 })), stats: { matches: t.n || 0, wins: t.w || 0, kills: t.k || 0, mvp: t.mvp || 0 } }; };
   function wireNet() {
     if (!hasNet()) return;
     Net.on('open', code => { if (N.mode === 'host') { N.code = code || Net.code || ''; renderRoom(); } else if (N.mode === 'guest' && N.joining && Net.connected) guestIn(); });
@@ -15689,6 +16022,11 @@ const { initMenus, animMenus, showEnd } = (() => {
     });
     Net.on('stall', v => { if (G && !G.ended && v) Hud.notice('Waiting for the host', { pri: 3, sub: 'Weak connection', dur: 1.6 }); });
     Net.on('say', o => Hud.say(o));
+    Net.on('rematch', o => {
+      if (!o || !N.mode) return;
+      if (o.go) { N.rematchGo = true; return; }
+      const b = $('again'); if (!hidden('end') && Array.isArray(o.ready) && o.need) { const mine_ = o.ready.includes(N.pid); b.textContent = mine_ ? `Waiting, ${o.ready.length} of ${o.need}` : `Rematch, ${o.ready.length} of ${o.need}`; }
+    });
     Net.on('flip', onFlip);
     Net.on('draft', onDraft);
     Net.on('start', cfg => {
@@ -15822,6 +16160,10 @@ const { initMenus, animMenus, showEnd } = (() => {
     $('rStat').innerHTML = !N.code && isHost ? `Opening your room${DOTS}` : isHost ? (ok ? `${n} in the room` : `Send the code to your friends${DOTS}`) : `Waiting for the host to flip${DOTS}`;
     const hint = $('rHint');
     hint.textContent = !isHost ? '' : N.sel !== null ? 'Tap a seat on the other team to move or swap' : ok ? 'Tap a player to move them. Empty seats are filled with bots.' : 'Up to 8 players. Bots fill the rest.';
+    const md = (Net.room && Net.room.mode) || 'classic', rm = $('rMode'), specs = (Net.room && Net.room.spectators) || [];
+    rm.textContent = `Mode: ${modeName(md)}`; rm.classList.toggle('off', !isHost);
+    if (specs.length) hint.textContent += ` ${specs.length} watching.`;
+    paintVoice();
     const f = $('rFlip');
     f.textContent = !isHost ? 'Host flips' : ok ? 'Flip for sides' : 'Waiting for friends';
     f.classList.toggle('off', !isHost || !ok); f.classList.toggle('hot', isHost && ok);
@@ -15832,6 +16174,7 @@ const { initMenus, animMenus, showEnd } = (() => {
     if (p) {
       const c = document.createElement('canvas'); c.width = c.height = 64; Hud.coinTo(c, Deco.face(team, 60)); b.append(c);
       b.insertAdjacentHTML('beforeend', `<span class="tx"><b>${esc(meRow ? `${p.name} (you)` : p.name)}</b><small>${p.rank !== null && p.rank !== undefined ? `<em>${rankInfo(p.rank).name}</em> ` : ''}${p.host ? 'Host' : p.online === false ? 'Reconnecting' : ''}</small></span>`);
+      const crd = hasNet() && Net.cardOf ? Net.cardOf(p.pid) : null; if (crd && Array.isArray(crd.pins)) { const row = document.createElement('span'); row.className = 'rpins'; for (const x of crd.pins.slice(0, 3)) if (x && medalBy(x.id) && x.tier >= 0 && x.tier <= 2) row.append(medalCanvas(x.id, x.tier, 10)); if (row.childNodes.length) b.append(row); }
       if (tgt) b.insertAdjacentHTML('beforeend', '<span class="hint">Swap</span>');
       if (meRow) { const d = document.createElement('span'); d.className = 'dice'; d.setAttribute('role', 'button'); d.setAttribute('aria-label', 'New name'); d.innerHTML = DICE; d.onclick = e => { e.stopPropagation(); save.callsign = rollCall(); persist(); sendProfile(); Sound.play('tick'); renderRoom(); }; b.append(d); }
     } else {
@@ -15856,6 +16199,8 @@ const { initMenus, animMenus, showEnd } = (() => {
     N.lobby = false; N.draft = null; N.flipDone = false; N.inDraft = false; N.started = false; N.sel = null;
     applySide();
     renderRoom(); scr('room');
+    // A rematch skips the room: the host's device flips straight away, and the guests follow the flip.
+    if (N.rematchGo) { N.rematchGo = false; if (N.mode === 'host') setTimeout(hostFlip, 450); }
   }
   function startHost() {
     if (!hasNet()) { noNet(); return; }
@@ -16143,19 +16488,34 @@ const { initMenus, animMenus, showEnd } = (() => {
   // ---------- wiring ----------
   function playBots() {
     if (F.on || W.on || V.on) return;
-    netDrop(); L.practice = false; L.slot = 0; L.team = 0; rollSeats();
+    netDrop(); L.practice = false; L.slot = 0; L.team = 0; L.mode = curMode(); rollSeats();
     Sound.play('tap');
     scr(null);
     enterLobby();
   }
+  const MODES = Sim.MODES || [{ id: 'classic', name: 'Classic', d: '' }];
+  const curMode = () => MODES.some(m => m.id === save.mode) ? save.mode : 'classic';
+  function renderModes() {
+    const box = $('moGrid'); box.textContent = '';
+    MODES.forEach((m, i) => {
+      const b = document.createElement('button'); b.className = 'dk moc stick' + (m.id === curMode() ? ' on' : ''); b.style.setProperty('--i', i);
+      b.innerHTML = `<b>${m.name}</b><small>${m.d}</small>`;
+      b.onclick = () => { save.mode = m.id; persist(); paintMarks(); playBots(); };
+      box.append(b);
+    });
+    const p = document.createElement('button'); p.className = 'dk moc stick'; p.style.setProperty('--i', MODES.length);
+    p.innerHTML = `<b>Practice</b><small>Free gold and levels, no pressure. Try anything.</small>`;
+    p.onclick = startPractice;
+    box.append(p);
+  }
   function startPractice() {
     if (F.on || W.on || V.on) return;
-    netDrop(); L.practice = true; L.slot = 0; L.team = Math.random() < .5 ? 0 : 1; rollSeats();
+    netDrop(); L.practice = true; L.mode = 'classic'; L.slot = 0; L.team = Math.random() < .5 ? 0 : 1; rollSeats();
     Sound.play('menuOpen');
     const go = () => { scr(null); applySide(); renderLobby(); show('lobby'); lobbyEnter(); };
     if (!wipe(go)) go();
   }
-  function paintMarks() { $('mMarks').textContent = save.marks ? `${save.marks}` : ''; const n = missionsLeft(); $('mMissN').textContent = n ? `${n}` : ''; fitLogo(); }
+  function paintMarks() { const md = curMode(); $('mMode').textContent = md === 'classic' ? '' : modeName(md); $('mMode').classList.toggle('hide', md === 'classic'); $('mMarks').textContent = save.marks ? `${save.marks}` : ''; const n = missionsLeft(); $('mMissN').textContent = n ? `${n}` : ''; fitLogo(); }
   function paintRejoin() {
     const c = hasNet() && Net.resumable ? Net.resumable() : null;
     $('mRejoin').classList.toggle('hide', !c); $('mRank').classList.toggle('hide', !!c);
@@ -16168,6 +16528,375 @@ const { initMenus, animMenus, showEnd } = (() => {
     const k = Math.min(1, room / b.scrollWidth);
     b.style.fontSize = Math.floor(60 * k) + 'px';
   }
+  // ---------- loadouts ----------
+  // Slots keep their index for life, so an empty one is null. d.on[champ] names the slot in use for a champion; -1 means none.
+  const LO_FREE = 5, LO_MAX = 10, LO_COST = 600;
+  function loData() {
+    const d = save.loadouts && typeof save.loadouts === 'object' ? save.loadouts : (save.loadouts = {});
+    if (!Array.isArray(d.list)) d.list = [];
+    if (!d.on || typeof d.on !== 'object') d.on = {};
+    if (!(d.extra > 0)) d.extra = 0;
+    return d;
+  }
+  const loCap = () => Math.min(LO_MAX, LO_FREE + loData().extra);
+  const loSlots = id => { const d = loData(), cap = loCap(), out = []; d.list.forEach((l, i) => { if (l && l.champ === id && i < cap) out.push({ l, i }); }); return out; };
+  function activeLo(id) {
+    const d = loData(), v = d.on[id]; if (v === -1) return null;
+    const cap = loCap(), p = v >= 0 && v < cap ? d.list[v] : null;
+    if (p && p.champ === id) return p;
+    const s = loSlots(id); return s.length ? s[0].l : null;
+  }
+  // Applies the champion's loadout to a seat. A lane a friend already holds is left alone.
+  function applyLo(team, i) {
+    const s = L.seats[team][i], lo = activeLo(s.champ);
+    if (lo && lo.role && lo.role !== s.role && !s.locked && !friendHolds('role', lo.role)) setRole(team, i, lo.role);
+    wearMine(s);
+  }
+  const teamOf = id => rosterOf(1).includes(id) ? 1 : 0;
+  const loLabel = l => { const b = buildsOf(l.champ).find(x => x.id === l.build); return `${charName(teamOf(l.champ), l.champ)}${b ? `, ${b.name}` : ''}`; };
+  function paintLoPane(id, animate) {
+    const box = $('wLo'), rows = loSlots(id), on = activeLo(id), locked = mine().locked, g = document.createElement('div'); g.className = 'bgrid los';
+    const pick = (i, fresh) => { if (locked) { Sound.play('cancel'); return; } loData().on[id] = i; persist(); applyLo(L.team, L.slot); Sound.play(fresh ? 'equip' : 'tick'); netPicked(); renderLobby(); };
+    rows.forEach(({ l, i }, n) => {
+      const b = document.createElement('button'), bu = buildsOf(id).find(x => x.id === l.build), pr = profsOf(l.role).find(p => p.id === l.prof); b.className = 'bld'; b.style.setProperty('--i', n); b.setAttribute('aria-pressed', l === on);
+      b.innerHTML = `<span><b>Slot ${i + 1}</b>${l === on ? '<em>In use</em>' : ''}</span><small>${bu ? bu.name : ''}${l.role ? `, ${roleName(l.role)}` : ''}${pr ? `, ${pr.name}` : ''}</small>`;
+      b.onclick = () => { if (l !== on) pick(i, true); };
+      g.append(b);
+    });
+    const none = document.createElement('button'); none.className = 'bld'; none.style.setProperty('--i', rows.length); none.setAttribute('aria-pressed', !on);
+    none.innerHTML = `<span><b>No loadout</b></span><small>${rows.length ? 'Pick by hand for this champion' : 'None saved for this champion'}</small>`;
+    none.onclick = () => { if (on) pick(-1); };
+    g.append(none);
+    box.textContent = ''; box.append(g);
+    if (animate) { box.classList.remove('in'); void box.offsetWidth; box.classList.add('in'); }
+  }
+  const Ar = { sel: 0 };
+  const blankLo = id => { const role = (Sim.ROLES.slice().sort((a, b) => Sim.KITS[id].fit[b] - Sim.KITS[id].fit[a]))[0], b = buildsOf(id)[0], p = profsOf(role)[0]; return { champ: id, build: b ? b.id : undefined, role, prof: p ? p.id : undefined, path: 0, evo: [-1, -1] }; };
+  function renderArmory() {
+    const d = loData(), cap = loCap(), box = $('arSlots'), y = box.scrollTop;
+    $('arMarks').textContent = save.marks || 0;
+    Ar.sel = Math.max(0, Math.min(cap - 1, Ar.sel));
+    box.textContent = '';
+    for (let i = 0; i < cap; i++) {
+      const l = d.list[i], b = document.createElement('button'); b.className = 'arslot'; b.setAttribute('aria-pressed', i === Ar.sel);
+      if (l) { const t = teamOf(l.champ); b.append(coinCanvas(Art.champCoin(l.champ, t, Sim.tierOf(pts(l.champ)), 34), 80)); b.insertAdjacentHTML('beforeend', `<span class="t"><small>Slot ${i + 1}${activeLo(l.champ) === l ? ', in use' : ''}</small><b>${shortName(charName(t, l.champ))}</b></span>`); b.setAttribute('aria-label', `Slot ${i + 1}: ${loLabel(l)}`); }
+      else { b.classList.add('empty'); b.innerHTML = `<i class="plus" aria-hidden="true"></i><span class="t"><small>Slot ${i + 1}</small><b>Empty</b></span>`; b.setAttribute('aria-label', `Slot ${i + 1}, empty`); }
+      b.onclick = () => { if (Ar.sel === i) return; Ar.sel = i; Sound.play('tick'); renderArmory(); };
+      box.append(b);
+    }
+    if (cap < LO_MAX) {
+      const b = document.createElement('button'), can = (save.marks || 0) >= LO_COST; b.className = 'arslot buy' + (can ? '' : ' no');
+      b.innerHTML = `<i class="plus" aria-hidden="true"></i><span class="t"><small>New slot</small><b class="mks"><i></i>${LO_COST}</b></span>`;
+      b.setAttribute('aria-label', `Buy a loadout slot for ${LO_COST} Marks`);
+      b.onclick = () => { if (!can) { shake(b); Sound.play('cancel'); return; } save.marks -= LO_COST; d.extra++; persist(); Sound.play('storeBuy'); Ar.sel = cap; renderArmory(); const last = box.children[cap]; if (last) Kin.reveal(box, last); };
+      box.append(b);
+    }
+    box.scrollTop = y;
+    renderArEd();
+  }
+  function arRow(host, label, opts, cur, set, note) {
+    const r = document.createElement('section'); r.className = 'arrow';
+    r.insertAdjacentHTML('beforeend', `<h4>${label}</h4>`);
+    const row = document.createElement('div'); row.className = 'archips';
+    for (const o of opts) { const b = document.createElement('button'); b.textContent = o.t; b.setAttribute('aria-pressed', o.v === cur); b.onclick = () => { if (o.v === cur) return; set(o.v); persist(); Sound.play(o.snd || 'tick'); renderArmory(); }; row.append(b); }
+    r.append(row);
+    if (note) { const p = document.createElement('p'); p.textContent = note; r.append(p); }
+    host.append(r);
+  }
+  function renderArEd() {
+    const d = loData(), l = d.list[Ar.sel], ed = $('arEd'), y = ed.scrollTop;
+    ed.textContent = '';
+    if (!l) {
+      const w = document.createElement('div'); w.className = 'arempty';
+      w.innerHTML = `<p>Save a champion with their build, lane, item path, Evolve picks and cosmetics. Pick that champion in the lobby and it all applies at once.</p>`;
+      const b = document.createElement('button'); b.className = 'go hot'; b.textContent = 'Create loadout';
+      b.onclick = () => { d.list[Ar.sel] = blankLo(wantFor(L.team)); for (let i = 0; i < d.list.length; i++) if (d.list[i] === undefined) d.list[i] = null; persist(); Sound.play('equip'); renderArmory(); };
+      w.append(b); ed.append(w); ed.scrollTop = 0; return;
+    }
+    const id = l.champ, team = teamOf(id), kit = Sim.KITS[id];
+    const pickSec = document.createElement('section'); pickSec.className = 'arrow';
+    pickSec.insertAdjacentHTML('beforeend', `<h4>Champion<small>${charName(team, id)}</small></h4>`);
+    const pick = document.createElement('div'); pick.className = 'mspick'; pick.style.setProperty('--n', Math.ceil((rosterOf(0).length + rosterOf(1).length) / 2));
+    [0, 1].forEach(side => rosterOf(side).forEach(cid => {
+      const b = document.createElement('button'); b.setAttribute('aria-pressed', cid === id); b.setAttribute('aria-label', charName(side, cid));
+      b.append(coinCanvas(Art.champCoin(cid, side, Sim.tierOf(pts(cid)), 34), 80));
+      b.onclick = () => { if (cid === id) return; Object.assign(l, blankLo(cid), { finish: l.finish, trail: l.trail, recall: l.recall }); persist(); Sound.play('coin'); renderArmory(); };
+      pick.append(b);
+    }));
+    pickSec.append(pick); ed.append(pickSec);
+    const bs = buildsOf(id);
+    if (!bs.some(b => b.id === l.build) && bs[0]) l.build = bs[0].id;
+    if (bs.length) arRow(ed, 'Build', bs.map(b => ({ v: b.id, t: b.name })), l.build, v => { l.build = v; }, (bs.find(b => b.id === l.build) || {}).d);
+    arRow(ed, 'Lane', Sim.ROLES.map(r => ({ v: r, t: roleName(r) })), l.role, v => { l.role = v; const p = profsOf(v)[0]; l.prof = p ? p.id : undefined; });
+    const ps = profsOf(l.role);
+    if (ps.length) { if (!ps.some(p => p.id === l.prof)) l.prof = ps[0].id; arRow(ed, 'Lane proficiency', ps.map(p => ({ v: p.id, t: p.name })), l.prof, v => { l.prof = v; }, (ps.find(p => p.id === l.prof) || {}).d); }
+    const paths = (Sim.itemPaths && Sim.itemPaths(id, l.build)) || [];
+    if (paths.length) {
+      if (!paths[l.path]) l.path = 0;
+      const names = paths[l.path].items.map(x => (Sim.ITEM_BY && Sim.ITEM_BY[x] && Sim.ITEM_BY[x].name) || '').filter(Boolean).join(', ');
+      arRow(ed, 'Item path', paths.map((p, i) => ({ v: i, t: p.name })), l.path, v => { l.path = v; }, names);
+    }
+    (kit.evolves || []).forEach((opts, t) => {
+      if (!Array.isArray(l.evo)) l.evo = [-1, -1];
+      const v = opts[l.evo[t]] ? l.evo[t] : -1, at = (Sim.EVOLVE_AT || [4, 8])[t];
+      arRow(ed, `Evolve at level ${at}`, [{ v: -1, t: 'Ask me' }, ...opts.map((o, i) => ({ v: i, t: o.name }))], v, n => { l.evo[t] = n; }, v >= 0 ? opts[v].d : 'Choose in the match.');
+    });
+    for (const [kind, label] of [['finish', 'Coin finish'], ['trail', 'Trail'], ['recall', 'Recall']]) {
+      const own = catalog().filter(c => c.kind === kind && isOwned(c.id));
+      if (own.length) arRow(ed, label, [{ v: undefined, t: 'As equipped' }, ...own.map(c => ({ v: c.id, t: c.name, snd: 'equip' }))], isOwned(l[kind]) ? l[kind] : undefined, v => { if (v) l[kind] = v; else delete l[kind]; });
+    }
+    const foot = document.createElement('div'); foot.className = 'arfoot';
+    const del = document.createElement('button'); del.className = 'ghost danger'; del.textContent = 'Clear this slot';
+    twoTap(del, 'Tap again to clear', () => true, () => { d.list[Ar.sel] = null; persist(); renderArmory(); });
+    foot.append(del); ed.append(foot);
+    ed.scrollTop = y;
+  }
+
+  // ---------- profile ----------
+  const Pf = { tab: 'card', kind: 'card', card: null, y: 0, medal: null, origin: null, page: 0 };
+  const tally = () => { const t = save.tally && typeof save.tally === 'object' ? save.tally : (save.tally = {}); t.champs = t.champs || {}; t.roles = t.roles || {}; return t; };
+  const history = () => Array.isArray(save.history) ? save.history : (save.history = []);
+  const num = n => Math.round(n || 0).toLocaleString('en-US');
+  const ago = at => { const m = Math.max(0, (Date.now() - at) / 60000); return m < 60 ? `${Math.max(1, Math.floor(m))}m ago` : m < 1440 ? `${Math.floor(m / 60)}h ago` : `${Math.floor(m / 1440)}d ago`; };
+  const modeName = id => { const m = (Sim.MODES || []).find(x => x.id === id); return m ? m.name : 'Classic'; };
+  function renderProfile() {
+    document.querySelectorAll('#pfTab [data-p]').forEach(b => b.setAttribute('aria-pressed', b.dataset.p === Pf.tab));
+    const box = $('pfBody'); box.textContent = '';
+    ({ card: pfCard, stats: pfStats, hist: pfHist, medals: pfMedals, origin: pfOrigin, recent: pfRecent }[Pf.tab])(box);
+  }
+  function pfStats(box) {
+    const t = tally(), n = t.n || 0, wrap = document.createElement('div'); wrap.className = 'pfscr scroll';
+    if (!n) { wrap.innerHTML = '<p class="pfnone">Finish a match and your numbers start here.</p>'; box.append(wrap); return; }
+    const kda = ((t.k || 0) + (t.a || 0)) / Math.max(1, t.d || 0);
+    const tile = (v, l) => `<div class="dk pftile"><b>${v}</b><small>${l}</small></div>`;
+    wrap.insertAdjacentHTML('beforeend', `<div class="pftiles">${tile(num(n), 'Matches')}${tile(`${Math.round((t.w || 0) / n * 100)}%`, 'Win rate')}${tile(kda.toFixed(1), 'KDA')}${tile(num(t.mvp), 'MVP')}${tile(num(t.svp), 'SVP')}${tile(num(t.k), 'Kills')}</div>`);
+    const cols = document.createElement('div'); cols.className = 'pfcols';
+    const bar = (lead, name, right, frac) => { const d = document.createElement('div'); d.className = 'pfb'; d.append(lead); d.insertAdjacentHTML('beforeend', `<div><div class="tx"><b>${name}</b><span>${right}</span></div><i><u style="width:${Math.round(frac * 100)}%"></u></i></div>`); return d; };
+    const rec = o => `${o.n} played, ${Math.round((o.w || 0) / o.n * 100)}% won`;
+    const lanes = document.createElement('div'); lanes.className = 'pfbars'; lanes.insertAdjacentHTML('beforeend', '<h4 class="pfh">Most played lanes</h4>');
+    const rs = Object.keys(t.roles).filter(r => Sim.ROLE_INFO[r]).sort((a, b) => t.roles[b].n - t.roles[a].n), mR = rs.length ? t.roles[rs[0]].n : 1;
+    rs.forEach(r => { const g = document.createElement('span'); g.className = 'glane'; g.textContent = roleName(r)[0]; lanes.append(bar(g, roleName(r), rec(t.roles[r]), t.roles[r].n / mR)); });
+    const champs = document.createElement('div'); champs.className = 'pfbars'; champs.insertAdjacentHTML('beforeend', '<h4 class="pfh">Most played champions</h4>');
+    const cs = Object.keys(t.champs).filter(c => Sim.KITS[c]).sort((a, b) => t.champs[b].n - t.champs[a].n).slice(0, 6), mC = cs.length ? t.champs[cs[0]].n : 1;
+    cs.forEach(c => { const side = teamOf(c), k = t.champs[c]; champs.append(bar(coinCanvas(Art.champCoin(c, side, Sim.tierOf(pts(c)), 26), 60), charName(side, c), rec(k), k.n / mC)); });
+    cols.append(lanes, champs); wrap.append(cols); box.append(wrap);
+  }
+  function pfHist(box) {
+    const list = history(), wrap = document.createElement('div'); wrap.className = 'pfscr scroll'; wrap.style.gap = '4px';
+    if (!list.length) { wrap.innerHTML = '<p class="pfnone">Your last 30 matches will be kept here.</p>'; box.append(wrap); return; }
+    for (const h of list) {
+      if (!h || !Sim.KITS[h.c]) continue;
+      const d = document.createElement('div'); d.className = 'dk hrow' + (h.w ? ' w' : ''), side = h.tm ? 1 : 0;
+      d.append(coinCanvas(Art.champCoin(h.c, side, 0, 28), 64));
+      const honour = h.mvp ? ' <em>MVP</em>' : h.svp ? ' <em>SVP</em>' : '';
+      d.insertAdjacentHTML('beforeend', `<span class="res">${h.w ? 'Win' : 'Loss'}</span><span class="who"><b>${charName(side, h.c)}${honour}</b><small>${h.r && Sim.ROLE_INFO[h.r] ? roleName(h.r) : ''}${h.md && h.md !== 'classic' ? `, ${modeName(h.md)}` : ''}${h.net ? ', online' : ''}</small></span><span class="kda">${h.k}/${h.d}/${h.a}</span><span class="ago">${ago(h.t)}</span>`);
+      wrap.append(d);
+    }
+    box.append(wrap);
+  }
+  // ---------- player card ----------
+  const cardDef = id => (Art.CARDS || []).find(c => c.id === id);
+  const medalCount = at => { const t = careerOf().tiers || {}; return Object.values(t).filter(n => n >= at).length; };
+  function cardEarned(c) {
+    const e = c.earn; if (!e) return false;
+    if (e.medals) return medalCount(1) >= e.medals;
+    if (e.silvers) return medalCount(2) >= e.silvers;
+    if (e.golds) return medalCount(3) >= e.golds;
+    if (e.wins) return (careerOf().wins || 0) >= e.wins;
+    if (e.mastery !== undefined) return Object.keys(save.m).some(id => Sim.tierOf(pts(id)) >= e.mastery);
+    return false;
+  }
+  const cardOwned = c => !!c && (!c.cost && !c.earn || cardEarned(c) || (save.owned || []).includes(c.id));
+  const titlesOf = () => { const out = ['']; for (const m of Sim.MEDALS || []) if (medalTierN(m.id)) out.push(m.name); return out; };
+  // What this device wears right now, with anything no longer valid dropped.
+  function myCard() { const c = save.card && typeof save.card === 'object' ? save.card : {}, ok = (id, kind) => { const d = cardDef(id); return d && d.kind === kind && cardOwned(d) ? id : undefined; }; return { card: ok(c.card, 'card'), banner: ok(c.banner, 'banner'), title: titlesOf().includes(c.title) ? c.title : '' }; }
+  const myPlayerCard = W => { const c = myCard(); return Art.playerCard({ name: callsign(), title: c.title, card: c.card, banner: c.banner, champ: wantFor(L.team), medals: pinsOf().map(id => ({ id, tier: medalTierN(id) - 1 })), stats: [['Matches', tally().n || 0], ['Wins', tally().w || 0], ['MVP', tally().mvp || 0]] }, W); };
+  function pfCard(box) {
+    const left = document.createElement('div'); left.className = 'pclft';
+    left.append(myPlayerCard(U_cardW()));
+    const name = document.createElement('button'); name.className = 'ghost'; name.textContent = 'Change name'; name.onclick = openName; left.append(name);
+    const right = document.createElement('div'); right.className = 'pcrt';
+    const seg = document.createElement('div'); seg.className = 'seg';
+    for (const [k, t] of [['card', 'Cards'], ['banner', 'Banners'], ['title', 'Titles']]) { const b = document.createElement('button'); b.textContent = t; b.setAttribute('aria-pressed', Pf.kind === k); b.onclick = () => { if (Pf.kind === k) return; Pf.kind = k; Pf.card = null; Sound.play('tick'); renderProfile(); }; seg.append(b); }
+    right.append(seg);
+    const grid = document.createElement('div'); grid.className = 'pcgrid scroll'; const cur = myCard();
+    const equip = (k, v) => { const c = save.card && typeof save.card === 'object' ? save.card : (save.card = {}); c[k] = v; persist(); sendProfile(); Sound.play('equip'); Pf.y = grid.scrollTop; renderProfile(); };
+    if (Pf.kind === 'title') {
+      for (const t of titlesOf()) { const b = document.createElement('button'); b.className = 'dk pct' + (cur.title === t ? ' eq' : ''); b.textContent = t || 'No title'; b.setAttribute('aria-pressed', cur.title === t); b.onclick = () => { if (cur.title !== t) equip('title', t); }; grid.append(b); }
+      if (titlesOf().length < 2) grid.insertAdjacentHTML('beforeend', '<p class="pfnone">Every medal you earn becomes a title.</p>');
+    } else {
+      for (const c of Art.CARDS.filter(x => x.kind === Pf.kind)) {
+        const own = cardOwned(c), eq = (cur[Pf.kind] || (Pf.kind === 'card' ? 'graphite' : 'bar_plain')) === c.id, b = document.createElement('button'); b.className = 'dk pcc' + (eq ? ' eq' : '') + (own ? '' : ' lockd') + (Pf.card === c.id ? ' sel' : '');
+        b.append(Art.cardArt(c.id, 200, Pf.kind === 'card' ? 90 : 44));
+        b.insertAdjacentHTML('beforeend', `<span><b>${c.name}</b><small${!own && c.cost ? ' class="cost"' : ''}>${eq ? 'Equipped' : own ? 'Owned' : c.cost ? `${c.cost} Marks` : 'Locked'}</small></span>`);
+        b.onclick = () => { if (own) { if (!eq) equip(Pf.kind, c.id); return; } Pf.card = c.id; Pf.y = grid.scrollTop; Sound.play('tick'); renderProfile(); };
+        grid.append(b);
+      }
+    }
+    right.append(grid);
+    const sel = cardDef(Pf.card);
+    if (sel && Pf.kind !== 'title' && !cardOwned(sel)) {
+      const foot = document.createElement('div'); foot.className = 'pcfoot';
+      foot.insertAdjacentHTML('beforeend', `<p><b>${sel.name}</b> ${sel.earn ? sel.d : ''}</p>`);
+      if (sel.cost) { const can = (save.marks || 0) >= sel.cost, buy = document.createElement('button'); buy.className = 'go' + (can ? ' hot' : ' off'); buy.innerHTML = `Buy<span class="mks"><i></i>${sel.cost}</span>`; buy.onclick = () => { if (!can) { shake(buy); Sound.play('cancel'); return; } save.marks -= sel.cost; (save.owned || (save.owned = [])).push(sel.id); Sound.play('storeBuy'); equip(Pf.kind, sel.id); }; foot.append(buy); }
+      right.append(foot);
+    }
+    box.append(left, right); grid.scrollTop = Pf.y || 0;
+  }
+  const U_cardW = () => VW < 760 || VH < 350 ? 214 : 280;
+  const careerOf = () => save.career && typeof save.career === 'object' ? save.career : (Sim.newCareer ? Sim.newCareer() : { tiers: {} });
+  const medalBy = id => (Sim.MEDALS || []).find(m => m.id === id);
+  const medalTierN = id => { const n = (careerOf().tiers || {})[id] || 0, m = medalBy(id); return m ? Math.min(n, m.tiers.length) : 0; };
+  // A pin has to name a medal this save has actually earned, whatever a transfer code once carried.
+  const pinsOf = () => { const raw = Array.isArray(save.pins) ? save.pins : [], out = []; for (const id of raw) if (typeof id === 'string' && !out.includes(id) && medalTierN(id) > 0 && out.length < 3) out.push(id); return out; };
+  function medalCanvas(id, tier, R) { const c = document.createElement('canvas'); c.className = 'mdl'; c.style.width = c.style.height = `${R * 2}px`; Art.medalInto(c, id, tier, R); return c; }
+  function togglePin(id, btn) {
+    const pins = pinsOf(), at = pins.indexOf(id);
+    if (at >= 0) pins.splice(at, 1);
+    else if (pins.length >= 3) { flash(btn, 'Unpin one first'); shake(btn); Sound.play('cancel'); return; }
+    else pins.push(id);
+    save.pins = pins; persist(); sendProfile(); Sound.play('equip'); renderProfile();
+  }
+  function pfMedals(box) {
+    const all = Sim.MEDALS || [], career = careerOf();
+    if (!all.length) { box.insertAdjacentHTML('beforeend', '<p class="pfnone">Medals are being minted.</p>'); return; }
+    if (!medalBy(Pf.medal)) Pf.medal = (pinsOf()[0]) || all[0].id;
+    const grid = document.createElement('div'); grid.className = 'mdgrid scroll', keep = Pf.medalY || 0;
+    const cats = Sim.MEDAL_CATS || [], order = [...new Set(all.map(m => m.cat))], catName = c => { const f = Array.isArray(cats) ? cats.find(x => x.id === c) : cats[c]; return (f && (f.name || f)) || c; };
+    for (const c of order) {
+      grid.insertAdjacentHTML('beforeend', `<h4 class="pfh mdcat">${esc(catName(c))}</h4>`);
+      for (const m of all.filter(x => x.cat === c)) {
+        const n = medalTierN(m.id), b = document.createElement('button'); b.className = 'mdc' + (m.id === Pf.medal ? ' sel' : '') + (n ? '' : ' lockd'); b.setAttribute('aria-pressed', m.id === Pf.medal); b.setAttribute('aria-label', `${m.name}, ${n ? m.tiers[n - 1].name : 'not earned'}`);
+        b.append(medalCanvas(m.id, n - 1, 24));
+        b.insertAdjacentHTML('beforeend', `<span>${m.name}</span><i class="pips3">${m.tiers.map((_, i) => `<u class="${i < n ? `t${i}` : ''}"></u>`).join('')}</i>`);
+        if (pinsOf().includes(m.id)) b.insertAdjacentHTML('beforeend', '<em class="pinm" aria-hidden="true"></em>');
+        b.onclick = () => { if (Pf.medal === m.id) return; Pf.medal = m.id; Pf.medalY = grid.scrollTop; Sound.play('tick'); renderProfile(); };
+        grid.append(b);
+      }
+    }
+    const m = medalBy(Pf.medal), n = medalTierN(m.id), v = Sim.medalValue(career, m), next = m.tiers[n], det = document.createElement('div'); det.className = 'plate mddet';
+    const pins = pinsOf(), strip = document.createElement('div'); strip.className = 'mdpins'; strip.setAttribute('aria-label', 'Showcase');
+    for (let i = 0; i < 3; i++) { const id = pins[i], b = document.createElement('button'); b.className = 'mdpin' + (id ? '' : ' empty'); if (id) { b.append(medalCanvas(id, medalTierN(id) - 1, 15)); b.setAttribute('aria-label', `Pinned: ${medalBy(id).name}`); b.onclick = () => { if (Pf.medal === id) return; Pf.medal = id; Sound.play('tick'); renderProfile(); }; } else { b.disabled = true; b.setAttribute('aria-label', 'Empty showcase slot'); } strip.append(b); }
+    const head = document.createElement('div'); head.className = 'mdhead'; head.append(medalCanvas(m.id, n - 1, 34));
+    head.insertAdjacentHTML('beforeend', `<div><b>${m.name}</b><small>${n ? m.tiers[n - 1].name : 'Not earned yet'}</small></div>`);
+    det.append(head);
+    det.insertAdjacentHTML('beforeend', `<p class="mdd">${m.d}</p><div class="mdtiers scroll">${m.tiers.map((t, i) => `<div class="mdt${i < n ? ' got' : ''}"><u class="t${i}"></u><b>${t.name}</b><span>${t.d || `${fmtN(t.need)} needed`}</span></div>`).join('')}</div>`);
+    if (next) det.insertAdjacentHTML('beforeend', `<div class="mdbar"><i><u style="width:${Math.round(Math.min(1, v / next.need) * 100)}%"></u></i><span>${fmtN(v)} / ${fmtN(next.need)}</span></div>`);
+    const foot = document.createElement('div'); foot.className = 'mdfoot'; foot.append(strip);
+    const pin = document.createElement('button'), pinned = pins.includes(m.id); pin.className = pinned ? 'ghost' : 'go'; pin.textContent = !n ? 'Earn it to pin' : pinned ? 'Unpin' : 'Pin'; if (!n) pin.classList.add('off'); else if (!pinned) pin.classList.add('hot');
+    pin.onclick = () => { if (!n) { Sound.play('cancel'); return; } Pf.medalY = grid.scrollTop; togglePin(m.id, pin); };
+    foot.append(pin); det.append(foot);
+    box.append(grid, det);
+    grid.scrollTop = keep;
+  }
+  // ---------- origin comics: each panel opens at the next mastery coin ----------
+  function pfOrigin(box) {
+    if (!Pf.origin) Pf.origin = wantFor(L.team);
+    const id = Pf.origin, side = teamOf(id), n = Art.originCount(id), have = Sim.tierOf(pts(id)), left = document.createElement('div'); left.className = 'orpick mspick scroll'; left.style.setProperty('--n', 4);
+    [0, 1].forEach(t => rosterOf(t).forEach(cid => {
+      const b = document.createElement('button'), got = Math.min(Art.originCount(cid), Sim.tierOf(pts(cid))); b.setAttribute('aria-pressed', cid === id); b.setAttribute('aria-label', `${charName(t, cid)}, ${got} of ${Art.originCount(cid)} panels`);
+      b.append(coinCanvas(Art.champCoin(cid, t, Sim.tierOf(pts(cid)), 34), 80));
+      if (got) b.insertAdjacentHTML('beforeend', `<u>${got}</u>`);
+      b.onclick = () => { if (cid === id) return; Pf.origin = cid; Pf.page = 0; Pf.orY = left.scrollTop; Sound.play('tick'); renderProfile(); };
+      left.append(b);
+    }));
+    Pf.page = Math.max(0, Math.min(n - 1, Pf.page));
+    const i = Pf.page, open = have >= i + 1, right = document.createElement('div'); right.className = 'plate orview';
+    const art = document.createElement('div'); art.className = 'orart' + (open ? '' : ' lockd');
+    if (n) art.append(Art.origin(id, i));
+    right.append(art);
+    const need = TIERS[i + 1];
+    if (open && art.firstChild) { art.firstChild.setAttribute('role', 'img'); art.firstChild.setAttribute('aria-label', Art.originText(id, i)); }
+    if (!open && need) right.insertAdjacentHTML('beforeend', `<p class="ortxt">Reach the ${need.name} coin with ${esc(charName(side, id))} to open this panel.</p>`);
+    const nav = document.createElement('div'); nav.className = 'ornav';
+    const go = (d, t) => { const b = document.createElement('button'); b.className = 'tok'; b.textContent = t; if (i + d < 0 || i + d >= n) b.classList.add('off'); b.onclick = () => { if (i + d < 0 || i + d >= n) return; Pf.page = i + d; Pf.orY = left.scrollTop; Sound.play('tick'); renderProfile(); }; return b; };
+    nav.append(go(-1, 'Previous')); nav.insertAdjacentHTML('beforeend', `<span>${esc(charName(side, id))}, ${i + 1} of ${n}</span>`); nav.append(go(1, 'Next')); right.append(nav);
+    box.append(left, right); left.scrollTop = Pf.orY || 0;
+  }
+  function pfRecent(box) {
+    const list = hasNet() && Net.recent ? Net.recent() : [], wrap = document.createElement('div'); wrap.className = 'pfscr scroll'; wrap.style.gap = '4px';
+    if (!list.length) { wrap.innerHTML = '<p class="pfnone">Friends you play with online show up here, ready to rejoin.</p>'; box.append(wrap); return; }
+    for (const p of list) {
+      const d = document.createElement('div'); d.className = 'dk rprow';
+      d.insertAdjacentHTML('beforeend', `<span class="who"><b>${esc(p.name || 'Player')}</b><small>${p.rank !== null && p.rank !== undefined ? `${rankInfo(p.rank).name}, ` : ''}${p.n || 1} ${p.n === 1 ? 'match' : 'matches'} together, ${ago(p.at)}</small></span>`);
+      if (p.code) { const j = document.createElement('button'); j.className = 'tok'; j.textContent = 'Join'; j.setAttribute('aria-label', `Join ${p.name || 'this player'}`); j.onclick = () => { Sound.play('coin'); N.input = clean(p.code); scr(null); openJoin(N.input); }; d.append(j); }
+      const x = document.createElement('button'); x.className = 'tok ghost'; x.textContent = 'Forget'; x.setAttribute('aria-label', `Forget ${p.name || 'this player'}`);
+      x.onclick = () => { Net.forgetRecent(p.id); Sound.play('tick'); renderProfile(); };
+      d.append(x); wrap.append(d);
+    }
+    box.append(wrap);
+  }
+  // ---------- team voice ----------
+  function voiceTap() {
+    if (Voice.state === 'asking') return;
+    Sound.play('tap');
+    if (Voice.state === 'on') Voice.disable();
+    else { const p = Voice.enable({ mode: Voice.mode }); if (p && p.then) p.then(paintVoice, paintVoice); }
+    paintVoice();
+  }
+  function paintVoice() {
+    const st = Voice.state, on = st === 'on', room = !!N.mode && !(hasNet() && Net.spectator), label = st === 'asking' ? 'Asking' : 'Voice';
+    for (const id of ['sVoice', 'rVoice']) $(id).setAttribute('aria-pressed', on);
+    $('rVoice').textContent = label; $('rVoice').classList.toggle('hide', !room);
+    document.querySelectorAll('#sVMode [data-m]').forEach(b => b.setAttribute('aria-pressed', b.dataset.m === Voice.mode));
+    $('sVMsg').textContent = Voice.message || (on ? 'Your team can hear you.' : room ? 'Off until you turn it on. Only your team hears you.' : 'Join a room with friends to talk to your team.');
+    paintPauseVoice(); paintVox();
+  }
+  function paintPauseVoice() {
+    const box = $('pVox'), show_ = !!(G && G.net && !G.spectator); box.classList.toggle('hide', !show_); if (!show_) return;
+    box.textContent = '';
+    const mic = document.createElement('button'); mic.className = 'tok'; const on = Voice.state === 'on';
+    mic.textContent = !on ? 'Voice off' : Voice.selfMuted ? 'Mic muted' : 'Mic on'; if (!on || Voice.selfMuted) mic.classList.add('off');
+    mic.onclick = () => { if (Voice.state === 'on') { Voice.selfMute(!Voice.selfMuted); Sound.play('tap'); paintVoice(); } else voiceTap(); };
+    box.append(mic);
+    if (on) for (const p of Voice.peers()) { const b = document.createElement('button'); b.className = 'tok' + (p.muted ? ' off' : ''); b.textContent = p.name; b.setAttribute('aria-label', `${p.muted ? 'Unmute' : 'Mute'} ${p.name}`); b.onclick = () => { Voice.mute(p.pid, !p.muted); Sound.play('tick'); paintVoice(); }; box.append(b); }
+    if (Voice.message) box.insertAdjacentHTML('beforeend', `<p>${esc(Voice.message)}</p>`);
+  }
+  // Names appear only while someone is talking, so a quiet team adds nothing to the screen.
+  function paintVox() {
+    const el = $('vox'), live = G && !G.ended && Voice.state === 'on' && !G.replay, rows = !live ? [] : Voice.peers().filter(p => p.speaking && !p.muted).map(p => p.name);
+    if (live && Voice.speakingSelf) rows.unshift('You');
+    const key = rows.join('|'); if (el.dataset.k === key) return; el.dataset.k = key;
+    el.textContent = ''; rows.forEach(n => { const s = document.createElement('span'); s.textContent = n; el.append(s); });
+    el.classList.toggle('hide', !rows.length);
+  }
+  // ---------- spectating ----------
+  function paintSpec() {
+    const on = !!(G && G.spectator && !G.ended && !G.replay); $('specBar').classList.toggle('hide', !on);
+    if (on && G.me) { const n = charName(G.me.team, G.me.champ); if ($('spName').textContent !== n) $('spName').textContent = n; }
+  }
+  const cleanName = t => String(t).replace(/[\u0000-\u001f\u007f<>]/g, '').replace(/\s+/g, ' ').trim().slice(0, 16);
+  function openName() { $('nIn').value = callsign(); show('nameD'); Sound.play('tap'); $('nIn').focus(); }
+  function saveName() {
+    const v = cleanName($('nIn').value);
+    if (!v) { shake($('nIn')); Sound.play('cancel'); return; }
+    save.callsign = v; persist(); sendProfile(); $('nIn').blur(); hide('nameD'); Sound.play('equip'); if (curScr === 'profile') renderProfile(); if (curScr === 'room') renderRoom();
+  }
+  // Keeps the career up to date. Called once per match, before any screen can be closed.
+  function recordMatch(r) {
+    r.earned = [];
+    if (!G || G.cfg.practice || r.spectator || r.recorded) return;
+    r.recorded = true;
+    if (Sim.medalProgress) {
+      if (!save.career || typeof save.career !== 'object') save.career = Sim.newCareer();
+      r.earned = Sim.medalProgress(save.career, Sim.matchStats(r.s, r.me)).earned || [];
+      r.bonusParts = [];
+      const part = (cond, label, v) => { if (cond && v) r.bonusParts.push({ label, v }); }, B = Sim.MARK_BONUS;
+      part(r.mvp === r.me, 'MVP', B.mvp); part(r.svp === r.me, 'SVP', B.svp);
+      for (const m of r.earned) part(true, `${m.name} ${m.tierName}`, B.medal[m.tier]);
+      const bonus = r.bonusParts.reduce((a, p) => a + p.v, 0);
+      if (bonus) { save.marks = (save.marks || 0) + bonus; r.marks = (r.marks || 0) + bonus; }
+    }
+    const me = r.me, st = statsOf(me.stats || {}), t = tally(), bump = (o, k) => { const e = o[k] || (o[k] = { n: 0, w: 0 }); e.n++; if (r.won) e.w++; };
+    t.n = (t.n || 0) + 1; if (r.won) t.w = (t.w || 0) + 1;
+    t.k = (t.k || 0) + st.kills; t.d = (t.d || 0) + st.deaths; t.a = (t.a || 0) + st.assists;
+    if (r.mvp === me) t.mvp = (t.mvp || 0) + 1; if (r.svp === me) t.svp = (t.svp || 0) + 1;
+    bump(t.champs, me.champ); if (me.role) bump(t.roles, me.role);
+    const h = history(); h.unshift({ t: Date.now(), w: r.won ? 1 : 0, c: me.champ, tm: me.team, r: me.role, k: st.kills, d: st.deaths, a: st.assists, mvp: r.mvp === me ? 1 : 0, svp: r.svp === me ? 1 : 0, md: G.cfg.mode || 'classic', net: N.mode ? 1 : 0 });
+    h.length = Math.min(h.length, 30);
+    persist();
+  }
+
   function initMenus() {
     save.marks = save.marks || 0; save.owned = save.owned || []; save.equip = save.equip || {};
     rollSeats(); applySide(); renderLobby(); syncToggles(); buildKeypad(); wireNet();
@@ -16199,8 +16928,30 @@ const { initMenus, animMenus, showEnd } = (() => {
     paintMarks();
 
     $('mBots').onclick = playBots;
-    $('mPrac').onclick = startPractice;
+    $('mModes').onclick = () => { Sound.play('menuOpen'); renderModes(); scr('modes'); };
+    $('moBack').onclick = () => { Sound.play('menuBack'); scr('menu'); };
     $('mStore').onclick = () => { Sound.play('menuOpen'); renderStore(); scr('store'); };
+    if (save.cb && Art.setCB) Art.setCB(true);
+    if (hasNet()) Net.on('card', () => { if (curScr === 'room') renderRoom(); });
+    Hud.loadoutFor = id => { const lo = activeLo(id); return lo ? { path: lo.path | 0, evo: Array.isArray(lo.evo) ? lo.evo : [] } : null; };
+    $('mArm').onclick = () => { Sound.play('menuOpen'); renderArmory(); scr('armory'); };
+    $('arBack').onclick = () => { Sound.play('menuBack'); paintMarks(); scr('menu'); };
+    $('mProf').onclick = () => { Sound.play('menuOpen'); renderProfile(); scr('profile'); };
+    $('pfBack').onclick = () => { Sound.play('menuBack'); paintMarks(); scr('menu'); };
+    document.querySelectorAll('#pfTab [data-p]').forEach(b => { b.onclick = () => { if (Pf.tab === b.dataset.p) return; Pf.tab = b.dataset.p; Sound.play('tick'); renderProfile(); }; });
+    $('nOk').onclick = saveName; $('nNo').onclick = () => { $('nIn').blur(); hide('nameD'); Sound.play('tap'); };
+    $('nRoll').onclick = () => { $('nIn').value = rollCall(); Sound.play('tick'); };
+    $('nIn').onkeydown = e => { if (e.key === 'Enter') { e.preventDefault(); saveName(); } };
+    $('nIn').onblur = () => setTimeout(() => window.scrollTo(0, 0), 60);
+    Voice.on('state', paintVoice); Voice.on('peers', paintVoice);
+    $('sVoice').onclick = $('rVoice').onclick = voiceTap;
+    document.querySelectorAll('#sVMode [data-m]').forEach(b => { b.onclick = () => { Voice.setMode(b.dataset.m); Sound.play('tap'); paintVoice(); }; });
+    $('sCb').onclick = () => { save.cb = !save.cb; persist(); if (Art.setCB) Art.setCB(!!save.cb); Sound.play('tap'); syncToggles(); };
+    $('spPrev').onclick = () => { Net.follow(-1, { step: true }); Sound.play('tick'); };
+    $('spNext').onclick = () => { Net.follow(1, { step: true }); Sound.play('tick'); };
+    $('potgSkip').onclick = () => { Sound.play('tap'); Replay.skip(); };
+    $('endShare').onclick = shareResult;
+    $('endPotg').onclick = () => { if (!Replay.ready || Replay.playing) return; Sound.play('tap'); playPotg(() => show('end')); };
     $('stBack').onclick = () => { Sound.play('menuBack'); paintMarks(); scr('menu'); };
     document.querySelectorAll('#stTab [data-k]').forEach(b => { b.onclick = () => { St.tab = b.dataset.k; St.sel = null; Sound.play('tap'); renderStore(); }; });
     $('mHost').onclick = () => { Sound.play('coin'); startHost(); };
@@ -16208,6 +16959,12 @@ const { initMenus, animMenus, showEnd } = (() => {
     $('mMiss').onclick = () => { Sound.play('menuOpen'); renderMissions(); scr('missions'); };
     $('msBack').onclick = () => { Sound.play('menuBack'); paintMarks(); scr('menu'); };
     $('mRejoin').onclick = () => { const c = hasNet() && Net.resumable && Net.resumable(); if (!c) { paintRejoin(); return; } Sound.play('coin'); N.input = c; joinGo(); };
+    $('rMode').onclick = () => {
+      if (N.mode !== 'host') { Sound.play('tick'); return; }
+      const ids = MODES.map(m => m.id), at = ids.indexOf((Net.room && Net.room.mode) || 'classic');
+      for (let i = 1; i <= ids.length; i++) if (Net.setMode(ids[(at + i) % ids.length]) !== false) { Sound.play('tick'); renderRoom(); return; }
+      shake($('rMode')); Sound.play('cancel');
+    };
     $('rShuf').onclick = () => { if (N.mode !== 'host') return; try { Net.shuffle(); } catch (e) { } N.sel = null; Sound.play('flipSpin'); renderRoom(); };
     $('pSur').onclick = () => { if (!G) return; Hud.surrender(); $('resume').click(); };
     $('mHow').onclick = () => { Sound.play('menuOpen'); buildHow(); scr('how'); };
@@ -16286,12 +17043,12 @@ const { initMenus, animMenus, showEnd } = (() => {
     twoTap($('lBack'), 'Leave?', () => !!N.mode, () => { if (N.mode) toMenu(); else { const go = () => { hide('lobby'); hide('sheet'); scr('menu'); }; if (!wipe(go)) go(); } });
     $('resume').onclick = () => { paused = false; hide('pause'); Sound.play('tap'); };
     twoTap($('leave'), 'Tap again to leave', () => Hud.isLive(), () => toMenu());
-    $('again').onclick = () => { Sound.play('tap'); if (N.mode === 'host') { try { Net.toRoom(); } catch (e) { backToRoom(); } } else if (!N.mode) begin(true); };
+    $('again').onclick = () => { Sound.play('tap'); if (N.mode && hasNet() && Net.canRematch && Net.canRematch()) { const b = $('again'); if (Net.rematch() !== false) { b.textContent = 'Waiting for others'; b.classList.add('off'); b.classList.remove('hot'); } return; } if (N.mode === 'host') { try { Net.toRoom(); } catch (e) { backToRoom(); } } else if (!N.mode) begin(true); };
     $('tolobby').onclick = () => { Sound.play('tap'); toMenu(); };
   }
 
 
-  function animMenus(dt) { wipeStep(dt); flipStep(dt); vsStep(); titleStep(dt); heroStep(dt); endStep(dt); storeStep(dt); draftStep(); if (N.joining && hasNet() && Net.connected) guestIn(); }
+  function animMenus(dt) { paintSpec(); wipeStep(dt); flipStep(dt); vsStep(); titleStep(dt); heroStep(dt); endStep(dt); storeStep(dt); draftStep(); if (N.joining && hasNet() && Net.connected) guestIn(); }
 
   return { initMenus, animMenus, showEnd };
 })();

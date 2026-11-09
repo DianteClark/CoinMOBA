@@ -2,7 +2,7 @@
 const { Ctl, applyInput, aimDir } = (() => {
   const Ctl = {
     p: new Map(), stick: null, aim: null, atk: null, atkMode: 'champ', beacon: null, ping: null, mapHold: null,
-    reset() { this.p.clear(); this.stick = null; this.aim = null; this.atk = null; this.atkMode = 'champ'; this.beacon = null; this.ping = null; this.mapHold = null; },
+    reset() { if (this.talking) { this.talking = false; Voice.talk(false); } this.p.clear(); this.stick = null; this.aim = null; this.atk = null; this.atkMode = 'champ'; this.beacon = null; this.ping = null; this.mapHold = null; },
     pt(e) { return rotated ? { x: e.clientY - stageX, y: physW - e.clientX } : { x: e.clientX - stageX, y: e.clientY }; },
   };
   const near = (b, p, pad) => Math.hypot(p.x - b.x, p.y - b.y) < b.r + pad;
@@ -168,6 +168,8 @@ const { Ctl, applyInput, aimDir } = (() => {
       if (Hud.qcOpen() && !near(U.chat, p, 8)) Hud.qcClose();
       if (Ctl.aim && near(U.cancel, p, 6)) { cancelAim(); return; }
       if (near(U.pause, p, 10)) { Hud.squash('pause'); Hud.openPause(); return; }
+      if (G.spectator) return; // a spectator's only control here is the menu
+      if (Hud.pttShown() && near(U.ptt, p, 8)) { Hud.squash('ptt'); Ctl.p.set(e.pointerId, { role: 'ptt' }); Ctl.talking = true; Voice.talk(true); Sound.play('tap'); return; }
       if (near(U.shop, p, 8)) { Hud.squash('shop'); Hud.toggleShop(); return; }
       if (near(U.recall, p, 8)) { Hud.squash('recall'); if (me.alive) { me.q.push({ t: 'recall' }); Sound.play('recall'); } return; }
       if (near(U.chat, p, 8)) { Hud.squash('chat'); Hud.qcToggle(); return; }
@@ -230,6 +232,7 @@ const { Ctl, applyInput, aimDir } = (() => {
     const r = Ctl.p.get(e.pointerId); if (!r) return;
     Ctl.p.delete(e.pointerId);
     if (r.role === 'stick') Ctl.stick = null;
+    else if (r.role === 'ptt') { Ctl.talking = false; Voice.talk(false); }
     else if (r.role === 'atk') { Ctl.atk = null; Ctl.atkMode = 'champ'; G.me.atkMode = 'champ'; }
     else if (r.role === 'map') {
       const H_ = Ctl.mapHold;
