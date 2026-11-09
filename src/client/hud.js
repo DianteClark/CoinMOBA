@@ -136,7 +136,7 @@ const Hud = {
     ab: [{ x: 0, y: 0, r: 33 }, { x: 0, y: 0, r: 33 }, { x: 0, y: 0, r: 37 }],
     atkM: { x: 0, y: 0, r: 19 }, atkT: { x: 0, y: 0, r: 19 }, beacon: { x: 0, y: 0, r: 20 },
     cancel: { x: 0, y: 70, r: 34 }, pause: { x: 0, y: 20, r: 14 },
-    shop: { x: 63, y: 76, r: 17 }, recall: { x: 106, y: 76, r: 17 }, ping: { x: 149, y: 76, r: 17 },
+    shop: { x: 63, y: 76, r: 17 }, recall: { x: 106, y: 76, r: 17 }, ping: { x: 149, y: 76, r: 17 }, chat: { x: 192, y: 76, r: 17 },
     map: { x: 0, y: 6, w: 140, h: 84 },
     stripX: 400, miniR: 8, miniGap: 20, midHalf: 40, hpW: 104, compact: false,
   },
@@ -191,8 +191,8 @@ const { hud, initHud, hudDraw, uiEvent } = (() => {
   // ---------- layout ----------
   // Every movable control, with its default offset from the attack coin (or its fixed spot) at full size.
   const CLUSTER = { atk: [0, 0, 46], atkM: [-66, -20, 19], atkT: [-26, -64, 19], ab0: [-106, 20, 33], ab1: [-82, -76, 33], ab2: [2, -114, 37], beacon: [-162, -52, 20] };
-  const CORNER = { shop: [63, 76, 17], recall: [106, 76, 17], ping: [149, 76, 17] };
-  const LABELS = { atk: 'Attack', atkM: 'Minion', atkT: 'Tower', ab0: 'Ability 1', ab1: 'Ability 2', ab2: 'Ultimate', beacon: 'Beacon', shop: 'Shop', recall: 'Recall', ping: 'Ping' };
+  const CORNER = { shop: [63, 76, 17], recall: [106, 76, 17], ping: [149, 76, 17], chat: [192, 76, 17] };
+  const LABELS = { atk: 'Attack', atkM: 'Minion', atkT: 'Tower', ab0: 'Ability 1', ab1: 'Ability 2', ab2: 'Ultimate', beacon: 'Beacon', shop: 'Shop', recall: 'Recall', ping: 'Ping', chat: 'Chat' };
   const hudOf = () => save.hud || (save.hud = { left: false, pos: {} });
   const left = () => !!hudOf().left;
   // Default position of a control for this screen and handedness, before the player's own offset.
@@ -216,7 +216,7 @@ const { hud, initHud, hudDraw, uiEvent } = (() => {
     stage.classList.toggle('lh', left());
     put2(U.atk, 'atk'); put2(U.atkM, 'atkM'); put2(U.atkT, 'atkT'); put2(U.beacon, 'beacon');
     put2(U.ab[0], 'ab0'); put2(U.ab[1], 'ab1'); put2(U.ab[2], 'ab2');
-    put2(U.shop, 'shop'); put2(U.recall, 'recall'); put2(U.ping, 'ping');
+    put2(U.shop, 'shop'); put2(U.recall, 'recall'); put2(U.ping, 'ping'); put2(U.chat, 'chat');
     const cx = VW - 250; U.cancel.x = left() ? VW - cx : cx; U.cancel.y = 122;
     const M = U.map; M.w = U.compact ? 88 : 112; M.h = Math.round(M.w * Sim.H / Sim.W); M.x = VW - 44 - M.w; M.y = 6;
     U.pause.x = M.x - 21; U.pause.y = 20;
@@ -235,6 +235,7 @@ const { hud, initHud, hudDraw, uiEvent } = (() => {
     Ctl.reset();
     const shopEl = $('shop'); shopEl.classList.add('hide'); shopEl.classList.remove('dead');
     $('evo').classList.add('hide'); $('evo').textContent = '';
+    $('recap').classList.add('hide'); $('recap').textContent = ''; $('qc').classList.add('hide'); $('sv').classList.add('hide'); buildQc();
     const byId = new Map(), mini = new Map();
     for (const c of s.champs) { byId.set(c.id, c); mini.set(c.id, Art.champCoin(c.champ, c.team, c.tier, 26, c.finish)); }
     for (const t of s.towers) byId.set(t.id, t);
@@ -247,7 +248,7 @@ const { hud, initHud, hudDraw, uiEvent } = (() => {
       hpTrail: me.hp, hpHold: 0, hurt: 0, hpPrev: me.hp, goldShow: me.gold, goldStr: String(Math.floor(me.gold)), goldGain: 0, goldGainT: 0, goldGainStr: '', lvlFx: 0, first: save.hints < 1, guide: save.hints < 2, netStr: '', netKey: -2,
       prev: [0, 0, 0], cdMax: [1, 1, 1], recPrev: [0, 0, 0], recMax: [1, 1, 1], pop: [0, 0, 0], press: [0, 0, 0], deny: [0, 0, 0], flash: [0, 0, 0], spark: [.4, 1.2, 2.0],
       atkPress: 0, atkMax: 1, atkPrev: 0, cancelIn: 0,
-      feed: [], banner: null, queue: [], pings: [], pingAt: {}, towerAt: -99, mapC: null, kills: [s.kills[0], s.kills[1]], killBump: [0, 0], lvl: me.lvl, lvlBump: 0, sq: { shop: 0, recall: 0, pause: 0, ping: 0, beacon: 0 },
+      feed: [], banner: null, queue: [], pings: [], pingAt: {}, towerAt: -99, mapC: null, kills: [s.kills[0], s.kills[1]], killBump: [0, 0], lvl: me.lvl, lvlBump: 0, sq: { shop: 0, recall: 0, pause: 0, ping: 0, beacon: 0, chat: 0 }, emotes: [], sayLog: [], recap: null, bountyShow: 0, objK: '', objStr: '', objSub: '', buffs: [], svKey: '',
       clockSec: -1, clockStr: '0:00', hoardKey: -2, hoardStr: '', frame: 0,
       hint: save.hints < 2 ? { i: 0, t: 0, n: 0 } : null,
     };
@@ -274,7 +275,7 @@ const { hud, initHud, hudDraw, uiEvent } = (() => {
     ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
     if (!b.w) { ctx.font = fd(size); b.w = ctx.measureText(b.s).width + (b.spr ? 54 : 34); if (b.sub) { ctx.font = fw(500, 12); b.w = Math.max(b.w, ctx.measureText(b.sub).width + 34); } }
     const IN = .16, inT = clamp01(b.t / IN), outT = clamp01((b.t - (b.max - .2)) / .2), open = calm ? 1 : 1 - (1 - inT) * (1 - inT);
-    const W = Math.min(b.w, VW - 300), cy = Ctl.aim ? (U.compact ? VH - 22 : Math.min(128, VH * .36)) : (U.compact ? 58 : 62), cxB = Ctl.aim && U.compact ? VW / 2 - 44 : VW / 2, lift = outT * outT * -8;
+    const W = Math.min(b.w, VW - 300), cy = Ctl.aim ? (U.compact ? VH - 22 : Math.min(128, VH * .36)) : (U.compact ? 68 : 76), cxB = Ctl.aim && U.compact ? VW / 2 - 44 : VW / 2, lift = outT * outT * -8;
     const hw = W / 2, hh = h / 2, acc = b.team === 0 ? GOLD : b.team === 1 ? CRIM : b.hot ? CRIM : PAPER, y0 = cy + lift;
     ctx.globalAlpha = Math.min(1, inT * 2) * (1 - outT);
     ctx.save(); ctx.beginPath(); ctx.rect(cxB - (hw + 12) * open, y0 - hh - 2, (hw + 12) * 2 * open, h + 4); ctx.clip();
@@ -310,14 +311,20 @@ const { hud, initHud, hudDraw, uiEvent } = (() => {
         const spr = H.mini.get(me.id), team = me.team;
         if (e.first) banner('First takedown', { pri: 6, spr, team, dur: 1.9 });
         else if (e.multi >= 2) banner(e.multi === 2 ? 'Double takedown' : e.multi === 3 ? 'Triple takedown' : 'Four takedowns', { pri: 4 + Math.min(4, e.multi), spr, team, dur: 2 });
-        else banner('Takedown', { pri: 2, spr, team, dur: 1.2 });
-      }
+        else banner('Takedown', { pri: 2, spr, team, sub: e.bounty ? `Bounty claimed, +${Math.round(e.bounty)} gold` : '', dur: e.bounty ? 1.8 : 1.2 });
+      } else if (e.b === me.id && e.bounty) banner('Your bounty was claimed', { pri: 2, sub: `+${Math.round(e.bounty)} to them`, hot: true, dur: 1.6 });
     } else if (k === 'level') {
       if (e.u === me.id) { H.lvlBump = 1; H.lvlFx = 1; if (me.lvl === 3) banner('Ultimate unlocked', { pri: 4, dur: 1.9 }); }
     } else if (k === 'tower') {
       banner(e.team === me.team ? 'We lost a tower' : 'Enemy tower down', { pri: 3, team: e.team === me.team ? -1 : me.team, hot: e.team === me.team, dur: 2 });
-    } else if (k === 'bossup') banner('The Colossus is up', { pri: 4, sub: 'At the centre of the map', dur: 2.2 });
-    else if (k === 'boss') banner(`${Sim.TEAM_NAMES[e.team]} took the Colossus`, { pri: 5, sub: 'Stronger hits for 90 seconds', team: e.team, dur: 2.4 });
+    } else if (k === 'bossup') { const b = bossInfo(e.kind); banner(`${b.name} is up`, { pri: 4, sub: e.kind === 'colossus' ? 'At the centre of the map' : 'In the jungle', dur: 2.2 }); }
+    else if (k === 'boss') { const b = bossInfo(e.kind), name = b.name.replace(/^The /, 'the '); banner(`${e.team === me.team ? 'We' : 'They'} took ${name}`, { pri: 5, sub: b.d, team: e.team, dur: 2.4 }); }
+    else if (k === 'reinforce') { if (e.team === me.team && e.u !== me.id) banner('Reinforcements called', { pri: 2, sub: `${LANE_NAME[e.lane] || ''} lane`, team: e.team, dur: 1.4 }); }
+    else if (k === 'fund') { H.hopeFlash = 1; if (e.u === me.id) banner(me.team ? 'The city pays' : 'The city thanks you', { pri: 2, sub: 'The people bar moved', team: me.team, dur: 1.3 }); }
+    else if (k === 'buyback') { if (e.u === me.id) { $('recap').classList.add('hide'); banner('Back in the fight', { pri: 3, team: me.team, dur: 1.3 }); } }
+    else if (k === 'mapevent') onMapEvent(e);
+    else if (k === 'recap') { if (e.u === me.id) showRecap(e); }
+    else if (k === 'surrender') onSurrender(e);
     else if (k === 'ping') { if (e.team === undefined || e.team === G.me.team) onPing(e); }
     else if (k === 'buy' || k === 'sell') { if (e.u === me.id) shopSync(true); }
     else if (k === 'civ') H.hopeFlash = 1;
@@ -373,9 +380,19 @@ const { hud, initHud, hudDraw, uiEvent } = (() => {
       const q = 1 - H.goldGainT; ctx.font = fw(600, 12.5); ctx.globalAlpha = Math.min(1, H.goldGainT * 3);
       label(H.goldGainStr, GOLD_X + 20 + gw, GOLD_Y - (calm ? 0 : q * 7) + .5, GOLD); ctx.globalAlpha = 1;
     }
+    // A price on your own head reads like a warning tag next to your purse.
+    const bty = Math.round(me.bounty || 0);
+    if (bty > 0) {
+      if (bty !== H.bountyShow || H.bountyC !== U.compact) { H.bountyShow = bty; H.bountyC = U.compact; H.bountyStr = U.compact ? `+${bty}` : `Bounty ${bty}`; }
+      ctx.font = fw(600, 11.5); ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
+      const bw = Math.ceil(ctx.measureText(H.bountyStr).width) + 12, bx0 = GOLD_X + gw + 22;
+      put(panel(bw, 16, 4, 'rgba(141,20,37,.9)', null), bx0, GOLD_Y - 8);
+      ctx.fillStyle = WHITE; ctx.fillText(H.bountyStr, bx0 + 6, GOLD_Y + .5);
+    }
     // The shop only draws the eye when something can be bought.
     if ((H.shopHotT -= dt) <= 0) { H.shopHotT = .25; H.shopHot = canAfford(me); }
     const open = shopOpen(), hot = H.shopHot && !open;
+    if (!me.alive && H.recap) return;
     smallCoin(U.shop, hot || open, 'Shop', drawUpgrade, H.sq.shop, dt, 'shop');
     if (hot) {
       if (!calm) { const p = (Math.sin(H.t * 3.6) + 1) / 2; arcLine(U.shop.x, U.shop.y, U.shop.r + 2 + p * 3, 0, TAU, SIDE_ACC[side], 1.2); }
@@ -385,6 +402,7 @@ const { hud, initHud, hudDraw, uiEvent } = (() => {
     smallCoin(U.recall, !!chan, 'Recall', drawGate, H.sq.recall, dt, 'recall');
     if (chan) arcLine(U.recall.x, U.recall.y, U.recall.r + 2, -HPI, -HPI + TAU * (1 - chan.t / chan.total), SIDE_ACC[side], 2.5);
     smallCoin(U.ping, !!Ctl.ping, 'Ping', drawFlag, H.sq.ping, dt, 'ping');
+    smallCoin(U.chat, qcOpen(), 'Chat', drawBubble, H.sq.chat, dt, 'chat');
   }
 
   function smallCoin(B, hot, name, icon, sq, dt, key) {
@@ -405,6 +423,10 @@ const { hud, initHud, hudDraw, uiEvent } = (() => {
     ctx.strokeStyle = col; ctx.lineWidth = 1.8; ctx.lineCap = 'butt'; ctx.lineJoin = 'miter';
     ctx.beginPath(); ctx.moveTo(x - 6, y + 9); ctx.lineTo(x - 6, y - 8); ctx.stroke();
     ctx.fillStyle = col; ctx.beginPath(); ctx.moveTo(x - 6, y - 8); ctx.lineTo(x + 8, y - 4); ctx.lineTo(x - 6, y + 1); ctx.closePath(); ctx.fill();
+  }
+  function drawBubble(x, y, col) {
+    ctx.strokeStyle = col; ctx.lineWidth = 1.8; ctx.lineJoin = 'miter'; ctx.lineCap = 'butt';
+    ctx.beginPath(); ctx.moveTo(x - 8, y - 6); ctx.lineTo(x + 8, y - 6); ctx.lineTo(x + 8, y + 4); ctx.lineTo(x - 1, y + 4); ctx.lineTo(x - 5, y + 8); ctx.lineTo(x - 5, y + 4); ctx.lineTo(x - 8, y + 4); ctx.closePath(); ctx.stroke();
   }
   function drawGate(x, y, col) {
     ctx.strokeStyle = col; ctx.lineWidth = 1.7; ctx.lineCap = 'butt';
@@ -463,11 +485,8 @@ const { hud, initHud, hudDraw, uiEvent } = (() => {
     H.hopeAng += ((want ? Math.PI : 0) - H.hopeAng) * Math.min(1, dt * 7);
     const m = 1 + (calm ? 0 : H.hopeFlash) * .45;
     Deco.flip(ctx, mx, y + h / 2, 7 * m, H.hopeAng, 24, 0);
-    const left = s.bossUp ? -1 : Math.max(0, Math.ceil(s.bossAt - s.t));
-    if (left !== H.hoardKey) { H.hoardKey = left; H.hoardStr = left > 0 ? `Colossus in ${Math.floor(left / 60)}:${String(left % 60).padStart(2, '0')}` : ''; }
     ctx.font = fw(500, 11); ctx.textBaseline = 'middle'; ctx.textAlign = 'center';
-    if (left > 0 && left <= 30) label(H.hoardStr, cx, y + h + 10, GOLD);
-    else if (H.first && s.t < 40 && !H.banner) label('The people', cx, y + h + 10, WHITE);
+    if (H.first && s.t < 40 && !H.banner) label('The people', cx, y + h + 10, WHITE);
   }
 
   // ---------- minimap ----------
@@ -489,7 +508,8 @@ const { hud, initHud, hudDraw, uiEvent } = (() => {
     ctx.save(); ctx.beginPath(); ctx.rect(M.x, M.y, M.w, M.h); ctx.clip();
     for (const t of s.towers) if (t.alive) { const r = t.sub === 'core' ? 3.4 : 2.4; ctx.fillStyle = INK; ctx.fillRect(M.x + t.x * kx - r - .8, M.y + t.y * ky - r - .8, 2 * r + 1.6, 2 * r + 1.6); ctx.fillStyle = TEAM_DOT[t.team ? 1 : 0]; ctx.fillRect(M.x + t.x * kx - r, M.y + t.y * ky - r, 2 * r, 2 * r); }
     ctx.fillStyle = 'rgba(233,237,244,.7)'; for (const c of s.sites) if (c.alive) { disc(M.x + c.x * kx, M.y + c.y * ky, 1.6); ctx.fill(); }
-    if (s.bossUp) { const mc = s.map.center || { x: Sim.W / 2, y: Sim.H / 2 }; diamond(M.x + mc.x * kx, M.y + mc.y * ky, 4.5); ctx.fillStyle = GOLD; ctx.fill(); ctx.strokeStyle = INK; ctx.lineWidth = 1; ctx.stroke(); }
+    for (const b of (s.bosses || [])) if (b.up) { diamond(M.x + b.x * kx, M.y + b.y * ky, b.kind === 'colossus' ? 4.5 : 3.6); ctx.fillStyle = BUFF_COL[b.kind] || GOLD; ctx.fill(); ctx.strokeStyle = INK; ctx.lineWidth = 1; ctx.stroke(); }
+    if (s.event) { const X = M.x + s.event.x * kx, Y = M.y + s.event.y * ky, p = calm ? .4 : (H.t * 1.4) % 1; disc(X, Y, 3.5 + p * 7); ctx.strokeStyle = GOLD; ctx.lineWidth = 1.2; ctx.globalAlpha = 1 - p * .7; ctx.stroke(); ctx.globalAlpha = 1; disc(X, Y, 2.6); ctx.fillStyle = GOLD; ctx.fill(); }
     const vw = VW / Z * kx, vh = VH / (Z * TILT) * ky;
     ctx.strokeStyle = 'rgba(233,237,244,.65)'; ctx.lineWidth = 1; ctx.strokeRect(M.x + G.cam.x * kx - vw / 2, M.y + G.cam.y * ky - vh / 2, vw, vh);
     for (let i = H.pings.length - 1; i >= 0; i--) {
@@ -916,8 +936,8 @@ const { hud, initHud, hudDraw, uiEvent } = (() => {
     if (me.alive === !H.wasDead) return;
     H.wasDead = !me.alive;
     const f = $('shop');
-    if (H.wasDead) { if (G.outro || G.ended) return; H.shopAuto = true; f.classList.add('dead'); f.classList.remove('hide'); shopBuild(); }
-    else { f.classList.remove('dead'); if (H.shopAuto) f.classList.add('hide'); H.shopAuto = false; }
+    if (H.wasDead) { if (G.outro || G.ended) return; H.shopAuto = true; f.classList.add('dead'); f.classList.toggle('solo', !H.recap); f.classList.remove('hide'); shopBuild(); }
+    else { f.classList.remove('dead', 'solo'); if (H.shopAuto) f.classList.add('hide'); H.shopAuto = false; H.recap = null; $('recap').classList.add('hide'); }
   }
 
   // ---------- frame ----------
@@ -935,8 +955,8 @@ const { hud, initHud, hudDraw, uiEvent } = (() => {
       ctx.globalAlpha = (.2 + p * .16) * e; ctx.drawImage(redEdge(), 0, 0, VW, VH); ctx.globalAlpha = 1;
     }
     drawStick(s);
-    offset(-300 * away, 0); drawFrame(dt, me); drawFeed(dt);
-    offset(0, -90 * away); drawStrip(dt, s, me); drawPeople(dt, s);
+    offset(-300 * away, 0); drawFrame(dt, me); drawBuffs(dt, s, me); drawFeed(dt);
+    offset(0, -90 * away); drawStrip(dt, s, me); drawPeople(dt, s); drawObjective(dt, s, me);
     offset(300 * away, 0); drawMap(dt, s, me); drawCancel(dt);
     offset((left() ? -320 : 320) * away, 0); lastHitTick(dt, me, s); drawAttack(dt, me); for (let i = 0; i < 3; i++) drawAbility(i, dt, me); drawBeacon(dt, me); drawRipples(dt);
     offset(0, 0);
@@ -944,93 +964,400 @@ const { hud, initHud, hudDraw, uiEvent } = (() => {
     drawBeaconAim(me);
     deathShop(me);
     if (!me.alive) drawDeath(me);
-    drawChat(dt); drawHint(dt, me); drawTips(dt, me); drawAimCard(me); drawBanner(dt); drawRadial(dt);
+    drawEmotes(dt, s, me); drawChat(dt); drawHint(dt, me); drawTips(dt, me); drawAimCard(me); drawBanner(dt); drawRadial(dt);
     H.frame++;
     if (shopOpen() && H.frame % 10 === 0) shopSync(false);
-    if (H.frame % 12 === 0) evoSync(me, s);
+    if (H.frame % 12 === 0) { evoSync(me, s); svSync(s, me); if (!me.alive) recapSync(me); }
     if (H.tips && H.frame % 6 === 0) practiceSync(s, me);
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   }
 
+  // ---------- death recap: who and what, plainly ----------
+  const KIND_ICON = { tower: '<path d="M6 22 8 8H5V2h4v3h2V2h2v3h2V2h4v6h-3l2 14Z"/>', minion: '<path d="M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20Zm0 5 5 5-5 5-5-5Z" fill-rule="evenodd"/>', monster: '<path d="m3 3 5 5h8l5-5v12l-9 7-9-7Zm5 8 3 2v-2Zm8 0-3 2v-2Z" fill-rule="evenodd"/>', other: '<path d="M12 2 22 20H2Z"/>' };
+  const kindIcon = k => svgOf(KIND_ICON[k] || KIND_ICON.other);
+  const abilIdx = r => { const k = r.kit && Sim.KITS[r.kit]; if (!k) return -1; return typeof r.abil === 'number' ? r.abil : k.kit.findIndex(a => a.name === r.abil); };
+  const abilName = r => { const i = abilIdx(r); return i >= 0 ? Sim.KITS[r.kit].kit[i].name : typeof r.abil === 'string' ? r.abil : null; };
+  function recapRow(r, max, i, foe) {
+    const nm = abilName(r), champ = r.kind === 'champ' || r.kind === 'champion', icon = champ && abilIdx(r) >= 0 ? `<img src="${Art.iconURL(r.kit, abilIdx(r), foe)}" alt="">` : kindIcon(champ ? 'minion' : r.kind);
+    const title = champ ? (nm || 'Basic attack') : r.name;
+    return `<div class="rcr" style="--i:${i}">${icon}<span>${title}${champ ? `<small>${r.name}</small>` : ''}</span><em>${Math.round(r.dmg)}</em><i><u style="--w:${Math.max(4, Math.round(r.dmg / max * 100))}%"></u></i></div>`;
+  }
+  function showRecap(e) {
+    if (G.outro || G.s.over) return;
+    const me = G.me, el = $('recap'), list = (e.list || []).filter(r => r.dmg > 0).sort((a, b) => b.dmg - a.dmg);
+    H.recap = e; el.textContent = '';
+    $('shop').classList.remove('solo');
+    if (!list.length) { el.classList.add('hide'); $('shop').classList.add('solo'); return; }
+    const total = Math.round(e.total || list.reduce((a, r) => a + r.dmg, 0)), foe = 1 - me.team, top = list.find(r => r.kit) || list[0], n = U.compact ? 4 : 5;
+    const head = document.createElement('div'); head.className = 'rch';
+    if (top.kit) { const c = document.createElement('canvas'); c.width = c.height = 84; Hud.coinTo(c, Art.champCoin(top.kit, foe, 2, 40)); head.append(c); }
+    head.insertAdjacentHTML('beforeend', `<div><small>Taken down by</small><b>${top.name}</b></div>`);
+    el.append(head);
+    el.insertAdjacentHTML('beforeend', `<div class="rcl">${list.slice(0, n).map((r, i) => recapRow(r, list[0].dmg, i, foe)).join('')}</div><div class="rct"><span>Last 15 seconds</span><b>${total} damage</b></div><button class="go" id="recBuy"></button>`);
+    $('recBuy').onpointerdown = e2 => doCity('buyback', 0, e2.currentTarget);
+    recapSync(me);
+    el.classList.remove('hide');
+  }
+  function recapSync(me) {
+    const b = $('recBuy'); if (!b) return;
+    const p = cityPrice('buyback', me, G.s), can = me.gold >= p, key = p + '|' + can;
+    if (b.dataset.k === key) return; b.dataset.k = key;
+    b.innerHTML = `Buy back<span class="c"><i class="gc"></i>${p}</span>`;
+    b.classList.toggle('hot', can); b.classList.toggle('off', !can);
+  }
+
+  // ---------- emotes and quick chat ----------
+  const EMOTES = {
+    nice: 'm12 2 3 7 7 1-5 5 1.5 7L12 18l-6.5 4L7 15l-5-5 7-1Z',
+    love: 'M12 21C5 15 2 12 2 8a5 5 0 0 1 10-1 5 5 0 0 1 10 1c0 4-3 7-10 13Z',
+    ha: 'M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20ZM7 9h3v2H7Zm7 0h3v2h-3ZM6.5 13h11a5.5 5.5 0 0 1-11 0Z',
+    salute: 'M12 2 22 9v5L12 7 2 14V9Zm0 9 10 7v4l-10-7L2 22v-4Z',
+    rage: 'm12 1 2.6 6.4L21 5l-2.4 6.4L23 14l-6.2.8L17 22l-5-4.6L7 22l.2-7.2L1 14l4.4-2.6L3 5l6.4 2.4Z',
+    flip: 'M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20Zm0 3v14a7 7 0 0 0 0-14Z',
+  };
+  const QUICK = { group: 'Group up', nice: 'Well played', sorry: 'Sorry', ty: 'Thanks', wait: 'Wait for me', gg: 'Good game' };
+  const paths = {};
+  const pathOfE = id => paths[id] || (paths[id] = new Path2D(EMOTES[id] || EMOTES.nice));
+  const qcOpen = () => !$('qc').classList.contains('hide');
+  function buildQc() {
+    const e = $('qcE'), c = $('qcC'); e.textContent = ''; c.textContent = '';
+    for (const id of Object.keys(EMOTES)) { const b = document.createElement('button'); b.setAttribute('aria-label', `Emote: ${id}`); b.innerHTML = `<svg viewBox="0 0 24 24" fill="currentColor" fill-rule="evenodd" aria-hidden="true"><path d="${EMOTES[id]}"/></svg>`; b.onpointerdown = () => sendSay('emote', id); e.append(b); }
+    for (const id of Object.keys(QUICK)) { const b = document.createElement('button'); b.textContent = QUICK[id]; b.onpointerdown = () => sendSay('quick', id); c.append(b); }
+  }
+  function sendSay(kind, id) {
+    if (!H || !G) return;
+    const now = H.t; H.sayLog = H.sayLog.filter(t => now - t < 6);
+    $('qc').classList.add('hide');
+    if (H.sayLog.length >= 3) { Hud.toast('Slow down a little'); Sound.play('cancel'); return; }
+    H.sayLog.push(now);
+    showSay(G.me, kind, id, 'You');
+    if (Hud.isLive() && typeof Net !== 'undefined' && Net.say) { try { Net.say({ kind, id, team: kind === 'quick' }); } catch (e) { } }
+  }
+  function showSay(u, kind, id, who) {
+    if (kind === 'emote') { if (H.emotes.length >= 4) H.emotes.shift(); H.emotes.push({ u: u.id, id, t: 0 }); Sound.play('emote'); }
+    else if (QUICK[id]) { H.chat.unshift({ s: `${who}: ${QUICK[id]}`, col: u.team === G.me.team ? PAPER : CRIM, t: 3.6 }); if (H.chat.length > 2) H.chat.length = 2; Sound.play('tick'); }
+  }
+  Hud.say = o => {
+    if (!H || !G || !o || o.pid === (typeof Net !== 'undefined' ? Net.pid : -1)) return;
+    const u = G.s.champs.find(c => c.pid === o.pid) || G.s.champs.find(c => c.pname === o.name);
+    if (u) showSay(u, o.kind, o.id, o.name || Sim.charOf(u.team, u.champ).name);
+  };
+  Hud.qcToggle = () => { const q = $('qc'); q.classList.toggle('hide'); Sound.play(q.classList.contains('hide') ? 'menuBack' : 'tap'); };
+  Hud.qcOpen = qcOpen; Hud.qcClose = () => $('qc').classList.add('hide');
+  function drawEmotes(dt, s) {
+    for (let i = H.emotes.length - 1; i >= 0; i--) {
+      const e = H.emotes[i]; e.t += dt;
+      const u = H.byId.get(e.u);
+      if (e.t > 2.2 || !u || !u.alive) { H.emotes.splice(i, 1); continue; }
+      if (u.team !== G.me.team && !Sim.canSee(s, G.me.team, u)) continue;
+      const p = calm ? 1 : outBack(clamp01(e.t / .22)), a = clamp01((2.2 - e.t) * 3), X = sx(u.x), Y = sy(u.y) - 66 - (calm ? 0 : Math.sin(e.t * 2.4) * 2.5), R = 15 * p;
+      ctx.globalAlpha = a; disc(X, Y, R); ctx.fillStyle = INK; ctx.fill(); ctx.strokeStyle = SIDE_ACC[u.team]; ctx.lineWidth = 1.6; ctx.stroke();
+      ctx.save(); ctx.translate(X - 12 * p * .8, Y - 12 * p * .8); ctx.scale(p * .8, p * .8); ctx.fillStyle = SIDE_ACC[u.team]; ctx.fill(pathOfE(e.id), 'evenodd'); ctx.restore();
+      ctx.globalAlpha = 1;
+    }
+  }
+
+  // ---------- objectives: one quiet line under the people bar, loud only when it matters ----------
+  const BOSS_FALL = { name: 'The Colossus', d: '' };
+  const bossInfo = k => (Sim.BOSS_INFO && Sim.BOSS_INFO[k]) || BOSS_FALL;
+  const eventInfo = k => (Sim.EVENT_INFO && Sim.EVENT_INFO[k]) || { name: 'City event', d: '' };
+  const EV_GOAL = { heist: ['Guard the bank', 'Rob the bank'], convoy: ['Escort the convoy', 'Stop the convoy'], blackout: ['Restart the generator', 'Restart the generator'], drop: ['Claim the crate', 'Claim the crate'] };
+  const mmss = t => { t = Math.max(0, Math.ceil(t)); return `${Math.floor(t / 60)}:${String(t % 60).padStart(2, '0')}`; };
+  const bossesOf = s => !s.bosses ? [] : Array.isArray(s.bosses) ? s.bosses : Object.keys(s.bosses).map(kind => Object.assign({ kind }, s.bosses[kind]));
+  function onMapEvent(e) {
+    const info = eventInfo(e.kind), me = G.me, goal = EV_GOAL[e.kind] ? EV_GOAL[e.kind][me.team] : info.d;
+    if (e.phase === 'warn') banner(`${info.name} soon`, { pri: 2, dur: 1.5 });
+    else if (e.phase === 'start') banner(info.name, { pri: 4, sub: goal, dur: 2.3 });
+    else if (e.phase === 'end' && e.team >= 0) { const won = e.team === me.team; banner(won ? `${info.name}: won` : `${info.name}: lost`, { pri: 4, sub: won ? (Sim.BOON_INFO && Sim.BOON_INFO[e.kind] ? Sim.BOON_INFO[e.kind].d : 'Team boost') : 'The other side got the boost', team: e.team, hot: !won, dur: 2 }); }
+  }
+  // Only the most urgent objective gets the line: a live event, then a boss about to spawn or standing.
+  function nextObjective(s, me) {
+    const ev = s.event;
+    if (ev) {
+      const info = eventInfo(ev.kind), live = ev.phase === 'live', goal = EV_GOAL[ev.kind] ? EV_GOAL[ev.kind][me.team] : info.d;
+      return { str: info.name, sub: live ? goal : 'Starting soon', t: ev.t, col: GOLD, x: ev.x, y: ev.y, prog: live && ev.kind !== 'convoy' ? ev.prog : null, hp: ev.kind === 'convoy' && live ? ev.hp : -1 };
+    }
+    let best = null;
+    for (const b of (s.bosses || [])) {
+      const left = b.up ? -1 : b.at - s.t;
+      if (b.up) { if (!best || !best.up) best = { str: `${(b.name || bossInfo(b.kind).name).replace(/^The /, '')} is up`, sub: '', t: -1, col: GOLD, up: true, x: b.x, y: b.y }; }
+      else if (left > 0 && left <= 30 && (!best || (!best.up && left < best.t))) best = { str: (b.name || bossInfo(b.kind).name).replace(/^The /, ''), sub: 'Spawning', t: left, col: PAPER, x: b.x, y: b.y };
+    }
+    return best;
+  }
+  function drawObjective(dt, s, me) {
+    if (Ctl.aim || !me.alive) return;
+    const o = nextObjective(s, me); if (!o) return;
+    const cx = U.stripX, y = U.compact ? 44 : 46, tm = o.t >= 0 && o.t !== undefined ? mmss(o.t) : '';
+    ctx.font = fd(U.compact ? 12.5 : 14); ctx.textBaseline = 'middle'; ctx.textAlign = 'left';
+    const title = o.str.toUpperCase(), tw = ctx.measureText(title).width;
+    const sub = U.compact ? '' : o.sub;
+    ctx.font = fw(500, U.compact ? 11 : 12); const sw = sub ? ctx.measureText(sub).width + 8 : 0, cw = tm ? ctx.measureText(tm).width + 9 : 0;
+    const w = Math.ceil(tw + sw + cw + 24) & ~1, h = 18, x = Math.round(cx - w / 2);
+    put(panel(w, h, 4, GLASS, null), x, y - h / 2);
+    diamond(x + 8, y, 3); ctx.fillStyle = o.col; ctx.fill();
+    ctx.font = fd(U.compact ? 12.5 : 14); ctx.fillStyle = o.col; ctx.fillText(title, x + 16, y + .5);
+    let tx = x + 16 + tw + 8;
+    ctx.font = fw(500, U.compact ? 11 : 12);
+    if (sub) { ctx.fillStyle = MUTE; ctx.fillText(sub, tx, y + .5); tx += sw; }
+    if (tm) { ctx.fillStyle = PAPER; ctx.fillText(tm, tx + 1, y + .5); }
+    // When the objective is off screen a small marker points the way, on the same edge rules as a ping.
+    if (o.x !== undefined && G.intro <= 0) {
+      const X = sx(o.x), Y = sy(o.y);
+      if (!(X > 60 && X < VW - 60 && Y > 40 && Y < VH - 30)) {
+        const cxx = VW / 2, cyy = VH / 2, dx = X - cxx, dy = Y - cyy, kx = dx ? (VW / 2 - 56) / Math.abs(dx) : 1e9, ky = dy ? (VH / 2 - 34) / Math.abs(dy) : 1e9, k = Math.min(kx, ky), ax = cxx + dx * k, ay = cyy + dy * k, an = Math.atan2(dy, dx);
+        ctx.globalAlpha = .9; diamond(ax, ay, 6); ctx.fillStyle = INK; ctx.fill(); ctx.strokeStyle = o.col; ctx.lineWidth = 1.4; ctx.stroke();
+        ctx.fillStyle = o.col; ctx.beginPath(); ctx.moveTo(ax + Math.cos(an) * 13, ay + Math.sin(an) * 13); ctx.lineTo(ax + Math.cos(an + 2.4) * 8, ay + Math.sin(an + 2.4) * 8); ctx.lineTo(ax + Math.cos(an - 2.4) * 8, ay + Math.sin(an - 2.4) * 8); ctx.closePath(); ctx.fill();
+        ctx.globalAlpha = 1;
+      }
+    }
+  }
+  // Team boons and timed tonics: small diamonds beside the purse, each draining as it runs out.
+  const BUFF_COL = { warlord: '#ff8a4c', foreman: GOLD, sentinel: BLUE, colossus: '#ffc454', heist: '#7fd6a4', convoy: '#7fd6a4', blackout: STEEL, drop: '#7fd6a4', pot: '#ff7a8a', elix: '#d2a3ff', tonic: '#9fe8ff' };
+  function teamBuffs(s, me) {
+    const out = [], b = s.boons && s.boons[me.team];
+    if (b) for (const k of Object.keys(b)) if (b[k] > 0) out.push({ kind: k, left: b[k], max: 120 });
+    for (const [k, f, m] of [['pot', 'potT', 12], ['elix', 'elixT', 60], ['tonic', 'tonicT', 60]]) if (me[f] > 0) out.push({ kind: k, left: me[f], max: m });
+    return out;
+  }
+  function drawBuffs(dt, s, me) {
+    const list = teamBuffs(s, me); if (!list.length) return;
+    const R = U.compact ? 7.5 : 9;
+    let x = U.compact ? 172 : 188, y = GOLD_Y;
+    if (me.bounty > 0) x += U.compact ? 42 : 62;
+    const room = Math.max(1, Math.floor((U.stripX - (U.compact ? 66 : 128) - x) / (R * 2 + 6)));
+    for (const b of list.slice(0, Math.min(room, 5))) {
+      const col = BUFF_COL[b.kind] || PAPER, f = clamp01(b.left / b.max);
+      diamond(x, y, R); ctx.fillStyle = GLASS; ctx.fill();
+      ctx.save(); diamond(x, y, R); ctx.clip(); ctx.fillStyle = col; ctx.fillRect(x - R, y + R - 2 * R * f, 2 * R, 2 * R); ctx.restore();
+      diamond(x, y, R); ctx.strokeStyle = HAIR; ctx.lineWidth = 1; ctx.stroke();
+      x += R * 2 + 6;
+    }
+  }
+  // ---------- surrender ----------
+  function onSurrender(e) {
+    const me = G.me; if (e.team !== me.team) return;
+    H.svNeed = e.need;
+    if (e.phase === 'fail') banner('Surrender failed', { pri: 3, sub: 'Keep fighting', dur: 1.6 });
+    else if (e.phase === 'open') Sound.play('tick');
+  }
+  function svSync(s, me) {
+    const v = s.votes && s.votes[me.team], el = $('sv'), voted = v && (v.yes.includes(me.id) || v.no.includes(me.id)), on = !!v && !voted && me.alive !== undefined;
+    const key = on ? `${v.yes.length}/${H.svNeed || 0}` : '';
+    if (key === H.svKey) return; H.svKey = key;
+    el.classList.toggle('hide', !on);
+    if (on) { $('svT').textContent = `Surrender?${H.svNeed ? ` ${v.yes.length} of ${H.svNeed} yes` : ''}`; $('svN').onpointerdown = () => voteSurrender(false); $('svY').onpointerdown = () => voteSurrender(true); }
+  }
+  function voteSurrender(yes) { if (G) { G.me.q.push({ t: 'surrender', vote: yes }); $('sv').classList.add('hide'); Sound.play(yes ? 'cancel' : 'tap'); H.svKey = 'x'; } }
+  Hud.surrender = () => { if (G) G.me.q.push({ t: 'surrender', vote: true }); };
+
+
   // ---------- item shop ----------
+  const CATS = [['rec', 'For you'], ['attack', 'Attack'], ['ability', 'Ability'], ['tank', 'Defence'], ['util', 'Utility'], ['leg', 'Legendary'], ['cons', 'Supplies'], ['city', 'City']];
   const shopOpen = () => !$('shop').classList.contains('hide');
   const itemDb = () => Sim.ITEMS || [];
-  const itemBy = id => itemDb().find(i => i.id === id) || null;
-  // Slots are three entries of ids (or empties); tolerate either a full or a packed array.
-  function slotsOf(me) { const v = (me.items || []).map(i => i && i.id ? i.id : i || null); while (v.length < 3) v.push(null); return v.slice(0, 3); }
+  const itemBy = id => id && Sim.ITEM_BY ? Sim.ITEM_BY[id] || null : itemDb().find(i => i.id === id) || null;
+  const isLeg = it => !!it.legendary;
+  const isCons = it => !!it.consumable;
+  const hasTag = (it, ...t) => (it.tags || []).some(x => t.includes(x));
+  function slotsOf(me) { const v = (me.items || []).map(i => i && i.id ? i.id : i || null), n = Sim.ITEM_SLOTS || 5; while (v.length < n) v.push(null); return v.slice(0, n); }
   const costOf = (me, it) => Sim.itemPrice ? Sim.itemPrice(me, it.id) : it.cost;
-  function canBuy(me, it) { const p = costOf(me, it); return p !== null && me.gold >= p; }
-  const canAfford = me => itemDb().some(it => canBuy(me, it));
+  function canBuy(me, it) { if (isCons(it) && !me.alive) return false; const p = costOf(me, it); return p !== null && p !== undefined && me.gold >= p; }
+  const canAfford = me => itemDb().some(it => !isCons(it) && canBuy(me, it));
   const recommendedOf = me => Sim.recommended ? (Sim.recommended(me.champ, me.build) || []) : [];
+  const pathOf = id => Sim.itemPath ? Sim.itemPath(id) : [id];
+  const upsOf = id => itemDb().filter(i => i.upgradesFrom === id);
+  function sellOf(me, slot) {
+    return Math.floor(Sim.sellValue(slotsOf(me)[slot]));
+  }
+  // The next step along each item this build wants.
+  function nextSteps(me) {
+    const own = slotsOf(me), out = [];
+    for (const goal of recommendedOf(me)) {
+      const p = pathOf(goal); let i = p.length - 1;
+      while (i >= 0 && !own.includes(p[i])) i--;
+      if (i < p.length - 1) { const it = itemBy(p[i + 1]); if (it && !out.includes(it)) out.push(it); }
+    }
+    return out;
+  }
+  // The upgrade a slot's one-tap button buys: the one this build wants, otherwise the cheapest.
+  function bestUp(me, id) {
+    const ups = upsOf(id); if (!ups.length) return null;
+    const goals = recommendedOf(me), wanted = ups.find(u => goals.some(g => pathOf(g).includes(u.id)));
+    return wanted || ups.slice().sort((a, b) => a.cost - b.cost)[0];
+  }
   const TAG_ICON = {
     damage: '<path d="M12 2 19 9l-7 13L5 9Z"/>', attack: '<path d="M12 2 19 9l-7 13L5 9Z"/>', ability: '<path d="m12 2 3 7 7 1-5 5 1.5 7L12 18l-6.5 4L7 15l-5-5 7-1Z"/>', magic: '<path d="m12 2 3 7 7 1-5 5 1.5 7L12 18l-6.5 4L7 15l-5-5 7-1Z"/>',
     armor: '<path d="M12 2 21 5v7c0 5-4 8-9 10-5-2-9-5-9-10V5Z"/>', armour: '<path d="M12 2 21 5v7c0 5-4 8-9 10-5-2-9-5-9-10V5Z"/>', tank: '<path d="M12 2 21 5v7c0 5-4 8-9 10-5-2-9-5-9-10V5Z"/>', guard: '<path d="M12 2 21 5v7c0 5-4 8-9 10-5-2-9-5-9-10V5Z"/>',
     mobility: '<path d="M3 4h5l7 8-7 8H3l7-8Zm9 0h5l7 8-7 8h-5l7-8Z"/>', support: '<path d="M10 3h4v7h7v4h-7v7h-4v-7H3v-4h7Z"/>', health: '<path d="M10 3h4v7h7v4h-7v7h-4v-7H3v-4h7Z"/>', heal: '<path d="M10 3h4v7h7v4h-7v7h-4v-7H3v-4h7Z"/>', sustain: '<path d="M12 2c4 6 7 9 7 13a7 7 0 0 1-14 0c0-4 3-7 7-13Z"/>', lifesteal: '<path d="M12 2c4 6 7 9 7 13a7 7 0 0 1-14 0c0-4 3-7 7-13Z"/>',
     speed: '<path d="M3 4h5l7 8-7 8H3l7-8Zm9 0h5l7 8-7 8h-5l7-8Z"/>', move: '<path d="M3 4h5l7 8-7 8H3l7-8Zm9 0h5l7 8-7 8h-5l7-8Z"/>', haste: '<path d="M13 2 5 13h6l-1 9 9-12h-6Z"/>', cooldown: '<path d="M13 2 5 13h6l-1 9 9-12h-6Z"/>',
     crit: '<path d="M11 2h2v7h-2zm0 13h2v7h-2zM2 11h7v2H2zm13 0h7v2h-7z"/><circle cx="12" cy="12" r="2.4"/>', vision: '<path d="M1 12c4-6 8-8 11-8s7 2 11 8c-4 6-8 8-11 8S5 18 1 12Zm11 4a4 4 0 1 0 0-8 4 4 0 0 0 0 8Z" fill-rule="evenodd"/>',
+    consumable: '<path d="M9 2h6v2l-1 1v4l5 9a3 3 0 0 1-3 4H8a3 3 0 0 1-3-4l5-9V5L9 4Z"/>',
   };
+  const svgOf = d => `<svg viewBox="0 0 24 24" aria-hidden="true" fill="currentColor">${d}</svg>`;
   function itemIcon(it) {
-    for (const t of (it.tags || [])) if (TAG_ICON[t]) return `<svg viewBox="0 0 24 24" aria-hidden="true" fill="currentColor">${TAG_ICON[t]}</svg>`;
-    return `<svg viewBox="0 0 24 24" aria-hidden="true" fill="currentColor"><path d="M12 2 20 7v10l-8 5-8-5V7Z"/></svg>`;
+    if (isCons(it)) return svgOf(TAG_ICON.consumable);
+    for (const t of (it.tags || [])) if (TAG_ICON[t]) return svgOf(TAG_ICON[t]);
+    return svgOf('<path d="M12 2 20 7v10l-8 5-8-5V7Z"/>');
   }
+  const CITY_ICON = { reinforce: '<path d="m3 21 9-18 9 18h-5l-4-8-4 8Z"/>', fund: '<path d="M4 21V9l8-6 8 6v12h-6v-7h-4v7Z"/>', buyback: '<path d="M12 3a9 9 0 1 1-8 13l2.6-1.3A6 6 0 1 0 12 6v3L6.5 4.5 12 0Z"/>' };
+  const tierClass = it => isLeg(it) ? 'leg' : isCons(it) ? 'cons' : `t${it.tier || 1}`;
   function itemBtn(it, rec) {
     const b = document.createElement('button');
-    b.className = `it t${it.tier || 1}`; b.dataset.id = it.id;
+    b.className = `it ${tierClass(it)}`; b.dataset.id = it.id;
     b.innerHTML = `<span class="ic">${itemIcon(it)}</span><span class="tx"><b>${it.name}</b><span class="c"><i class="gc"></i><span class="p">${it.cost}</span></span></span>${rec ? '<u class="rec" aria-hidden="true"></u>' : ''}`;
     b.setAttribute('aria-label', `${it.name}, ${it.cost} gold${rec ? ', recommended' : ''}`);
     b.onpointerdown = () => { H.shopSel = { item: it.id }; Sound.play('tick'); shopFoot(); };
     return b;
   }
-  function shopBuild() {
-    const me = G.me, list = $('shList');
-    list.textContent = '';
-    const db = itemDb();
-    if (!db.length) { list.innerHTML = '<p class="shnone">The shop is stocking its shelves.</p>'; $('shSlots').textContent = ''; $('shFoot').textContent = ''; return; }
-    const rec = [...new Set(recommendedOf(me))].slice(0, 6).map(itemBy).filter(Boolean), head = t => { const h = document.createElement('h4'); h.textContent = t; return h; }, grid = () => { const g = document.createElement('div'); g.className = 'items'; return g; };
-    if (rec.length) { list.append(head('Recommended for your build')); const g = grid(); rec.forEach(it => g.append(itemBtn(it, true))); list.append(g); }
-    const tiers = [...new Set(db.map(i => i.tier || 1))].sort((a, b) => a - b);
-    tiers.forEach((t, n) => { list.append(head(tiers.length > 1 ? `Tier ${t}` : 'All items')); const g = grid(); db.filter(i => (i.tier || 1) === t).forEach(it => g.append(itemBtn(it, false))); list.append(g); });
-    const slots = $('shSlots'); slots.textContent = '';
-    for (let i = 0; i < 3; i++) { const b = document.createElement('button'); b.className = 'slot'; b.dataset.i = i; b.onpointerdown = () => { const id = slotsOf(G.me)[i]; if (id) { H.shopSel = { slot: i }; Sound.play('tick'); shopFoot(); } }; slots.append(b); }
-    H.shopSel = H.shopSel && (H.shopSel.item ? itemBy(H.shopSel.item) : slotsOf(me)[H.shopSel.slot]) ? H.shopSel : null;
+  const shead = t => { const h = document.createElement('h4'); h.textContent = t; return h; };
+  const sgrid = list => { const g = document.createElement('div'); g.className = 'items'; list.forEach(([it, rec]) => g.append(itemBtn(it, rec))); return g; };
+  function catItems(cat) {
+    const db = itemDb().filter(i => !isCons(i) && !isLeg(i)), sort = l => l.slice().sort((a, b) => (a.tier || 1) - (b.tier || 1) || a.cost - b.cost);
+    if (cat === 'attack') return sort(db.filter(i => hasTag(i, 'attack', 'damage', 'crit', 'lifesteal')));
+    if (cat === 'ability') return sort(db.filter(i => hasTag(i, 'ability', 'magic', 'cooldown', 'haste')));
+    if (cat === 'tank') return sort(db.filter(i => hasTag(i, 'tank', 'armor', 'armour', 'guard', 'health')));
+    if (cat === 'util') return sort(db.filter(i => hasTag(i, 'mobility', 'support', 'move', 'speed', 'vision', 'heal', 'sustain')));
+    if (cat === 'leg') return sort(itemDb().filter(isLeg));
+    if (cat === 'cons') return sort(itemDb().filter(isCons));
+    return [];
+  }
+  function shopTabs() {
+    const t = $('shTabs'); t.textContent = '';
+    CATS.forEach(([k, name]) => {
+      if ((k === 'leg' || k === 'cons') && !catItems(k).length) return;
+      const b = document.createElement('button'); b.textContent = name; b.dataset.k = k; b.setAttribute('aria-pressed', k === H.shopCat);
+      b.onpointerdown = () => { if (H.shopCat === k) return; H.shopCat = k; H.shopSel = null; Sound.play('tick'); shopTabs(); shopList(); };
+      t.append(b);
+    });
+  }
+  function shopList() {
+    const me = G.me, list = $('shList'), cat = H.shopCat;
+    list.textContent = ''; list.scrollTop = 0;
+    $('shop').classList.toggle('citymode', cat === 'city');
+    if (!itemDb().length) { list.innerHTML = '<p class="shnone">The shop is stocking its shelves.</p>'; return; }
+    if (cat === 'city') { shopCity(list); H.shopKey = ''; shopSync(true); return; }
+    if (cat === 'rec') {
+      const goals = [...new Set(recommendedOf(me))].map(itemBy).filter(Boolean), next = nextSteps(me);
+      if (next.length) { list.append(shead('Next for your build'), sgrid(next.map(it => [it, true]))); }
+      if (goals.length) { list.append(shead('Where your build is heading'), sgrid(goals.map(it => [it, false]))); }
+      const cons = catItems('cons').slice(0, 3);
+      if (cons.length) list.append(shead('Supplies'), sgrid(cons.map(it => [it, false])));
+    } else {
+      const rec = recommendedOf(me).flatMap(pathOf);
+      list.append(sgrid(catItems(cat).map(it => [it, rec.includes(it.id)])));
+    }
     H.shopKey = ''; shopSync(true);
   }
-  function nextRec(me) { for (const id of recommendedOf(me)) { const it = itemBy(id); if (it && costOf(me, it) !== null) return it; } return null; }
+  // Prices come from the sim when it has them; the card only ever shows what a tap will really cost.
+  const cityPrice = (kind, me, s) => Math.ceil(kind === 'reinforce' ? Sim.reinforceCost(s, me) : kind === 'fund' ? Sim.fundCost(s, me.team) : Sim.buybackCost(s, me));
+  const LANE_NAME = ['Top', 'Middle', 'Bottom'];
+  const LANES = [['Top', 0], ['Middle', 1], ['Bottom', 2]];
+  function cityCard(kind, title, body, foot) {
+    const d = document.createElement('div'); d.className = `city c-${kind}`;
+    d.innerHTML = `<span class="ic">${svgOf(CITY_ICON[kind])}</span><div class="ctx"><b>${title}</b><small>${body}</small></div><div class="cgo">${foot}</div>`;
+    return d;
+  }
+  function shopCity(list) {
+    const rein = cityCard('reinforce', 'Reinforcements', 'Send a stronger wave down one lane.', LANES.map(([n, i]) => `<button class="tok" data-lane="${i}">${n}<span class="c"><i class="gc"></i><span data-p="reinforce"></span></span></button>`).join(''));
+    const fund = cityCard('fund', 'Fund the City', G.me.team ? 'Buy off the city. The people bar slides your way.' : 'Rebuild the city. The people bar slides your way.', `<button class="tok" id="shFund">Fund<span class="c"><i class="gc"></i><span data-p="fund"></span></span></button>`);
+    const back = cityCard('buyback', 'Buyback', 'Respawn right now, at your base.', `<button class="tok" id="shBack2">Buy back<span class="c"><i class="gc"></i><span data-p="buyback"></span></span></button>`);
+    list.append(rein, fund, back);
+    rein.querySelectorAll('[data-lane]').forEach(b => { b.onpointerdown = () => doCity('reinforce', +b.dataset.lane, b); });
+    $('shFund').onpointerdown = e => doCity('fund', 0, e.currentTarget);
+    $('shBack2').onpointerdown = e => doCity('buyback', 0, e.currentTarget);
+  }
+  function doCity(kind, lane, btn) {
+    if (!G) return;
+    const me = G.me, s = G.s, p = cityPrice(kind, me, s), bad = me.gold < p || (kind === 'buyback' && (me.alive || me.buybackCd > 0 || s.over)) || (kind === 'reinforce' && s.t < s.reinforceAt[me.team]);
+    if (bad) { Sound.play('cancel'); denyEl(btn); return; }
+    if (kind === 'reinforce') { me.q.push({ t: 'reinforce', lane }); banner('Reinforcements called', { pri: 3, sub: `${LANES[lane][0]} lane, next wave`, team: me.team, dur: 1.6 }); Sound.play('reinforce'); }
+    else if (kind === 'fund') { me.q.push({ t: 'fund' }); H.hopeFlash = 1; Sound.play('fundCity'); }
+    else { me.q.push({ t: 'buyback' }); Sound.play('buyback'); }
+    popEl(btn);
+  }
+  const popEl = el => { if (!el) return; el.classList.remove('bought'); void el.offsetWidth; el.classList.add('bought'); };
+  const denyEl = el => { if (!el) return; el.classList.remove('shake'); void el.offsetWidth; el.classList.add('shake'); setTimeout(() => el.classList.remove('shake'), 320); };
+  function doBuy(id, cell) {
+    if (!G) return false;
+    const it = itemBy(id); if (!it || !canBuy(G.me, it)) { Sound.play('cancel'); denyEl(cell); return false; }
+    G.me.q.push({ t: 'buy', id });
+    Sound.play(isLeg(it) ? 'buyLegendary' : 'coin');
+    popEl(cell || document.querySelector(`#shList .it[data-id="${id}"]`));
+    setTimeout(() => shopSync(true), 40);
+    return true;
+  }
+  function doSell(slot) {
+    if (!G) return;
+    G.me.q.push({ t: 'sell', slot }); H.shopSel = null; Sound.play('sell');
+    setTimeout(() => shopSync(true), 40);
+  }
+  function shopBuild() {
+    if (!H.shopCat) H.shopCat = 'rec';
+    const slots = $('shSlots'); slots.textContent = '';
+    slotsOf(G.me).forEach((_, i) => {
+      const b = document.createElement('button'); b.className = 'slot'; b.dataset.i = i;
+      b.onpointerdown = e => {
+        const me = G.me, id = slotsOf(me)[i]; if (!id) return;
+        const up = e.target.closest && e.target.closest('.up');
+        if (up && bestUp(me, id)) { doBuy(bestUp(me, id).id, b); return; }
+        H.shopSel = { slot: i }; Sound.play('tick'); shopFoot();
+      };
+      slots.append(b);
+    });
+    H.shopSel = H.shopSel && (H.shopSel.item ? itemBy(H.shopSel.item) : slotsOf(G.me)[H.shopSel.slot]) ? H.shopSel : null;
+    shopTabs(); shopList();
+  }
+  function nextRec(me) { for (const it of nextSteps(me)) { const p = costOf(me, it); if (p !== null && p !== undefined) return it; } return null; }
+  function chain(it, me) {
+    const own = slotsOf(me), p = pathOf(it.id), ups = upsOf(it.id);
+    if (p.length < 2 && !ups.length) return '';
+    const dot = id => `<i class="${own.includes(id) ? 'on' : ''}${id === it.id ? ' at' : ''}">${(itemBy(id) || {}).name || ''}</i>`;
+    return `<p class="shpath">${p.map(dot).join('<s></s>')}${ups.length ? `<s></s>${ups.slice(0, 2).map(u => dot(u.id)).join('')}` : ''}</p>`;
+  }
   function shopFoot() {
     if (!H || !G) return;
     const me = G.me, foot = $('shFoot'), sel = H.shopSel, slots = slotsOf(me);
+    if (H.shopCat === 'city') { document.querySelectorAll('#shSlots .slot').forEach(b => b.classList.remove('sel')); foot.innerHTML = '<p class="shd"><b>The city</b>Gold keeps working after your slots are full. Pay for a wave, sway the people, or get back in the fight.</p>'; return; }
     let it = sel && sel.item ? itemBy(sel.item) : sel && slots[sel.slot] ? itemBy(slots[sel.slot]) : null;
     const slotMode = !!(sel && sel.slot !== undefined && it);
-    if (!it) it = nextRec(me);
+    if (!it) it = H.shopCat === 'rec' ? nextRec(me) : catItems(H.shopCat)[0] || null;
     document.querySelectorAll('#shList .it').forEach(b => b.classList.toggle('sel', !!it && !slotMode && b.dataset.id === it.id));
     document.querySelectorAll('#shSlots .slot').forEach((b, i) => b.classList.toggle('sel', slotMode && sel.slot === i));
-    if (!it) { foot.innerHTML = '<p class="shd"><b>All set</b>Your three slots are full of what this build wants.</p>'; return; }
-    const from = it.upgradesFrom && itemBy(it.upgradesFrom), info = `<p class="shd"><b>${it.name}</b>${it.d}${from ? `<em>Upgrades ${from.name}</em>` : ''}</p>`;
+    if (!it) { foot.innerHTML = '<p class="shd"><b>All set</b>Your slots hold what this build wants. Try the City tab.</p>'; return; }
+    const tag = isLeg(it) ? 'Legendary' : isCons(it) ? 'Supply' : `Tier ${it.tier || 1}`;
+    const info = `<p class="shd"><em class="${tierClass(it)}">${tag}</em><b>${it.name}</b>${it.d}</p>${chain(it, me)}`;
     if (slotMode) {
-      foot.innerHTML = info + `<button class="go" id="shAct">Sell</button>`;
-      const b = $('shAct'); b.onpointerdown = () => { G.me.q.push({ t: 'sell', slot: sel.slot }); H.shopSel = null; Sound.play('coin'); setTimeout(() => shopSync(true), 40); };
+      const up = bestUp(me, it.id), price = up ? costOf(me, up) : null, can = !!up && canBuy(me, up);
+      foot.innerHTML = info + `<div class="shact">${up ? `<button class="go${can ? ' hot' : ' off'}" id="shUp">Upgrade<span class="c"><i class="gc"></i>${price === null ? '' : price}</span></button>` : ''}<button class="ghost sell" id="shAct">Sell<span class="c"><i class="gc"></i>+${sellOf(me, sel.slot)}</span></button></div>`;
+      $('shAct').onpointerdown = () => doSell(sel.slot);
+      if (up) $('shUp').onpointerdown = () => { if (doBuy(up.id)) { H.shopSel = null; } };
       return;
     }
-    const cost = costOf(me, it), own = slots.includes(it.id), can = canBuy(me, it);
-    foot.innerHTML = info + `<button class="go${can ? ' hot' : ' off'}" id="shAct">${own ? 'Owned' : cost === null ? 'No slot free' : `Buy <span class="c"><i class="gc"></i>${cost}</span>`}</button>`;
-    const b = $('shAct');
-    b.onpointerdown = () => { if (!canBuy(G.me, it)) { Sound.play('cancel'); return; } G.me.q.push({ t: 'buy', id: it.id }); H.shopSel = null; Sound.play('coin'); const cell = document.querySelector(`#shList .it[data-id="${it.id}"]`); if (cell) { cell.classList.remove('bought'); void cell.offsetWidth; cell.classList.add('bought'); } setTimeout(() => shopSync(true), 40); };
+    const cost = costOf(me, it), own = slots.includes(it.id), can = canBuy(me, it), lead = pathOf(it.id).slice(0, -1).some(id => slots.includes(id)) ? 'Upgrade' : 'Buy';
+    foot.innerHTML = info + `<div class="shact"><button class="go${can ? ' hot' : ' off'}" id="shAct">${own ? 'Owned' : cost === null ? 'No slot free' : `${lead}<span class="c"><i class="gc"></i>${cost}</span>`}</button></div>`;
+    $('shAct').onpointerdown = () => { if (doBuy(it.id)) H.shopSel = null; };
   }
   function shopSync(force) {
     if (!H || !G || !shopOpen() || !itemDb().length) return;
-    const me = G.me, slots = slotsOf(me), g = Math.floor(me.gold), key = slots.join() + '|' + Math.floor(g / 5) + '|' + (H.shopSel ? JSON.stringify(H.shopSel) : '');
+    const me = G.me, slots = slotsOf(me), g = Math.floor(me.gold), key = slots.join() + '|' + Math.floor(g / 5) + '|' + (H.shopSel ? JSON.stringify(H.shopSel) : '') + H.shopCat + me.alive;
     $('shGold').textContent = g;
     if (!force && key === H.shopKey) return;
     H.shopKey = key;
-    document.querySelectorAll('#shList .it').forEach(b => { const it = itemBy(b.dataset.id); b.classList.toggle('can', canBuy(me, it)); b.classList.toggle('own', slots.includes(it.id)); const pr = costOf(me, it), el = b.querySelector('.p'); if (el && pr !== null) el.textContent = pr; });
+    document.querySelectorAll('#shList .it').forEach(b => { const it = itemBy(b.dataset.id), pr = costOf(me, it), el = b.querySelector('.p'); b.classList.toggle('can', canBuy(me, it)); b.classList.toggle('own', slots.includes(it.id)); if (el && pr !== null && pr !== undefined) el.textContent = pr; });
+    document.querySelectorAll('#shList [data-p]').forEach(el => { el.textContent = cityPrice(el.dataset.p, me, G.s); });
+    const bb = $('shBack2'); if (bb) bb.classList.toggle('off', me.alive || me.buybackCd > 0);
+    const wait = G.s.reinforceAt ? G.s.reinforceAt[me.team] - G.s.t : 0; document.querySelectorAll('[data-lane]').forEach(b => b.classList.toggle('off', wait > 0));
     document.querySelectorAll('#shSlots .slot').forEach((b, i) => {
-      const it = itemBy(slots[i]); b.classList.toggle('full', !!it);
-      b.innerHTML = it ? itemIcon(it) : '<i></i>';
-      b.setAttribute('aria-label', it ? `${it.name}, tap to sell` : 'Empty slot');
+      const it = itemBy(slots[i]), up = it && bestUp(me, it.id), price = up ? costOf(me, up) : null, can = up && price !== null && me.gold >= price;
+      b.className = `slot${it ? ` full ${tierClass(it)}` : ''}${H.shopSel && H.shopSel.slot === i ? ' sel' : ''}`;
+      b.innerHTML = (it ? itemIcon(it) : '<i></i>') + (up ? `<span class="up${can ? ' can' : ''}"><u></u>${price === null ? '' : price}</span>` : '');
+      b.setAttribute('aria-label', it ? `${it.name}. ${up ? `Upgrade for ${price} gold, or tap for details` : 'Tap to sell'}` : 'Empty slot');
     });
     shopFoot();
   }
   Hud.shopOpen = shopOpen;
+  Hud.shopCat = k => { if (H) { H.shopCat = k; H.shopSel = null; if (shopOpen()) { shopTabs(); shopList(); } } };
   Hud.closeShop = () => $('shop').classList.add('hide');
   Hud.toggleShop = () => {
     const f = $('shop'); f.classList.toggle('hide'); f.classList.toggle('dead', !!G && !G.me.alive);
@@ -1094,6 +1421,7 @@ const { hud, initHud, hudDraw, uiEvent } = (() => {
   Hud.banner = banner;
   Hud.isLive = () => !!(G && G.net && !G.net.dead);
   Hud.squash = k => { if (H && k in H.sq) H.sq[k] = 1; };
+  Hud.notice = banner;
 
   // ---------- scoreboard, shared with the end screen ----------
   Hud.coinTo = (cv, spr, sx = 1) => {
@@ -1101,7 +1429,7 @@ const { hud, initHud, hudDraw, uiEvent } = (() => {
     g.clearRect(0, 0, cv.width, cv.height); g.save(); g.translate(cv.width / 2, cv.height / 2); g.scale(sx, 1);
     g.drawImage(spr.c, -spr.S * k / 2, -spr.S * k / 2, spr.S * k, spr.S * k); g.restore();
   };
-  Hud.scoreTable = (host, s, me) => {
+  Hud.scoreTable = (host, s, me, mvp) => {
     host.textContent = '';
     const t = document.createElement('table'); t.className = 'score';
     t.innerHTML = '<thead><tr><th></th><th>Name</th><th>Role</th><th class="n">K/D/A</th><th class="n">Gold</th></tr></thead>';
@@ -1111,7 +1439,7 @@ const { hud, initHud, hudDraw, uiEvent } = (() => {
         if (c.team !== team) continue;
         const tr = document.createElement('tr'); if (c === me) tr.className = 'me';
         const st = c.stats || { kills: 0, deaths: 0, assists: 0 }, role = c.role ? Sim.ROLE_INFO[c.role].name : '';
-        tr.innerHTML = `<td><canvas width="48" height="48"></canvas></td><td>${Sim.charOf(c.team, c.champ).name}<small>${c.pname || ''}</small></td><td>${role}</td><td class="n">${st.kills}/${st.deaths}/${st.assists}</td><td class="n">${Math.floor(c.gold || 0)}</td>`;
+        tr.innerHTML = `<td><canvas width="48" height="48"></canvas></td><td${c === mvp ? ' class="mv"' : ''}>${Sim.charOf(c.team, c.champ).name}${c.bounty > 0 ? `<span class="bty">${Math.round(c.bounty)}</span>` : ''}<small>${c.pname || ''}</small></td><td>${role}</td><td class="n">${st.kills}/${st.deaths}/${st.assists}</td><td class="n">${Math.floor(c.gold || 0)}</td>`;
         Hud.coinTo(tr.querySelector('canvas'), Art.champCoin(c.champ, c.team, c.tier, 26, c.finish));
         body.append(tr);
       }
@@ -1127,6 +1455,8 @@ const { hud, initHud, hudDraw, uiEvent } = (() => {
     const net = Hud.isLive();
     if (!net) paused = true;
     $('pT').textContent = net ? 'Menu' : 'Paused';
+    const canVote = !!Sim.SURRENDER_AT && G.s.t >= Sim.SURRENDER_AT && !G.s.practice && !(G.s.votes && G.s.votes[G.me.team]);
+    $('pSur').classList.toggle('hide', !canVote);
     $('pNote').classList.toggle('hide', !net);
     Hud.closeShop();
     Hud.scoreTable($('pBoard'), G.s, G.me);

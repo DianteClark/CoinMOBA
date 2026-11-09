@@ -177,6 +177,18 @@ function soundEv(e, me) {
     case 'level': { if (mine(e.u)) Sound.play('level', undefined, 200); return; }
     case 'boss': Sound.play('boss', undefined, 400, { vol: .85 }); return;
     case 'bossup': Sound.play('bossup', undefined, 400, { vol: .85 }); return;
+    case 'mapevent': {
+      if (e.phase === 'warn' && (e.kind === 'heist' || e.kind === 'convoy')) Sound.play('siren', undefined, 1500, { vol: .6 });
+      else if (e.phase === 'start' && e.kind === 'blackout') Sound.play('powerDown', undefined, 800, { vol: .8 });
+      else if (e.phase === 'start' && e.kind === 'drop') Sound.play('dropLand', undefined, 800, { vol: .7 });
+      else if (e.phase === 'end' && e.team >= 0) Sound.play(e.team === me.team ? 'cheer' : 'eventLost', undefined, 800, { vol: .8 });
+      return;
+    }
+    case 'buyback': if (e.u === me.id) Sound.play('buyback', undefined, 400, { vol: .9 }); return;
+    case 'fund': if (e.team === me.team) Sound.play('fund', undefined, 300, { vol: e.u === me.id ? .9 : .5 }); return;
+    case 'reinforce': if (e.team === me.team) Sound.play('reinforce', undefined, 500, { vol: .7 }); return;
+    case 'consume': if (e.u === me.id) Sound.play('consume', undefined, 120, { vol: .8 }); return;
+    case 'surrender': if (e.team === me.team && e.phase !== 'open') Sound.play('surrender', undefined, 400, { vol: .7 }); return;
     case 'tower': { if (e.sub !== 'core') Sound.play('towerFall', e.team !== me.team, 300, { vol: .85 }); return; }
     case 'forge': { if (mine(e.u)) Sound.play('forge', undefined, 120); return; }
     case 'spawn': { if (mine(e.u)) Sound.play('respawn', undefined, 200); return; }

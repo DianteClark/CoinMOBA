@@ -5,10 +5,9 @@ const { initMenus, animMenus, showEnd } = (() => {
   const BOT_NAMES = ['Penny', 'Florin', 'Ducat', 'Groat', 'Thaler', 'Guinea', 'Tanner', 'Sovereign', 'Bezant', 'Kopek'];
   const L = { seats: null, team: 0, slot: 0, sheet: null, tab: 'builds', practice: false };
   // Online session. mode is 'host', 'guest' or null for a match against bots.
-  const N = { mode: null, code: '', peer: false, joining: false, input: '', pairing: 'same', ranks: { h: null, g: null }, ready: { h: false, g: false }, seq: 0, ack: 0, lobby: false, side: 0, timer: 0, wasReady: false };
-  const myWho = () => N.mode === 'host' ? 'h' : N.mode === 'guest' ? 'g' : null;
-  const isMe = s => N.mode ? s.who === myWho() : !!s.human;
-  const isFriend = s => !!N.mode && !!s.who && s.who !== myWho();
+  const N = { mode: null, code: '', pid: 0, joining: false, input: '', lobby: false, timer: 0, draft: null, flipDone: false, inDraft: false, started: false, sel: null, tick: -1, ready: {} };
+  const isMe = s => N.mode ? s.who === N.pid : !!s.human;
+  const isFriend = s => !!N.mode && s.who !== null && s.who !== undefined && s.who !== N.pid;
   const shuffle = a => { for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; } return a; };
   const show = id => $(id).classList.remove('hide'), hide = id => $(id).classList.add('hide'), hidden = id => $(id).classList.contains('hide');
   const mine = () => L.seats[L.team][L.slot];
@@ -74,14 +73,14 @@ const { initMenus, animMenus, showEnd } = (() => {
     const me = mine(); me.human = true; me.name = 'You'; wearMine(me);
   }
   function setChamp(team, i, id) {
-    const row = L.seats[team], s = row[i], other = row.find(o => o !== s && o.champ === id);
+    const row = L.seats[team], s = row[i], other = N.mode ? null : row.find(o => o !== s && o.champ === id);
     if (other) other.champ = s.champ;
     s.champ = id;
     if (isMe(s)) { save.last = id; (save.lastBy || (save.lastBy = {}))[team] = id; s.build = myBuild(id); persist(); flipT = 1; }
     else s.build = botBuild(id, s.role);
   }
   function setRole(team, i, role) {
-    const row = L.seats[team], s = row[i], other = row.find(o => o !== s && o.role === role);
+    const row = L.seats[team], s = row[i], other = N.mode ? null : row.find(o => o !== s && o.role === role);
     if (other) other.role = s.role;
     s.role = role;
   }
@@ -95,16 +94,11 @@ const { initMenus, animMenus, showEnd } = (() => {
   // The side is random. The player's seat setup travels with them.
   function rollSide() { L.team = Math.random() < .5 ? 0 : 1; rollSeats(); }
   function autoFill() { L.seats.forEach(row => { const r = Sim.autoRoles(row.map(s => s.champ)); row.forEach((s, i) => { s.role = r[i]; }); }); }
-  const friendSeat = () => { for (const row of L.seats) for (const s of row) if (isFriend(s)) return s; return null; };
   // On your own team the friend's champion and role are off limits.
-  const friendHolds = (key, val) => !!N.mode && L.seats[L.team].some(o => isFriend(o) && o[key] === val);
+  const friendHolds = (key, val) => !!N.mode && L.seats[L.team].some(o => o.who !== N.pid && o[key] === val);
+  const isBanned = id => !!N.mode && !!N.draft && bannedFrom(N.draft, L.team).includes(id);
   const seatOut = s => ({ champ: s.champ, role: s.role, tier: seatTier(s), name: s.name, build: s.build, finish: s.finish, trail: s.trail, recall: s.recall });
   const buildCfg = () => { wearMine(mine()); return withSkills({ seed: skillSeed(), practice: L.practice || undefined, teams: L.seats.map(row => row.map(s => Object.assign(seatOut(s), { human: s.human }))) }, myRank()); };
-  function netCfg() {
-    N.ranks[myWho()] = myRank();
-    const known = [N.ranks.h, N.ranks.g].filter(v => v !== null), avg = known.reduce((a, b) => a + b, 0) / known.length;
-    return withSkills({ seed: skillSeed(), teams: L.seats.map(row => row.map(s => Object.assign(seatOut(s), { human: !!s.who, remote: s.who === 'g' }))) }, avg);
-  }
 
   // ---------- side ----------
   // Every menu colours itself from these two classes on the stage.
@@ -115,7 +109,7 @@ const { initMenus, animMenus, showEnd } = (() => {
     const seat = mine(), id = seat.champ, p = pts(id), tier = Sim.tierOf(p), next = TIERS[tier + 1], base = TIERS[tier].at, prog = next ? (p - base) / (next.at - base) : 1;
     const who = Sim.charOf(L.team, id), nm = $('wN');
     if (nm.textContent !== who.name) { nm.textContent = who.name; nm.classList.toggle('long', who.name.length > 11); nm.classList.remove('pop'); void nm.offsetWidth; nm.classList.add('pop'); }
-    $('mission').innerHTML = `<b>${L.practice ? 'Practice' : Sim.TEAM_NAMES[L.team]}</b><span>${L.practice ? `${Sim.TEAM_NAMES[L.team]}, no pressure` : MISSION[L.team]}</span>`;
+    $('mission').innerHTML = `<b>${L.practice ? 'Practice' : Sim.TEAM_NAMES[L.team]}</b><span${N.mode ? ' class="hide"' : ''}>${L.practice ? `${Sim.TEAM_NAMES[L.team]}, no pressure` : MISSION[L.team]}</span>`;
     $('wB').textContent = who.title;
     renderWho(true);
     const lad = $('ladder'); lad.textContent = '';
@@ -130,21 +124,23 @@ const { initMenus, animMenus, showEnd } = (() => {
       const b = document.createElement('button'), nm0 = charName(L.team, cid); b.className = 'pick'; b.setAttribute('aria-label', nm0); b.setAttribute('aria-pressed', cid === id);
       b.append(coinCanvas(Art.champCoin(cid, L.team, Sim.tierOf(pts(cid)), 54), 112));
       b.insertAdjacentHTML('beforeend', `<span class="pn">${shortName(nm0)}</span>${pipsHtml(Sim.KITS[cid].fit[seat.role])}`);
-      const taken = friendHolds('champ', cid);
-      if (taken) { b.classList.add('taken'); b.setAttribute('aria-label', `${nm0}, taken by your friend`); }
-      b.onclick = () => { if (cid === id) return; if (taken) { Sound.play('cancel'); return; } setChamp(L.team, L.slot, cid); Sound.play('coin'); netPicked(); renderLobby(); };
+      const taken = friendHolds('champ', cid), ban = isBanned(cid);
+      if (ban) { b.classList.add('ban'); b.setAttribute('aria-label', `${nm0}, banned`); } else if (taken) { b.classList.add('taken'); b.setAttribute('aria-label', `${nm0}, taken by a teammate`); }
+      b.onclick = () => { if (cid === id || mine().locked) return; if (taken || ban) { Sound.play('cancel'); return; } setChamp(L.team, L.slot, cid); Sound.play('coin'); netPicked(); renderLobby(); };
       pk.append(b);
     });
     [0, 1].forEach(team => {
       const el = $('s' + team); el.textContent = '';
       L.seats[team].forEach((s, i) => {
-        const me_ = isMe(s), fr = isFriend(s), d = document.createElement('div'); d.className = 'seat' + (me_ ? ' me' : fr ? ' fr' : '');
+        const me_ = isMe(s), fr = isFriend(s), d = document.createElement('div'); d.className = 'seat' + (me_ ? ' me' : fr ? ' fr' : '') + (s.locked ? ' lk' : '');
         const b = document.createElement('button'); b.className = 'seatc';
-        b.setAttribute('aria-label', `${me_ ? 'Your seat' : fr ? 'Your friend' : s.name}, ${charName(team, s.champ)}, ${roleName(s.role)}`);
-        b.append(coinCanvas(Art.champCoin(s.champ, team, seatTier(s), 46, s.finish), 96));
-        b.insertAdjacentHTML('beforeend', pipsHtml(Sim.KITS[s.champ].fit[s.role]));
-        b.onclick = () => { if (N.mode && !me_) { Sound.play('tick'); return; } Sound.play('tap'); openSheet(team, i); };
-        const chip = document.createElement('span'); chip.className = 'chip'; chip.textContent = roleName(s.role);
+        if (s.champ) {
+          b.setAttribute('aria-label', `${me_ ? 'Your seat' : fr ? s.name : s.name}, ${charName(team, s.champ)}${s.role ? `, ${roleName(s.role)}` : ''}`);
+          b.append(coinCanvas(Art.champCoin(s.champ, team, seatTier(s), 46, s.finish), 96));
+          if (s.role) b.insertAdjacentHTML('beforeend', pipsHtml(Sim.KITS[s.champ].fit[s.role]));
+        } else { b.setAttribute('aria-label', fr ? `${s.name}, choosing` : 'Bot seat'); b.innerHTML = `<span class="rq">${fr ? '?' : 'B'}</span>`; }
+        b.onclick = () => { if (N.mode && !me_) { Sound.play('tick'); return; } if (!s.champ || mine().locked) return; Sound.play('tap'); openSheet(team, i); };
+        const chip = document.createElement('span'); chip.className = 'chip'; chip.textContent = N.mode && fr ? shortTag(s.name) : s.role ? roleName(s.role) : '';
         d.append(b, chip);
         el.append(d);
       });
@@ -184,32 +180,25 @@ const { initMenus, animMenus, showEnd } = (() => {
       if (animate) { wb.classList.remove('in'); void wb.offsetWidth; wb.classList.add('in'); }
     }
   }
-  const myReady = () => !!N.ready[myWho()];
-  const friendReady = () => !!N.ready[N.mode === 'host' ? 'g' : 'h'];
-  // The parts of the lobby that change when a friend is in it.
+  const shortTag = n => String(n).split(' ')[0].slice(0, 7);
+  // The parts of the lobby that change in an online draft.
   function lobbyNet() {
-    const net = !!N.mode, st = $('start');
-    $('lnet').classList.toggle('hide', !net); $('auto').classList.toggle('hide', net || L.practice);
-    if (!net && !L.practice) { st.textContent = 'Start match'; st.classList.remove('off'); st.classList.add('hot'); return; }
-    if (L.practice) { st.textContent = 'Start practice'; st.classList.add('hot'); st.classList.remove('off'); return; }
-    const f = friendSeat(), rd = friendReady(), box = $('lnet'); box.textContent = '';
-    if (f) {
-      const t = L.seats.findIndex(r => r.includes(f));
-      box.append(coinCanvas(Art.champCoin(f.champ, t, f.tier || 0, 30, f.finish), 68));
-      const fb = buildsOf(f.champ).find(x => x.id === f.build), nm = document.createElement('span'); nm.textContent = `Friend: ${charName(t, f.champ)}${fb ? `, ${fb.name}` : ''}`;
-      const tag = document.createElement('em'); tag.textContent = rd ? 'Ready!' : 'Picking'; if (rd && !N.wasReady) tag.className = 'yes'; else if (rd) { tag.className = 'yes'; tag.style.animation = 'none'; }
-      box.append(nm, tag);
-    }
-    if (rd && !N.wasReady) Sound.play('clink');
-    N.wasReady = rd;
-    const mine_ = myReady(), both = mine_ && rd, hostGo = both && N.mode === 'host';
-    st.textContent = hostGo ? 'Start match' : !mine_ ? "I'm ready" : both ? 'Waiting for host' : 'Waiting for friend';
-    st.classList.toggle('off', mine_ && !hostGo); st.classList.toggle('hot', hostGo || !mine_);
+    const net = !!N.mode, st = $('start'), box = $('lnet');
+    box.classList.toggle('hide', !net); $('auto').classList.toggle('hide', net || L.practice);
+    $('lClock').classList.toggle('hide', !net || !N.lobby);
+    if (!net) { st.textContent = L.practice ? 'Start practice' : 'Start match'; st.classList.remove('off'); st.classList.add('hot'); return; }
+    const row = L.seats.flat().filter(s => s.who !== null && s.who !== undefined), nLock = row.filter(s => s.locked).length, m = mine(), done = N.draft && N.draft.phase === 'done';
+    box.textContent = done ? 'All locked. Starting' : `${nLock} of ${row.length} locked in`;
+    st.textContent = done ? 'Starting' : m.locked ? 'Locked in' : 'Lock in';
+    st.classList.toggle('off', !!m.locked || done); st.classList.toggle('hot', !m.locked && !done);
   }
   function lobbyEnter() {
     const l = $('lobby'); l.classList.remove('enter'); void l.offsetWidth; l.classList.add('enter');
     setTimeout(() => l.classList.remove('enter'), 900);
   }
+
+  // A change on this phone during a draft goes straight to the host, who shows the truth back.
+  function netPicked() { if (N.mode) sendMine(); }
 
   // ---------- seat sheet ----------
   function openSheet(team, i) { L.sheet = { team, i }; renderSheet(); show('sheet'); }
@@ -223,7 +212,7 @@ const { initMenus, animMenus, showEnd } = (() => {
       b.setAttribute('aria-label', `${nm}, fit ${k.fit[s.role]} of 3 for ${roleName(s.role)}`);
       b.append(coinCanvas(Art.champCoin(id, team, isMe(s) ? Sim.tierOf(pts(id)) : s.tier, 46, isMe(s) ? s.finish : undefined), 100));
       b.insertAdjacentHTML('beforeend', `<span>${nm}</span>${pipsHtml(k.fit[s.role])}`);
-      const taken = friendHolds('champ', id);
+      const taken = friendHolds('champ', id) || isBanned(id);
       if (taken) { b.classList.add('taken'); b.style.opacity = .45; }
       b.onclick = () => { if (taken) { Sound.play('cancel'); return; } setChamp(team, i, id); Sound.play('coin'); netPicked(); renderSheet(); renderLobby(); };
       c.append(b);
@@ -232,9 +221,9 @@ const { initMenus, animMenus, showEnd } = (() => {
     Sim.ROLES.forEach(role => {
       const info = Sim.ROLE_INFO[role], fit = Sim.KITS[s.champ].fit[role], b = document.createElement('button'); b.setAttribute('aria-pressed', role === s.role);
       const holder = L.seats[team].find(o => o !== s && o.role === role);
-      const taken = !!holder && isFriend(holder);
+      const taken = !!N.mode && !!holder && holder.who !== N.pid && !!holder.role && !holder.bot;
       if (taken) b.style.opacity = .45;
-      b.setAttribute('aria-label', `${info.name}, fit ${fit} of 3${taken ? ', your friend has this role' : holder ? `, swaps with ${holder.name}` : ''}`);
+      b.setAttribute('aria-label', `${info.name}, fit ${fit} of 3${taken ? ', a teammate has this role' : holder ? `, swaps with ${holder.name}` : ''}`);
       b.innerHTML = `<span><b>${info.name}</b><small>${info.blurb}</small></span>${pipsHtml(fit)}`;
       b.onclick = () => { if (taken) { Sound.play('cancel'); return; } setRole(team, i, role); Sound.play('tap'); netPicked(); renderSheet(); renderLobby(); };
       r.append(b);
@@ -443,6 +432,7 @@ const { initMenus, animMenus, showEnd } = (() => {
     const onTitle = !hidden('title'), onMenu = !onTitle && !hidden('menu');
     if (!onTitle && !onMenu) return;
     if (onTitle) fitTitle();
+    else { const key = VW + '|' + Deco.fontsReady(); if (key !== fitLogo.key) { fitLogo.key = key; fitLogo(); } }
     const c = $(onTitle ? 'tcan' : 'mcan'), k = Math.min(devicePixelRatio || 1, 2), w = Math.round(VW * k), h = Math.round(VH * k);
     if (c.width !== w || c.height !== h) { c.width = w; c.height = h; }
     const g = c.getContext('2d'); g.setTransform(k, 0, 0, k, 0, 0); g.clearRect(0, 0, VW, VH);
@@ -623,17 +613,22 @@ const { initMenus, animMenus, showEnd } = (() => {
   let E = null;
   function showEnd(r) {
     const st = Object.assign({ kills: 0, deaths: 0, assists: 0, skillHits: 0, casts: 0, parries: 0 }, r.me.stats), tier = Sim.tierOf(r.before);
-    hide('shop'); hide('evo'); hide('prac'); hide('pause'); Ctl.reset();
+    for (const id of ['shop', 'evo', 'prac', 'pause', 'recap', 'qc', 'sv']) hide(id); Ctl.reset();
     L.team = r.me.team; applySide();
-    $('again').textContent = N.mode ? 'Back to room' : 'Play again';
-    $('again').classList.toggle('hide', N.mode === 'guest' && !N.peer);
+    $('again').textContent = N.mode === 'guest' ? 'Waiting for host' : N.mode ? 'Back to room' : 'Play again';
+    $('again').classList.toggle('off', N.mode === 'guest'); $('again').classList.toggle('hot', N.mode !== 'guest');
     $('end').classList.toggle('win', r.won); $('end').classList.toggle('lose', !r.won);
     $('endT').textContent = r.won ? 'Victory' : 'Defeat';
     $('endT').style.color = '';
-    $('endW').textContent = r.s.over.winner === 0 ? 'City saved' : 'City fallen';
+    $('endW').textContent = `${r.s.over.winner === 0 ? 'City saved' : 'City fallen'}${r.s.over.surrender ? ', by surrender' : ''}`;
     const pl = (n, w) => `${n} ${w}${n === 1 ? '' : 's'}`;
-    $('endS').textContent = `${pl(st.kills, 'takedown')}, ${pl(st.deaths, 'death')}, ${pl(st.assists, 'assist')}. ${st.skillHits} of ${st.casts} abilities landed${st.parries ? `, ${pl(st.parries, 'hit')} parried` : ''}.`;
-    Hud.scoreTable($('eBoard'), r.s, r.me);
+    $('endS').textContent = `${st.kills}/${st.deaths}/${st.assists}, ${st.skillHits} of ${st.casts} abilities landed${st.parries ? `, ${pl(st.parries, 'hit')} parried` : ''}`;
+    const mvp = mvpOf(r.s);
+    Hud.scoreTable($('eBoard'), r.s, r.me, mvp);
+    paintMvp(mvp, r); paintMedals(r, mvp);
+    const ms = applyMissions(r, statsOf(r.me.stats)), mEl = $('endMiss');
+    mEl.classList.toggle('hide', !ms.list.length);
+    mEl.innerHTML = ms.list.slice(0, 2).map(m => `<span>Mission done, +${m.v} Marks</span>`).join('') + (ms.list.length > 2 ? `<span>and ${ms.list.length - 2} more</span>` : '');
     const ranked = r.rankBefore !== undefined && r.rankAfter !== undefined;
     E = { t: 0, r, name: charName(r.me.team, r.me.champ), tier, draw: tier, flip: 0, shine: -1, p: r.before, ang: 0, rank: ranked ? { from: r.rankBefore, to: r.rankAfter, tier: rankInfo(r.rankBefore).tier, shown: Math.round(r.rankBefore) } : null };
     endText(); $('endBar').style.width = endFrac(r.before) * 100 + '%';
@@ -644,7 +639,7 @@ const { initMenus, animMenus, showEnd } = (() => {
       box.textContent = d > 0 ? `+${d}` : d < 0 ? `\u2212${-d}` : '0'; box.classList.toggle('down', d < 0);
     }
     // Marks were banked by finishMatch; this rolls the number up.
-    const earned = Math.max(0, Math.round(r.marks || 0));
+    const earned = Math.max(0, Math.round((r.marks || 0) + ms.gain));
     E.marks = earned ? { from: 0, to: earned, shown: -1, balance: save.marks } : null;
     $('endMk').classList.toggle('hide', !earned);
     if (earned) { $('endMks').textContent = '+0'; $('endBal').textContent = ''; }
@@ -652,10 +647,48 @@ const { initMenus, animMenus, showEnd } = (() => {
     show('end');
     Sound.play('thud');
   }
+  // ---------- MVP and medals ----------
+  const scoreOf = (c, s) => { const st = statsOf(c.stats || {}); return st.kills * 3 + st.assists * 2 - st.deaths * 1.2 + st.dmg / 1500 + st.heal / 1000 + st.taken / 2500 + st.towers * 3 + st.objs * 4 + st.rescues * 1.5 + (s.over && s.over.winner === c.team ? 4 : 0); };
+  const mvpOf = s => s.champs.slice().sort((a, b) => scoreOf(b, s) - scoreOf(a, s))[0];
+  function paintMvp(c, r) {
+    const el = $('endMvp'); el.textContent = '';
+    if (!c) { el.classList.add('hide'); return; }
+    const st = statsOf(c.stats || {});
+    el.append(coinCanvas(Art.champCoin(c.champ, c.team, c.tier, 30, c.finish), 72));
+    el.insertAdjacentHTML('beforeend', `<div><em>Most valuable${c === r.me ? ', that was you' : ''}</em><b>${charName(c.team, c.champ)}</b></div><small>${st.kills}/${st.deaths}/${st.assists}</small>`);
+    el.classList.remove('hide');
+  }
+  const MEDAL_G = {
+    mvp: 'm12 2 3 7 7 1-5 5 1.5 7L12 18l-6.5 4L7 15l-5-5 7-1Z', dmg: 'M12 2 19 9l-7 13L5 9Z', wall: 'M12 2 21 5v7c0 5-4 8-9 10-5-2-9-5-9-10V5Z', heal: 'M10 3h4v7h7v4h-7v7h-4v-7H3v-4h7Z',
+    gold: 'M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20Zm0 5 5 5-5 5-5-5Z', tow: 'M6 22 8 8H5V2h4v3h2V2h2v3h2V2h4v6h-3l2 14Z', boss: 'm3 3 5 5h8l5-5v12l-9 7-9-7Z', ppl: 'M12 2a4 4 0 1 1 0 8 4 4 0 0 1 0-8ZM4 22c0-6 3.5-10 8-10s8 4 8 10Z', ghost: 'M12 2c5 0 8 3 8 8v12l-3-2-2.5 2-2.5-2-2.5 2L7 20l-3 2V10c0-5 3-8 8-8Z', aim: 'M11 2h2v7h-2zm0 13h2v7h-2zM2 11h7v2H2zm13 0h7v2h-7z', hand: 'M12 3 4 11h5v10h6V11h5Z',
+  };
+  const medalSvg = (g, col) => `<svg viewBox="0 0 34 34" aria-hidden="true"><circle cx="17" cy="17" r="16" fill="#0a0c12" stroke="${col}" stroke-width="1.6"/><circle cx="17" cy="17" r="13" fill="none" stroke="${col}" stroke-opacity=".4" stroke-width=".8"/><path transform="translate(8.6 8.6) scale(.7)" d="${MEDAL_G[g]}" fill="${col}" fill-rule="evenodd"/></svg>`;
+  function medalsFor(r, mvp) {
+    const champs = r.s.champs, me = r.me, st = c => statsOf(c.stats || {}), mine = st(me), top = key => champs.every(c => c === me || st(c)[key] <= mine[key]);
+    const out = [];
+    const add = (g, name, col, pass) => { if (pass) out.push({ g, name, col }); };
+    add('mvp', 'MVP', '#ffc454', mvp === me);
+    add('ghost', 'Untouchable', '#d2a3ff', mine.deaths === 0 && mine.takedowns >= 3);
+    add('boss', 'Boss hunter', '#ff8a4c', mine.objs >= 1 && top('objs'));
+    add('tow', 'Demolisher', '#e0b36c', mine.towers >= 1 && top('towers'));
+    add('dmg', 'Heavy hitter', '#ff7a8a', top('dmg') && mine.dmg > 0);
+    add('wall', 'Iron wall', '#9fbce6', top('taken') && mine.taken > 0);
+    add('heal', 'Field medic', '#7fd6a4', top('heal') && mine.heal >= 500);
+    add('ppl', me.team ? 'Kingpin' : 'City guardian', '#e6d29a', mine.rescues >= 1 && top('rescues'));
+    add('gold', 'Deep pockets', '#f0d27a', top('gold') && mine.gold > 0);
+    add('hand', 'Team player', '#a3e0d0', mine.assists >= 5 && top('assists'));
+    add('aim', 'Sharpshooter', '#cfe0f5', mine.casts >= 15 && mine.hits / mine.casts >= .65);
+    return out;
+  }
+  function paintMedals(r, mvp) {
+    const list = medalsFor(r, mvp).slice(0, 4);
+    $('endMed').innerHTML = list.map((m, i) => `<div class="med" style="--i:${i}">${medalSvg(m.g, m.col)}<span>${m.name}</span></div>`).join('');
+    list.forEach((m, i) => setTimeout(() => { if (!hidden('end')) Sound.play(m.g === 'mvp' ? 'medalMvp' : 'medal'); }, 550 + i * 90));
+  }
   function endFrac(p) { const t = Sim.tierOf(p), n = TIERS[t + 1]; return n ? (p - TIERS[t].at) / (n.at - TIERS[t].at) : 1; }
   function endText() {
     const r = E.r, t = Sim.tierOf(E.p), n = TIERS[t + 1], risen = t > Sim.tierOf(r.before);
-    const lead = risen ? `Your ${E.name} coin is now ${TIERS[t].name}. ` : '';
+    const lead = risen ? `${TIERS[t].name} coin earned. ` : '';
     $('endM').textContent = `${lead}+${r.gain} proficiency${n ? `, ${Math.ceil(n.at - E.p)} to ${n.name}` : ''}`;
   }
   const tierUp = () => Sound.play('masteryUnlock');
@@ -708,7 +741,6 @@ const { initMenus, animMenus, showEnd } = (() => {
   }
   function begin(reroll) {
     if (V.on || F.on || W.on) return false;
-    if (N.mode) { const cfg = netCfg(); Net.send('lobby', stateMsg()); Net.start(cfg); versus(cfg); return true; }
     L.practice = L.practice && !reroll;
     if (!reroll) { versus(); return true; }
     // Play again: the flip decides the new side, then straight to the versus splash.
@@ -724,8 +756,8 @@ const { initMenus, animMenus, showEnd } = (() => {
     if (curScr === id) return;
     const out = curScr; curScr = id;
     if (out) { const o = $(out); o.classList.remove('in'); o.classList.add('out'); setTimeout(() => { if (curScr !== out) o.classList.add('hide'); o.classList.remove('out'); }, 170); }
-    if (id === 'menu') { paintRank($('mRank'), myRank()); paintMarks(); }
-    if (id) { const e = $(id); e.classList.remove('hide', 'out', 'in'); void e.offsetWidth; e.classList.add('in'); }
+    if (id === 'menu') { paintRank($('mRank'), myRank()); paintMarks(); paintRejoin(); }
+    if (id) { const e = $(id); e.classList.remove('hide', 'out', 'in'); void e.offsetWidth; e.classList.add('in'); if (id === 'menu') fitLogo(); }
   }
   function shake(el) { el.classList.remove('shake'); void el.offsetWidth; el.classList.add('shake'); setTimeout(() => el.classList.remove('shake'), 320); }
   function flash(btn, text) { if (!btn.dataset.t0) btn.dataset.t0 = btn.textContent; btn.textContent = text; clearTimeout(btn._t); btn._t = setTimeout(() => { btn.textContent = btn.dataset.t0; delete btn.dataset.t0; }, 1500); }
@@ -746,7 +778,7 @@ const { initMenus, animMenus, showEnd } = (() => {
     show('notice'); Sound.play('cancel');
   }
   function clearAll() {
-    for (const id of ['lobby', 'end', 'rankup', 'pause', 'shop', 'evo', 'prac', 'sheet', 'settings', 'hudEd', 'notice', 'flip', 'vs']) hide(id);
+    for (const id of ['lobby', 'ban', 'end', 'rankup', 'pause', 'shop', 'evo', 'prac', 'recap', 'qc', 'sv', 'sheet', 'settings', 'hudEd', 'notice', 'flip', 'vs']) hide(id);
     $('flip').classList.remove('out'); $('vs').classList.remove('out');
     V.on = false; F.on = false; F.done = null; L.sheet = null;
   }
@@ -761,217 +793,234 @@ const { initMenus, animMenus, showEnd } = (() => {
   function netDrop() {
     clearTimeout(N.timer);
     const was = N.mode;
-    N.mode = null; N.peer = false; N.joining = false; N.lobby = false; N.ranks = { h: null, g: null }; N.seq = 0; N.ack = 0; N.wasReady = false; N.ready = { h: false, g: false };
+    Object.assign(N, { mode: null, joining: false, lobby: false, draft: null, flipDone: false, inDraft: false, started: false, sel: null, tick: -1 });
+    $('lClock').classList.add('hide'); hide('ban');
     if (was && hasNet()) { try { Net.leave(); } catch (e) { } }
   }
   const inviteUrl = () => location.href.split('#')[0] + '#' + N.code;
-  const roomMsg = () => ({ k: 'room', pairing: N.pairing, rank: myRank() });
-  function say(obj) { if (N.mode && hasNet()) { try { Net.send('lobby', obj); } catch (e) { } } }
+  const CALL_A = ['Copper', 'Lucky', 'Silver', 'Brass', 'Ace', 'Midnight', 'Golden', 'Rusty', 'Crimson', 'Neon', 'Velvet', 'Iron', 'Quick', 'Sly', 'Bold', 'Dusty'];
+  const CALL_B = ['Comet', 'Dime', 'Fox', 'Falcon', 'Nickel', 'Mint', 'Sparrow', 'Rook', 'Tiger', 'Quarter', 'Ember', 'Otter', 'Raven', 'Ghost', 'Penny', 'Spark'];
+  const rollCall = () => `${CALL_A[Math.floor(Math.random() * CALL_A.length)]} ${CALL_B[Math.floor(Math.random() * CALL_B.length)]}`;
+  function callsign() { if (!save.callsign) { save.callsign = rollCall(); persist(); } return save.callsign; }
+  function sendProfile() { try { Net.profile({ name: callsign(), rank: myRank() }); } catch (e) { } }
   function wireNet() {
     if (!hasNet()) return;
-    Net.on('open', code => {
-      if (N.mode === 'host') { N.code = code || Net.code || ''; renderRoom(); return; }
-      if (N.mode === 'guest' && N.joining && Net.connected) guestIn();
-    });
-    Net.on('peer', () => {
-      if (N.mode === 'host') { N.peer = true; N.left = false; if (N.lobby || !hidden('end')) return; renderRoom(); say(roomMsg()); Sound.play('friendJoin'); }
-      else if (N.mode === 'guest') guestIn();
-    });
+    Net.on('open', code => { if (N.mode === 'host') { N.code = code || Net.code || ''; renderRoom(); } else if (N.mode === 'guest' && N.joining && Net.connected) guestIn(); });
+    Net.on('peer', () => { if (N.mode === 'guest') guestIn(); else if (N.mode === 'host') { Sound.play('friendJoin'); if (curScr === 'room') renderRoom(); } });
+    Net.on('room', onRoom);
     Net.on('lost', reason => {
       if (!N.mode) return;
-      N.peer = false; N.ready = { h: false, g: false }; N.ranks[N.mode === 'host' ? 'g' : 'h'] = null;
-      if (G && !G.ended) {
-        if (N.mode === 'host') { Hud.banner('Your friend left', { pri: 7, sub: 'A bot took over their seat', hot: true, dur: 3 }); return; }
-        notice('The host left', "The match can't go on without them.");
-        return;
-      }
-      if (!hidden('end')) { if (N.mode === 'guest') $('again').classList.add('hide'); return; }
-      // The host's room stays open, so a friend can drop back in with the same code.
-      if (N.mode === 'host') {
-        N.left = true;
-        if (curScr === 'room' && !N.lobby) { renderRoom(); Sound.play('friendLeave'); return; }
-        notice('Your friend left', 'Your room is still open. They can rejoin with the same code.', 'Back to room', backToRoom);
-        return;
-      }
-      notice('The host left', reason && !/match is over/.test(reason) ? reason : 'The room has closed. Ask your friend for a new code.');
+      notice(G && !G.ended ? 'The host left' : 'The room closed', reason && !/match is over/.test(reason) ? reason : "The match can't go on without the host.");
     });
+    Net.on('left', (pid, name) => { if (G && !G.ended) Hud.notice(`${name || 'A friend'} dropped`, { pri: 6, sub: 'A bot took over their seat. They can rejoin.', hot: true, dur: 3 }); });
+    Net.on('notice', n => {
+      if (!n || !G || G.ended) return;
+      const who = n.name || 'A friend';
+      if (n.kind === 'away') Hud.notice(`${who} stepped away`, { pri: 3, sub: 'A bot is filling in', dur: 1.8 });
+      else if (n.kind === 'back') Hud.notice(`${who} is back`, { pri: 3, dur: 1.6 });
+      else if (n.kind === 'left') Hud.notice(`${who} left the match`, { pri: 3, sub: 'A bot took the seat', dur: 2 });
+    });
+    Net.on('reconnecting', () => { if (G && !G.ended) Hud.notice('Connection lost', { pri: 6, sub: 'Trying to get back in', hot: true, dur: 3 }); });
+    Net.on('reconnected', () => { if (G && !G.ended) Hud.notice('Back in the match', { pri: 6, dur: 1.5 }); });
     Net.on('error', msg => {
       if (N.joining) { joinFail(msg); return; }
       if (!N.mode) return;
       notice('Connection trouble', msg || 'Something went wrong with the connection.');
     });
-    Net.on('lobby', onLobby);
-    Net.on('stall', v => { if (G && !G.ended && v) Hud.banner('Waiting for the host', { pri: 3, sub: 'Weak connection', dur: 1.6 }); });
-    Net.on('away', v => { if (G && !G.ended) Hud.banner(v ? 'Your friend stepped away' : 'Your friend is back', { pri: 3, sub: v ? 'A bot is filling in' : '', dur: 1.8 }); });
-    Net.on('flip', o => {
-      if (N.mode !== 'guest') return;
-      N.side = o.side;
-      L.team = N.pairing === 'same' ? o.side : 1 - o.side;
-      playNetFlip();
-    });
+    Net.on('stall', v => { if (G && !G.ended && v) Hud.notice('Waiting for the host', { pri: 3, sub: 'Weak connection', dur: 1.6 }); });
+    Net.on('say', o => Hud.say(o));
+    Net.on('flip', onFlip);
+    Net.on('draft', onDraft);
     Net.on('start', cfg => {
-      if (N.mode !== 'guest') return;
-      N.lobby = false;
-      L.seats = cfg.teams.map(row => row.map(s => Object.assign({}, s, { who: s.human ? (s.remote ? 'g' : 'h') : null })));
-      L.seats.forEach((r, t) => r.forEach((s, i) => { if (s.who === 'g') { L.team = t; L.slot = i; } }));
+      if (!N.mode) return;
+      N.lobby = false; N.inDraft = false; hide('ban'); $('lClock').classList.add('hide');
+      L.seats = cfg.teams.map(row => row.map(s => Object.assign({}, s, { who: s.human ? s.pid : null })));
+      L.seats.forEach((r, t) => r.forEach((s, i) => { if (isMe(s)) { L.team = t; L.slot = i; } }));
       applySide(); hide('sheet'); L.sheet = null; hide('settings');
+      if (cfg.rejoin) { clearAll(); scr(null); startMatch(cfg, { role: N.mode }); Sound.setMode('match'); paused = false; return; }
       versus(cfg);
     });
   }
-  function onLobby(o) {
-    if (!o || !N.mode) return;
-    if (o.k === 'hello' && N.mode === 'host') { N.ranks.g = cleanRank(o.rank); say(roomMsg()); if (curScr === 'room') renderRoom(); }
-    else if (o.k === 'room' && N.mode === 'guest') { N.pairing = o.pairing; N.ranks.h = cleanRank(o.rank); if (curScr === 'room') renderRoom(); }
-    else if (o.k === 'state' && N.mode === 'guest') applyState(o);
-    else if (o.k === 'pick' && N.mode === 'host') hostPick(o);
-  }
-
-  // ---------- online: seats ----------
-  // The best role spread for the bots around whatever the humans picked.
-  function refitBots(team) {
-    const row = L.seats[team], bots = row.filter(s => !s.who), free = Sim.ROLES.filter(r => !row.some(s => s.who && s.role === r));
-    let best = null, top = -1;
-    (function rec(i, left, picked, sc) {
-      if (i === bots.length) { if (sc > top) { top = sc; best = picked.slice(); } return; }
-      left.forEach((r, n) => { picked.push(r); rec(i + 1, left.filter((_, m) => m !== n), picked, sc + Sim.KITS[bots[i].champ].fit[r]); picked.pop(); });
-    })(0, free, [], 0);
-    if (best) bots.forEach((s, i) => { s.role = best[i]; });
-  }
-  function rollNetSeats(side) {
-    const names = shuffle(BOT_NAMES.slice()), gTeam = N.pairing === 'same' ? side : 1 - side;
-    let n = 0;
-    L.seats = [0, 1].map(team => {
-      const ros = rosterOf(team), pool = shuffle(ros.slice()).slice(0, 4), humans = [];
-      if (team === side) { humans.push('h'); const want = wantFor(team), at = pool.indexOf(want); if (at >= 0) [pool[at], pool[0]] = [pool[0], pool[at]]; else pool[0] = want; }
-      if (team === gTeam) humans.push('g');
-      const roles = Sim.autoRoles(pool);
-      return pool.map((champ, i) => {
-        const who = humans[i] || null;
-        return { champ, role: roles[i], tier: who ? 0 : Math.min(5, Math.floor(Math.random() * Math.random() * 6)), human: !!who, name: who === 'h' ? 'Host' : who === 'g' ? 'Guest' : names[n++], who, build: botBuild(champ, roles[i]) };
-      });
-    });
-    L.team = side; L.slot = 0;
-    wearMine(L.seats[side][0]);
-  }
-  function stateMsg() {
-    for (const row of L.seats) for (const s of row) if (isMe(s)) s.tier = seatTier(s);
-    return { k: 'state', seats: L.seats, ready: N.ready, pairing: N.pairing, side: N.side, ack: N.ack };
-  }
-  // A change on this phone: the host refits the bots and tells the guest, the guest tells the host.
-  function netPicked() {
+  function onRoom() {
     if (!N.mode) return;
-    if (N.mode === 'host') { N.ready.h = false; refitBots(L.team); say(stateMsg()); }
-    else { N.ready.g = false; sendPick(); }
+    if (G && G.ended && Net.phase === 'room') { backToRoom(); return; }
+    if (curScr === 'room') renderRoom();
+    if (N.lobby && N.draft) paintDraft();
   }
-  function sendPick() { const m = mine(); wearMine(m); N.seq++; say({ k: 'pick', seq: N.seq, champ: m.champ, role: m.role, tier: seatTier(m), build: m.build, finish: m.finish, trail: m.trail, recall: m.recall, ready: N.ready.g }); }
-  function hostPick(o) {
-    N.ack = o.seq;
-    let team = -1, i = -1;
-    L.seats.forEach((r, t) => r.forEach((s, x) => { if (s.who === 'g') { team = t; i = x; } }));
-    if (team < 0) return;
-    const row = L.seats[team], g = row[i], blocked = (key, v) => row.some(o2 => o2 !== g && o2.who && o2[key] === v);
-    if (rosterOf(team).includes(o.champ) && !blocked('champ', o.champ)) setChamp(team, i, o.champ);
-    if (Sim.ROLES.includes(o.role) && !blocked('role', o.role)) setRole(team, i, o.role);
-    g.tier = Math.max(0, Math.min(5, o.tier | 0));
-    g.build = buildsOf(g.champ).some(b => b.id === o.build) ? o.build : botBuild(g.champ, g.role);
-    g.finish = cleanCos('finish', o.finish); g.trail = cleanCos('trail', o.trail); g.recall = cleanCos('recall', o.recall);
-    refitBots(team);
-    N.ready.g = !!o.ready;
-    say(stateMsg());
-    if (N.lobby) { renderLobby(); if (L.sheet) renderSheet(); }
-  }
-  function applyState(o) {
-    const had = L.seats && N.lobby ? mine() : null, keep = had && o.ack < N.seq ? { champ: had.champ, role: had.role, build: had.build, ready: N.ready.g } : null;
-    L.seats = o.seats; N.ready = o.ready; N.pairing = o.pairing; N.side = o.side;
-    L.seats.forEach((r, t) => r.forEach((s, i) => { if (s.who === 'g') { L.team = t; L.slot = i; } }));
-    if (keep) { const m = mine(); m.champ = keep.champ; m.role = keep.role; m.build = keep.build; N.ready.g = keep.ready; }
-    applySide();
-    if (N.lobby) { renderLobby(); if (L.sheet) renderSheet(); }
-  }
-  function playNetFlip() {
-    N.lobby = false; N.wasReady = false; N.ready = { h: false, g: false };
-    hide('sheet'); hide('settings'); hide('end'); L.sheet = null;
-    applySide();
-    flipStart(L.team, () => {
-      scr(null); N.lobby = true; renderLobby(); show('lobby'); lobbyEnter();
-      if (N.mode === 'guest') {
-        const m = mine(), want = wantFor(L.team);
-        if (rosterOf(L.team).includes(want) && want !== m.champ && !friendHolds('champ', want)) { setChamp(L.team, L.slot, want); renderLobby(); }
-        wearMine(mine());
-        sendPick();
-      }
-    });
-  }
-  function hostFlip() {
-    if (!N.peer) { shake($('rFlip')); Sound.play('cancel'); return; }
-    if (F.on || W.on) return;
-    N.side = Math.random() < .5 ? 0 : 1;
-    rollNetSeats(N.side);
-    N.ready = { h: false, g: false };
-    say(roomMsg()); say(stateMsg());
-    Net.flip(N.side);
-    playNetFlip();
-  }
-  function lobbyStartTap() {
-    if (!N.mode) { Sound.play('tap'); begin(false); return; }
-    if (N.mode === 'host' && myReady() && friendReady()) { Sound.play('confirm'); begin(false); return; }
-    const k = myWho(); N.ready[k] = !N.ready[k];
-    Sound.play(N.ready[k] ? 'clink' : 'tap');
-    if (N.mode === 'host') say(stateMsg()); else sendPick();
-    renderLobby();
-    if (N.ready[k]) { const b = $('start'); b.style.animation = 'none'; void b.offsetWidth; b.style.animation = 'pop .3s ease-out'; setTimeout(() => { b.style.animation = ''; }, 320); }
-  }
+  const roster = () => (Net.room && Net.room.players) || [];
 
-  // ---------- online: room ----------
-  const DOTS = '<span class="dots" aria-hidden="true"><i></i><i></i><i></i></span>';
-  function roomCoin(host, side, title, sub, joined, rank) {
-    host.textContent = ''; host.classList.toggle('joined', !!joined);
-    if (side === null) { const q = document.createElement('div'); q.className = 'rq'; q.textContent = '?'; host.append(q); }
-    else { const c = document.createElement('canvas'); c.width = c.height = 120; Hud.coinTo(c, Deco.face(side, 120)); host.append(c); }
-    const t = document.createElement('div'), b = document.createElement('b'), sm = document.createElement('small');
-    b.textContent = title; sm.textContent = sub;
-    if (rank !== null && rank !== undefined) { const e = document.createElement('em'); e.textContent = rankInfo(rank).name + ' '; sm.prepend(e); }
-    t.append(b, sm); host.append(t);
+  // ---------- online: the flip and the draft ----------
+  function onFlip(o) {
+    if (!N.mode) return;
+    N.draft = null; N.flipDone = false; N.inDraft = false; N.lobby = false; N.started = false; N.sel = null;
+    L.team = o.side; applySide();
+    hide('sheet'); hide('settings'); L.sheet = null;
+    flipStart(o.side, flipped, true);
   }
-  let peerShown = false;
+  function flipped() {
+    N.flipDone = true;
+    if (N.mode === 'host') { try { Net.draftStart({ ban: 20, pick: 40 }); } catch (e) { } }
+    tryDraft();
+  }
+  function tryDraft() {
+    if (!N.flipDone || !N.draft || N.inDraft) return;
+    N.inDraft = true; hide('flip'); $('flip').classList.remove('out'); scr(null);
+    paintDraft();
+  }
+  function onDraft(d) { if (!N.mode) return; N.draft = d; if (N.inDraft) paintDraft(); else tryDraft(); }
+  function draftSeats(d) {
+    const out = [[], []];
+    for (const p of roster()) {
+      const side = p.side === null || p.side === undefined ? (p.team === 0 ? 0 : 1) : p.side, k = (d.picks && d.picks[p.pid]) || {};
+      if (out[side].length < 4) out[side].push({ who: p.pid, name: p.name, champ: k.champ || null, role: k.role || null, build: k.build, finish: k.finish, trail: k.trail, recall: k.recall, tier: k.tier || 0, human: true, locked: !!k.locked, online: p.online !== false });
+    }
+    for (const t of [0, 1]) while (out[t].length < 4) out[t].push({ who: null, bot: true, champ: null, role: null, name: 'Bot', tier: 0, human: false });
+    return out;
+  }
+  const bannedFrom = (d, side) => (d.bans && d.bans[side]) || [];
+  // The first legal champion for this seat: your last pick if it's still free.
+  function firstPick(d) {
+    const pool = rosterOf(L.team).filter(c => !bannedFrom(d, L.team).includes(c) && !L.seats[L.team].some(s => s.who !== N.pid && s.champ === c)), want = wantFor(L.team);
+    return pool.includes(want) ? want : pool[0];
+  }
+  function firstRole(team, champ) {
+    const k = Sim.KITS[champ], held = L.seats[team].filter(s => s.who !== N.pid && s.role).map(s => s.role), free = Sim.ROLES.filter(r => !held.includes(r));
+    return free.sort((a, b) => k.fit[b] - k.fit[a])[0] || Sim.ROLES[0];
+  }
+  function sendMine() {
+    const m = mine(); wearMine(m);
+    try { Net.pick({ champ: m.champ, role: m.role, build: m.build, tier: seatTier(m), finish: m.finish, trail: m.trail, recall: m.recall }); } catch (e) { }
+  }
+  function paintDraft() {
+    const d = N.draft; if (!d) return;
+    if (d.phase === 'ban') { N.lobby = false; hide('lobby'); renderBan(d); show('ban'); return; }
+    hide('ban');
+    const first = !N.lobby;
+    L.seats = draftSeats(d); L.team = (Net.mySide && Net.mySide() !== null ? Net.mySide() : L.team);
+    L.slot = Math.max(0, L.seats[L.team].findIndex(s => s.who === N.pid));
+    N.ready = {}; applySide();
+    const m = mine();
+    if (!m.champ) { const c = firstPick(d); m.champ = c; m.role = m.role || firstRole(L.team, c); m.build = myBuild(c); if (c) sendMine(); }
+    if (!m.role) { m.role = firstRole(L.team, m.champ); sendMine(); }
+    N.lobby = true;
+    if (first) { scr(null); renderLobby(); show('lobby'); lobbyEnter(); $('lClock').classList.remove('hide'); }
+    else { renderLobby(); if (L.sheet) renderSheet(); }
+    if (d.phase === 'done' && N.mode === 'host' && !N.started) { N.started = true; try { Net.start(); } catch (e) { } }
+  }
+  function renderBan(d) {
+    const foe = 1 - L.team, me = roster().find(p => p.pid === N.pid), mates = roster().filter(p => p.side === L.team || (p.side === null && me && p.team === me.team)), box = $('bCards');
+    const votes = d.votes || {}, myV = votes[N.pid], banned = bannedFrom(d, foe);
+    $('bT').innerHTML = `<b>Ban a ${foe ? 'villain' : 'hero'}</b><span>Your team removes its most voted pick</span>`;
+    box.textContent = '';
+    rosterOf(foe).forEach((kit, i) => {
+      const nm = charName(foe, kit), b = document.createElement('button'), n = mates.filter(p => votes[p.pid] === kit).length, gone = banned.includes(kit);
+      b.className = 'bcard stick' + (gone ? ' gone' : ''); b.style.setProperty('--i', i); b.setAttribute('aria-pressed', myV === kit); b.setAttribute('aria-label', `Ban ${nm}`);
+      b.append(coinCanvas(Art.champCoin(kit, foe, 2, 64), 152));
+      b.insertAdjacentHTML('beforeend', `<b>${shortName(nm)}</b><small>${Sim.charOf(foe, kit).title}</small><span class="vt">${Array.from({ length: n }, () => '<i></i>').join('')}</span>`);
+      b.onclick = () => { if (gone) { Sound.play('cancel'); return; } Sound.play('banVote'); try { Net.ban(kit); } catch (e) { } if (N.draft.votes) { N.draft.votes[N.pid] = kit; renderBan(N.draft); } };
+      box.append(b);
+    });
+    const bv = $('bVotes'); bv.textContent = '';
+    mates.forEach(p => { const k = votes[p.pid], el = document.createElement('span'); el.className = 'pv'; if (k) el.append(coinCanvas(Art.champCoin(k, foe, 1, 24), 60)); el.insertAdjacentHTML('beforeend', `<b>${p.pid === N.pid ? 'You' : p.name}</b>${k ? '' : '<span>choosing</span>'}`); bv.append(el); });
+    const done = $('bDone'); done.textContent = '';
+    const mine0 = bannedFrom(d, L.team);
+    if (mine0.length) { const s = document.createElement('span'); s.textContent = 'They banned'; done.append(s); mine0.forEach(k => done.append(coinCanvas(Art.champCoin(k, L.team, 1, 24), 60))); }
+  }
+  const CLOCK_MAX = { ban: 20, pick: 40 };
+  function draftStep() {
+    const d = N.draft; if (!N.mode || !d || !N.inDraft) return;
+    const box = d.phase === 'ban' ? $('bClock') : $('lClock');
+    if (!box || hidden(d.phase === 'ban' ? 'ban' : 'lobby') || d.phase === 'done') { return; }
+    const left = Math.max(0, (d.endsAt - performance.now()) / 1000), max = d.total || CLOCK_MAX[d.phase] || 20, n = Math.ceil(left);
+    box.firstElementChild.textContent = n;
+    box.querySelector('u').style.width = `${clamp01m(left / max) * 100}%`;
+    box.classList.toggle('hot', left <= 5);
+    if (n !== N.tick) { N.tick = n; if (left <= 5 && left > 0 && d.phase !== 'done') Sound.play('tick'); }
+  }
+  const clamp01m = v => v < 0 ? 0 : v > 1 ? 1 : v;
+
+  // ---------- online: the room ----------
+  const DOTS = '<span class="dots" aria-hidden="true"><i></i><i></i><i></i></span>';
+  const DICE = '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M4 2h16a2 2 0 0 1 2 2v16a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2Zm4 4a2 2 0 1 0 0 4 2 2 0 0 0 0-4Zm8 0a2 2 0 1 0 0 4 2 2 0 0 0 0-4Zm-4 4a2 2 0 1 0 0 4 2 2 0 0 0 0-4Zm-4 4a2 2 0 1 0 0 4 2 2 0 0 0 0-4Zm8 0a2 2 0 1 0 0 4 2 2 0 0 0 0-4Z" fill-rule="evenodd"/></svg>';
   function renderRoom() {
-    const isHost = N.mode === 'host';
-    $('rH').textContent = isHost ? 'Your room' : "Friend's room";
+    const isHost = N.mode === 'host', ps = roster();
+    N.pid = hasNet() ? Net.pid : 0;
+    $('rH').textContent = isHost ? 'Your room' : 'Room';
     $('rCode').textContent = N.code || '-----';
     $('rLink').textContent = N.code ? inviteUrl().replace(/^[a-z]+:\/+/, '') : '';
-    for (const id of ['rCopy', 'rShare', 'rLink']) $(id).classList.toggle('hide', !isHost);
-    $('rCopy').disabled = $('rShare').disabled = !N.code;
-    const peerNew = N.peer && !peerShown; peerShown = N.peer;
-    roomCoin($('rMe'), isHost ? 0 : 1, 'You', isHost ? 'Host' : 'Joined', false, myRank());
-    if (N.peer) roomCoin($('rFr'), isHost ? 1 : 0, isHost ? 'Friend' : 'Host', 'Connected', peerNew, N.ranks[isHost ? 'g' : 'h']);
-    else roomCoin($('rFr'), null, 'Friend', 'Not here yet');
-    $('rStat').innerHTML = !isHost ? `Connected! Waiting for the host to flip${DOTS}`
-      : !N.code ? `Opening your room${DOTS}`
-        : !N.peer ? `Send the code to a friend. Waiting for them${DOTS}`
-          : 'Your friend is here. Pick teams, then flip!';
-    if (isHost && N.code && !N.peer && N.left) $('rStat').innerHTML = `Your friend left. They can rejoin with this code${DOTS}`;
-    document.querySelectorAll('#rTeam [data-t]').forEach(b => b.setAttribute('aria-pressed', b.dataset.t === N.pairing));
-    $('rTeam').classList.toggle('ro', !isHost);
-    $('rWith').textContent = N.pairing === 'same' ? '+' : 'vs';
+    for (const id of ['rCopy', 'rShare']) { $(id).classList.toggle('hide', !isHost); $(id).disabled = !N.code; }
+    $('rLink').classList.toggle('hide', !isHost);
+    $('rShuf').classList.toggle('hide', !isHost);
+    if (N.sel !== null && !ps.some(p => p.pid === N.sel)) N.sel = null;
+    [0, 1].forEach(team => {
+      const col = $(team ? 'rB' : 'rA'), row = ps.filter(p => p.team === team);
+      col.className = 'rcol' + (team ? ' b' : ''); col.textContent = '';
+      col.insertAdjacentHTML('beforeend', `<h4>Team ${team ? 'B' : 'A'}<small>${row.length} of 4</small></h4>`);
+      for (let i = 0; i < 4; i++) col.append(roomRow(row[i] || null, team, isHost));
+    });
+    const n = ps.length, ok = n >= 2;
+    $('rStat').innerHTML = !N.code && isHost ? `Opening your room${DOTS}` : isHost ? (ok ? `${n} in the room` : `Send the code to your friends${DOTS}`) : `Waiting for the host to flip${DOTS}`;
+    const hint = $('rHint');
+    hint.textContent = !isHost ? '' : N.sel !== null ? 'Tap a seat on the other team to move or swap' : ok ? 'Tap a player to move them. Empty seats are filled with bots.' : 'Up to 8 players. Bots fill the rest.';
     const f = $('rFlip');
-    f.textContent = !isHost ? 'Host flips the coin' : N.peer ? 'Flip for sides' : 'Waiting for friend';
-    f.classList.toggle('off', !isHost || !N.peer); f.classList.toggle('hot', isHost && N.peer);
+    f.textContent = !isHost ? 'Host flips' : ok ? 'Flip for sides' : 'Waiting for friends';
+    f.classList.toggle('off', !isHost || !ok); f.classList.toggle('hot', isHost && ok);
+  }
+  function roomRow(p, team, isHost) {
+    const b = document.createElement('button'), meRow = p && p.pid === N.pid, sel = p && N.sel === p.pid, src = N.sel !== null ? roster().find(x => x.pid === N.sel) : null, tgt = isHost && src && src.team !== team;
+    b.className = 'rrowp' + (meRow ? ' me' : '') + (!p ? ' bot' : '') + (p && p.online === false ? ' off' : '') + (sel ? ' sel' : '') + (tgt ? ' tgt' : '');
+    if (p) {
+      const c = document.createElement('canvas'); c.width = c.height = 64; Hud.coinTo(c, Deco.face(team, 60)); b.append(c);
+      b.insertAdjacentHTML('beforeend', `<span class="tx"><b>${esc(meRow ? `${p.name} (you)` : p.name)}</b><small>${p.rank !== null && p.rank !== undefined ? `<em>${rankInfo(p.rank).name}</em> ` : ''}${p.host ? 'Host' : p.online === false ? 'Reconnecting' : ''}</small></span>`);
+      if (tgt) b.insertAdjacentHTML('beforeend', '<span class="hint">Swap</span>');
+      if (meRow) { const d = document.createElement('span'); d.className = 'dice'; d.setAttribute('role', 'button'); d.setAttribute('aria-label', 'New name'); d.innerHTML = DICE; d.onclick = e => { e.stopPropagation(); save.callsign = rollCall(); persist(); sendProfile(); Sound.play('tick'); renderRoom(); }; b.append(d); }
+    } else {
+      b.insertAdjacentHTML('beforeend', `<span class="rq">B</span><span class="tx"><b>Bot</b></span>${tgt ? '<span class="hint">Move here</span>' : ''}`);
+    }
+    b.setAttribute('aria-label', p ? `${p.name}, team ${team ? 'B' : 'A'}` : `Empty seat, team ${team ? 'B' : 'A'}`);
+    b.onclick = () => roomTap(p, team, isHost);
+    return b;
+  }
+  const esc = t => String(t).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+  function roomTap(p, team, isHost) {
+    if (!isHost) { Sound.play('tick'); return; }
+    if (N.sel === null) { if (p) { N.sel = p.pid; Sound.play('tick'); renderRoom(); } return; }
+    if (p && p.pid === N.sel) { N.sel = null; renderRoom(); return; }
+    const src = roster().find(x => x.pid === N.sel); if (!src) { N.sel = null; return; }
+    if (src.team === team) { N.sel = p ? p.pid : null; Sound.play('tick'); renderRoom(); return; }
+    let done = true;
+    try { done = p ? Net.swap(src.pid, p.pid) !== false : Net.setTeam(src.pid, team) !== false; } catch (e) { done = false; }
+    N.sel = null; Sound.play(done ? 'coin' : 'cancel'); renderRoom();
   }
   function openRoom() {
-    N.lobby = false; N.ready = { h: false, g: false }; N.wasReady = false; peerShown = false;
-    stage.classList.toggle('s0', L.team === 0); stage.classList.toggle('s1', L.team === 1);
+    N.lobby = false; N.draft = null; N.flipDone = false; N.inDraft = false; N.started = false; N.sel = null;
+    applySide();
     renderRoom(); scr('room');
   }
   function startHost() {
     if (!hasNet()) { noNet(); return; }
-    netDrop();
-    N.mode = 'host'; N.code = ''; N.peer = false; N.left = false; N.pairing = 'same';
-    openRoom();
+    netDrop(); N.mode = 'host'; N.code = '';
+    L.team = 0; openRoom();
+    sendProfile();
     try { Net.host(); } catch (e) { notice('Connection trouble', "We couldn't open a room just now. Try again in a moment."); }
   }
   function backToRoom() {
-    const go = () => { paused = false; G = null; Ctl.reset(); clearAll(); Sound.setMode('menu'); openRoom(); say(N.mode === 'guest' ? { k: 'hello', rank: myRank() } : roomMsg()); };
+    const go = () => { paused = false; G = null; Ctl.reset(); clearAll(); Sound.setMode('menu'); openRoom(); };
     if (!wipe(go)) go();
+  }
+  function hostFlip() {
+    if (N.mode !== 'host' || F.on || W.on) return;
+    if (roster().length < 2) { shake($('rFlip')); Sound.play('cancel'); return; }
+    try { Net.flip(); } catch (e) { shake($('rFlip')); }
+  }
+  function lobbyStartTap() {
+    if (!N.mode) { Sound.play('tap'); begin(false); return; }
+    const m = mine();
+    if (m.locked || (N.draft && N.draft.phase === 'done')) { Sound.play('tick'); return; }
+    try { Net.lock(); } catch (e) { }
+    m.locked = true; Sound.play('lockIn');
+    renderLobby();
+    const b = $('start'); b.style.animation = 'none'; void b.offsetWidth; b.style.animation = 'pop .3s ease-out'; setTimeout(() => { b.style.animation = ''; }, 320);
   }
   async function copyText(t) {
     try { await navigator.clipboard.writeText(t); return true; } catch (e) { }
@@ -1027,7 +1076,8 @@ const { initMenus, animMenus, showEnd } = (() => {
     if (!hasNet()) { noNet(); return; }
     netDrop();
     Sound.play('whoosh');
-    N.mode = 'guest'; N.code = N.input; N.joining = true; N.peer = false;
+    N.mode = 'guest'; N.code = N.input; N.joining = true;
+    sendProfile();
     setJoin('Connecting to your friend', false, true); renderJoin();
     clearTimeout(N.timer);
     N.timer = setTimeout(() => { if (N.joining) joinFail("We couldn't reach that room. Check the code and try again."); }, 20000);
@@ -1041,10 +1091,10 @@ const { initMenus, animMenus, showEnd } = (() => {
   function guestIn() {
     if (N.mode !== 'guest' || !N.joining) return;
     clearTimeout(N.timer);
-    N.joining = false; N.peer = true;
-    N.pairing = 'same';
+    N.joining = false; N.pid = Net.pid;
+    if (Net.phase === 'match') { setJoin('Rejoining your match', false, true); return; }
+    if (Net.phase === 'draft') { N.flipDone = true; tryDraft(); if (N.inDraft) return; }
     openRoom(); Sound.play('friendJoin');
-    say({ k: 'hello', rank: myRank() });
   }
   function buildKeypad() {
     const kb = $('kb');
@@ -1065,6 +1115,91 @@ const { initMenus, animMenus, showEnd } = (() => {
       else if (e.key.length === 1 && clean(e.key)) press(e.key.toUpperCase());
     });
     addEventListener('paste', e => { if (curScr === 'joinS') { e.preventDefault(); fillCode(e.clipboardData.getData('text')); } });
+  }
+
+  // ---------- missions: all local ----------
+  const statsOf = st => ({ kills: st.kills || 0, deaths: st.deaths || 0, assists: st.assists || 0, takedowns: (st.kills || 0) + (st.assists || 0), dmg: st.dealt || st.dmg || 0, taken: st.taken || 0, heal: st.healing || 0, gold: st.gold || 0, towers: st.towers || 0, objs: st.objectives || 0, rescues: st.rescues || 0, hits: st.skillHits || 0, casts: st.casts || 0, parries: st.parries || 0 });
+  const DAILY = [
+    { id: 'win', t: 'Win a match', n: 1, v: 70, f: (m) => m.won ? 1 : 0 },
+    { id: 'play', t: 'Play 2 matches', n: 2, v: 40, f: () => 1 },
+    { id: 'td', t: 'Score 15 takedowns or assists', n: 15, v: 50, f: m => m.st.takedowns },
+    { id: 'dmg', t: 'Deal 15,000 damage to champions', n: 15000, v: 50, f: m => m.st.dmg },
+    { id: 'hits', t: 'Land 30 abilities', n: 30, v: 40, f: m => m.st.hits },
+    { id: 'civ', t: 'Win over 6 groups of civilians', n: 6, v: 50, f: m => m.st.rescues },
+    { id: 'tow', t: 'Help take 3 towers', n: 3, v: 50, f: m => m.st.towers },
+    { id: 'obj', t: 'Win 2 bosses or city events', n: 2, v: 60, f: m => m.st.objs },
+    { id: 'heal', t: 'Heal or shield 3,000 health', n: 3000, v: 50, f: m => m.st.heal },
+    { id: 'gold', t: 'Earn 15,000 gold', n: 15000, v: 40, f: m => m.st.gold },
+  ];
+  // A few per kit, in the order they teach it. Each is judged on one match.
+  const CHAMP_M = {
+    vesper: [['Charge Long Shot fully and land 10 abilities in one match', 'hits', 10], ['Use Smoke Step to get out: finish with 2 deaths or fewer', 'safe', 2], ['Stand still for Steady Hand, and deal 12,000 damage', 'dmg', 12000]],
+    kade: [['Time your Parry: deflect 5 hits in one match', 'parries', 5], ['Lunge in and Crash down: score 10 takedowns', 'takedowns', 10], ['Soak a fight up front: take 12,000 damage', 'taken', 12000]],
+    ione: [['Line up Sigil Orb and land 15 abilities', 'hits', 15], ['Cascade the fight: deal 14,000 damage', 'dmg', 14000], ['Keep your distance: finish with 3 deaths or fewer', 'safe', 3]],
+    solenne: [['Keep Mending Ray flowing: heal 4,000 health', 'heal', 4000], ['Aegis your allies: 10 assists in one match', 'assists', 10], ['Time Daybreak: win a match as Dawnbringer', 'win', 1]],
+    sable: [['Rend and Echo to a kill: score 6 takedowns solo', 'kills', 6], ['Slip away after Reap: finish with 3 deaths or fewer', 'safe', 3], ['Play the map: help win 2 objectives', 'objs', 2]],
+    gravel: [['Chain them in: land 12 abilities', 'hits', 12], ['Be the wall: take 18,000 damage', 'taken', 18000], ['Stomp the point: win over 4 groups of civilians', 'rescues', 4]],
+    deadbolt: [['Lay Tripwire where they walk: land 10 abilities', 'hits', 10], ['Ricochet through a crowd: deal 12,000 damage', 'dmg', 12000], ['Hold a Lockdown and survive: finish with 3 deaths or fewer', 'safe', 3]],
+    duelist: [['Finish all three Flourish steps: land 18 abilities', 'hits', 18], ['Feint, then Final Salute: score 8 takedowns', 'takedowns', 8], ['Win the duel that matters: win a match as The Duelist', 'win', 1]],
+    hex: [['Stack Hex Bolt: land 15 abilities', 'hits', 15], ['Polymorph, then Coven: score 10 takedowns', 'takedowns', 10], ['Let Contagion spread: deal 13,000 damage', 'dmg', 13000]],
+    plague: [['Leech to keep allies up: heal 3,000 health', 'heal', 3000], ['Fill the lane with Miasma: 9 assists', 'assists', 9], ['Quarantine their carry and win a match', 'win', 1]],
+    shiv: [['Open from Vanish: score 7 solo takedowns', 'kills', 7], ['Shank and leave: finish with 3 deaths or fewer', 'safe', 3], ['Finish the job: take 2 towers or bosses', 'pressure', 2]],
+    ironjaw: [['Grab them into your team: land 12 abilities', 'hits', 12], ['Let Rage build: take 16,000 damage', 'taken', 16000], ['Demolish a whole team: score 10 assists', 'assists', 10]],
+  };
+  const champReward = i => [60, 80, 120][i] || 60;
+  const champCheck = (key, n, m) => key === 'safe' ? m.st.deaths <= n : key === 'win' ? m.won : key === 'pressure' ? m.st.towers + m.st.objs >= n : (m.st[key] || 0) >= n;
+  const champValue = (key, m) => key === 'safe' ? m.st.deaths : key === 'win' ? (m.won ? 1 : 0) : key === 'pressure' ? m.st.towers + m.st.objs : (m.st[key] || 0);
+  const dayKey = () => { const d = new Date(); return d.getFullYear() * 10000 + (d.getMonth() + 1) * 100 + d.getDate(); };
+  function hash32(n) { n = Math.imul(n ^ 0x9E3779B9, 0x85EBCA77); n ^= n >>> 13; n = Math.imul(n, 0xC2B2AE3D); return (n ^ n >>> 16) >>> 0; }
+  function missions() {
+    const key = dayKey(), M = save.missions || (save.missions = { day: 0, daily: [], champ: {} });
+    M.champ = M.champ || {};
+    if (M.day !== key) {
+      const pool = DAILY.slice(), out = []; let h = key;
+      while (out.length < 3) { h = hash32(h + out.length + 1); out.push({ id: pool.splice(h % pool.length, 1)[0].id, p: 0, done: false }); }
+      M.day = key; M.daily = out; persist();
+    }
+    return M;
+  }
+  const dailyDef = id => DAILY.find(d => d.id === id);
+  // Apply a finished match. Returns completed missions and banks the reward.
+  function applyMissions(r, st) {
+    const M = missions(), m = { won: r.won, st, champ: r.me.champ, build: r.me.build }, out = [];
+    let gain = 0;
+    for (const d of M.daily) {
+      const def = dailyDef(d.id); if (!def || d.done) continue;
+      d.p = Math.min(def.n, d.p + def.f(m));
+      if (d.p >= def.n) { d.done = true; gain += def.v; out.push({ t: def.t, v: def.v }); }
+    }
+    const list = CHAMP_M[r.me.champ] || [], rec = M.champ[r.me.champ] || (M.champ[r.me.champ] = {});
+    list.forEach((c, i) => { if (rec[i] || !champCheck(c[1], c[2], m)) return; rec[i] = 1; const v = champReward(i); gain += v; out.push({ t: `${charName(r.me.team, r.me.champ)}: ${c[0]}`, v }); });
+    if (gain) { save.marks = (save.marks || 0) + gain; }
+    persist();
+    return { list: out, gain };
+  }
+  const missionsLeft = () => missions().daily.filter(d => !d.done).length;
+  const fmtN = n => n >= 10000 ? `${Math.round(n / 100) / 10}k` : String(Math.floor(n));
+  const missCard = (text, val, frac, done, label) => `<div class="mcard${done ? ' done' : ''}"><p>${text}</p><span class="rw">${done ? 'Done' : `<i></i>${val}`}</span><span class="bar"><i><u style="--w:${Math.round(frac * 100)}%"></u></i>${label}</span></div>`;
+  const Ms = { champ: null };
+  function renderMissions() {
+    const M = missions();
+    $('msMarks').textContent = save.marks || 0;
+    const end = new Date(); end.setHours(24, 0, 0, 0); const hrs = Math.max(1, Math.ceil((end - Date.now()) / 3600000));
+    $('msNew').textContent = `New missions in ${hrs} hour${hrs === 1 ? '' : 's'}. Marks pay for the store.`;
+    $('msDaily').innerHTML = M.daily.map(d => { const def = dailyDef(d.id); return def ? missCard(def.t, def.v, d.done ? 1 : d.p / def.n, d.done, `${fmtN(d.p)} / ${fmtN(def.n)}`) : ''; }).join('');
+    if (!Ms.champ) Ms.champ = wantFor(L.team);
+    const t = [0, 1].find(x => rosterOf(x).includes(Ms.champ)), rec = M.champ[Ms.champ] || {}, list = CHAMP_M[Ms.champ] || [];
+    $('msCT').textContent = charName(t, Ms.champ);
+    const pick = $('msPick'); pick.textContent = '';
+    [0, 1].forEach(side => rosterOf(side).forEach(id => {
+      const b = document.createElement('button'), r = M.champ[id] || {}, done = (CHAMP_M[id] || []).filter((_, i) => r[i]).length;
+      b.setAttribute('aria-pressed', id === Ms.champ); b.setAttribute('aria-label', charName(side, id));
+      b.append(coinCanvas(Art.champCoin(id, side, Sim.tierOf(pts(id)), 34), 80));
+      if (done) b.insertAdjacentHTML('beforeend', `<u>${done}/3</u>`);
+      b.onclick = () => { Ms.champ = id; Sound.play('tick'); renderMissions(); };
+      pick.append(b);
+    }));
+    $('msChamp').innerHTML = list.map((c, i) => missCard(c[0], champReward(i), rec[i] ? 1 : 0, !!rec[i], rec[i] ? 'Complete' : 'One match')).join('');
   }
 
   // ---------- how to play: five small lit scenes ----------
@@ -1150,7 +1285,19 @@ const { initMenus, animMenus, showEnd } = (() => {
     const go = () => { scr(null); applySide(); renderLobby(); show('lobby'); lobbyEnter(); };
     if (!wipe(go)) go();
   }
-  function paintMarks() { $('mMarks').textContent = save.marks ? `${save.marks}` : ''; }
+  function paintMarks() { $('mMarks').textContent = save.marks ? `${save.marks}` : ''; const n = missionsLeft(); $('mMissN').textContent = n ? `${n}` : ''; fitLogo(); }
+  function paintRejoin() {
+    const c = hasNet() && Net.resumable ? Net.resumable() : null;
+    $('mRejoin').classList.toggle('hide', !c); $('mRank').classList.toggle('hide', !!c);
+  }
+  // The logo shares a row with the rank, so it scales to the room left beside it whichever font loaded.
+  function fitLogo() {
+    const b = $('mLogo'), col = b.parentElement; if (!b || !col.clientWidth) return;
+    const other = hidden('mRank') ? $('mRejoin') : $('mRank'), room = col.clientWidth - other.offsetWidth - 14;
+    b.style.fontSize = '60px';
+    const k = Math.min(1, room / b.scrollWidth);
+    b.style.fontSize = Math.floor(60 * k) + 'px';
+  }
   function initMenus() {
     save.marks = save.marks || 0; save.owned = save.owned || []; save.equip = save.equip || {};
     rollSeats(); applySide(); renderLobby(); syncToggles(); buildKeypad(); wireNet();
@@ -1182,6 +1329,11 @@ const { initMenus, animMenus, showEnd } = (() => {
     document.querySelectorAll('#stTab [data-k]').forEach(b => { b.onclick = () => { St.tab = b.dataset.k; St.sel = null; Sound.play('tap'); renderStore(); }; });
     $('mHost').onclick = () => { Sound.play('coin'); startHost(); };
     $('mJoin').onclick = () => { Sound.play('coin'); openJoin(''); };
+    $('mMiss').onclick = () => { Sound.play('menuOpen'); renderMissions(); scr('missions'); };
+    $('msBack').onclick = () => { Sound.play('menuBack'); paintMarks(); scr('menu'); };
+    $('mRejoin').onclick = () => { const c = hasNet() && Net.resumable && Net.resumable(); if (!c) { paintRejoin(); return; } Sound.play('coin'); N.input = c; joinGo(); };
+    $('rShuf').onclick = () => { if (N.mode !== 'host') return; try { Net.shuffle(); } catch (e) { } N.sel = null; Sound.play('flipSpin'); renderRoom(); };
+    $('pSur').onclick = () => { if (!G) return; Hud.surrender(); $('resume').click(); };
     $('mHow').onclick = () => { Sound.play('menuOpen'); buildHow(); scr('how'); };
     $('mSet').onclick = () => { Sound.play('menuOpen'); syncToggles(); show('settings'); };
     // The coin is a toy: flip it and it answers.
@@ -1201,7 +1353,7 @@ const { initMenus, animMenus, showEnd } = (() => {
     $('hBack').onclick = () => { Sound.play('menuBack'); scr('menu'); };
 
     // room and join
-    twoTap($('rBack'), 'Leave?', () => N.peer, () => { netDrop(); scr('menu'); });
+    twoTap($('rBack'), 'Leave?', () => roster().length > 1, () => { netDrop(); scr('menu'); });
     $('jBack').onclick = () => { Sound.play('menuBack'); netDrop(); scr('menu'); };
     $('jGo').onclick = () => joinGo();
     $('jPaste').onclick = () => pasteTap();
@@ -1211,7 +1363,6 @@ const { initMenus, animMenus, showEnd } = (() => {
       if (navigator.share) { navigator.share({ title: 'Flipside', text: `Play Flipside with me! Room code ${N.code}`, url }).catch(() => { }); Sound.play('tap'); }
       else copyBtn($('rShare'), url, 'Link copied!');
     };
-    document.querySelectorAll('#rTeam [data-t]').forEach(b => { b.onclick = () => { if (N.mode !== 'host') return; N.pairing = b.dataset.t; Sound.play('tap'); say(roomMsg()); renderRoom(); }; });
     $('rFlip').onclick = () => { if (N.mode === 'host') hostFlip(); else { shake($('rFlip')); Sound.play('tick'); } };
 
     // lobby and overlays
@@ -1229,6 +1380,7 @@ const { initMenus, animMenus, showEnd } = (() => {
     document.querySelectorAll('#wTab [data-t]').forEach(b => { b.onclick = () => { L.tab = b.dataset.t; Sound.play('tick'); renderWho(true); }; });
     $('lane').onclick = () => {
       const seat = mine(), rs = Sim.ROLES, at = rs.indexOf(seat.role);
+      if (seat.locked) return;
       for (let i = 1; i <= rs.length; i++) { const r = rs[(at + i) % rs.length]; if (friendHolds('role', r)) continue; setRole(L.team, L.slot, r); Sound.play('tap'); netPicked(); renderLobby(); return; }
     };
     $('sMusic').onclick = $('pMusic').onclick = () => toggle('music');
@@ -1241,11 +1393,12 @@ const { initMenus, animMenus, showEnd } = (() => {
     twoTap($('lBack'), 'Leave?', () => !!N.mode, () => { if (N.mode) toMenu(); else { const go = () => { hide('lobby'); hide('sheet'); scr('menu'); }; if (!wipe(go)) go(); } });
     $('resume').onclick = () => { paused = false; hide('pause'); Sound.play('tap'); };
     twoTap($('leave'), 'Tap again to leave', () => Hud.isLive(), () => toMenu());
-    $('again').onclick = () => { Sound.play('tap'); if (N.mode) backToRoom(); else begin(true); };
+    $('again').onclick = () => { Sound.play('tap'); if (N.mode === 'host') { try { Net.toRoom(); } catch (e) { backToRoom(); } } else if (!N.mode) begin(true); };
     $('tolobby').onclick = () => { Sound.play('tap'); toMenu(); };
   }
 
-  function animMenus(dt) { wipeStep(dt); flipStep(dt); vsStep(); titleStep(dt); heroStep(dt); endStep(dt); storeStep(dt); if (N.joining && hasNet() && Net.connected) guestIn(); }
+
+  function animMenus(dt) { wipeStep(dt); flipStep(dt); vsStep(); titleStep(dt); heroStep(dt); endStep(dt); storeStep(dt); draftStep(); if (N.joining && hasNet() && Net.connected) guestIn(); }
 
   return { initMenus, animMenus, showEnd };
 })();

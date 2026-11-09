@@ -19,7 +19,7 @@ const { FX, fxEvent } = (() => {
   // Anything aimed at you is drawn in this palette, whichever side threw it.
   const DANGER = { out: '#d81f24', mid: '#ff5a44', core: '#ffe9d8', aim: '255,62,40' };
   const GOLD = '#f0d38a', SPARKY = '#fff4d8', INK = Art.INK, HEAL = '#b6e5a8';
-  const SPARK = 0, PUFF = 1, SHARD = 2, COIN = 3, RING = 4, SLASH = 5, GHOST = 6, LEAF = 7, RISE = 8, DROP = 9, DISC = 10, CIV = 11, CHIP = 12, PILLAR = 13, BEAMK = 14, SIGILK = 15, BOLTK = 16, CUTK = 17;
+  const SPARK = 0, PUFF = 1, SHARD = 2, COIN = 3, RING = 4, SLASH = 5, GHOST = 6, LEAF = 7, RISE = 8, DROP = 9, DISC = 10, CIV = 11, CHIP = 12, PILLAR = 13, BEAMK = 14, SIGILK = 15, BOLTK = 16, CUTK = 17, IMP = 18;
   const LEAVES = ['#2d6a56', '#3f7a64', '#245a4a'];
   // which kits make which area blast, for working out a blast's side when the event doesn't say
   const BOOM_KIT = { crash: ['kade', 'gravel'], stomp: ['gravel'], rupture: ['ione'], break: ['ione'], heal: ['solenne'] };
@@ -39,7 +39,7 @@ const { FX, fxEvent } = (() => {
   const outBack = t => { const u = t - 1; return 1 + 2.9 * u * u * u + 1.9 * u * u; };
   const outCub = t => 1 - (1 - t) * (1 - t) * (1 - t);
 
-  const PINGS = [], ZST = new Map();
+  const PINGS = [], ZST = new Map(), GW = [], LATER = []; let CINE = null;
   let coinS = null; const mboltS = [null, null], towerS = [null, null];
   const coinSp = () => coinS || (coinS = Art.coin('fxgold', 16, null, ['#ecd9a6', '#8a6f3e'], -1, -1));
   const minionBolt = team => mboltS[team ? 1 : 0] || (mboltS[team ? 1 : 0] = Art.coin('fxm' + team, 16, null, team === 1 ? ['#ff4a5a', '#7a1020'] : ['#f0dfb0', '#8a6f3e'], -1, -1));
@@ -53,7 +53,7 @@ const { FX, fxEvent } = (() => {
     return linkC[k] = c;
   }
 
-  function reset() { PINGS.length = 0; ZST.clear(); P = []; cursor = 0; trails = new Map(); flyers = []; OV = []; panel = null; readyFx = []; prevCd = []; zoneTeam = new Map(); falls = []; arrive = []; DUST.length = 0; dustN = 0; lastKill = -9; G.text = []; G.tAim = null; }
+  function reset() { PINGS.length = 0; ZST.clear(); P = []; cursor = 0; trails = new Map(); flyers = []; OV = []; panel = null; readyFx = []; prevCd = []; zoneTeam = new Map(); falls = []; arrive = []; DUST.length = 0; dustN = 0; lastKill = -9; GW.length = 0; LATER.length = 0; CINE = null; G.text = []; G.tAim = null; }
 
   function add(k, x, y, z, life) {
     const cap = FX_CAP(quality); let p;
@@ -87,6 +87,28 @@ const { FX, fxEvent } = (() => {
       ctx.globalAlpha = Math.min(.8, f * 1.4); ctx.setTransform(dpr * c, dpr * sn * .62, -dpr * sn, dpr * c * .62, dpr * sx(d.x), dpr * sy(d.y)); ctx.drawImage(Art.dustCel(0, d.v), -1, -1, 2, 2);
     }
     resetT(); ctx.globalAlpha = 1;
+    if (GW.length) drawWaves(dt);
+  }
+  // ---------- big-moment machinery ----------
+  // Shockwaves run along the ground under the units, so they can be huge without hiding anyone.
+  function wave(x, y, R, col, life = .6) { if (GW.length >= 6) GW.shift(); GW.push({ x, y, R, col, t: 0, life }); }
+  function drawWaves(dt) {
+    ctx.globalCompositeOperation = 'lighter';
+    for (let i = GW.length - 1; i >= 0; i--) {
+      const w = GW[i]; w.t += dt; const a = w.t / w.life; if (a >= 1) { GW.splice(i, 1); continue; }
+      const r = w.R * Z * (.16 + .94 * outExpo(a)); ctx.globalAlpha = Math.min(.8, (1 - a) * 1.4); ctx.drawImage(Art.shock(w.col), sx(w.x) - r, sy(w.y) - r * TILT, r * 2, r * 2 * TILT);
+    }
+    ctx.globalAlpha = 1; ctx.globalCompositeOperation = 'source-over';
+  }
+  // Run something a moment from now. Big moments are short sequences, not single frames.
+  const later = (d, fn) => { if (LATER.length < 48) LATER.push({ d, fn }); };
+  // Letterbox: two black bars slide in and the world holds its breath for a beat.
+  function cine(life = .6, k = 1) { if (!calm) CINE = { t: 0, life, k }; }
+  function drawCine(dt) {
+    if (!CINE) return; CINE.t += dt; const a = CINE.t / CINE.life; if (a >= 1) { CINE = null; return; }
+    const io = a < .18 ? outExpo(a / .18) : a > .78 ? 1 - outCub((a - .78) / .22) : 1, h = Math.round(Math.min(34, VH * .09) * CINE.k * io);
+    if (a < .35) { ctx.globalAlpha = .26 * CINE.k * (1 - a / .35); ctx.fillStyle = '#02030a'; ctx.fillRect(0, 0, VW, VH); ctx.globalAlpha = 1; }
+    ctx.fillStyle = '#000'; ctx.fillRect(0, 0, VW, h); ctx.fillRect(0, VH - h, VW, h);
   }
   function coins(x, y, n, o = {}) {
     n = nq(n);
@@ -104,10 +126,12 @@ const { FX, fxEvent } = (() => {
   function ghost(spr, R, x, y, z = 14, life = .28, spin = 1) { const p = add(GHOST, x, y, z, life); p.spr = spr; p.R = R; p.alpha = .42; p.ph = spin; return p; }
   function ghostLine(spr, R, x0, y0, x1, y1) { const n = Math.min(3, Math.ceil(Math.hypot(x1 - x0, y1 - y0) / 140)); for (let i = 0; i < n; i++) { const f = i / n; ghost(spr, R, lerp(x0, x1, f), lerp(y0, y1, f), 14, .2 + f * .16); } }
   function corpse(spr, R, x, y) { const p = ghost(spr, R, x, y, 14, .7, 1); p.flip = true; p.alpha = 1; p.vz = 330; p.vr = 12; }
-  function shatter(spr, R, x, y) {
+  // The whole coin bursts; with `gold` each shard turns to loose change partway through its arc.
+  function shatter(spr, R, x, y, gold) {
+    if (!spr || !spr.c) return; // a turntable whose first frame hasn't baked yet
     const list = Art.shardsOf(spr), k = R / spr.R;
     for (const s of list) {
-      const p = add(SHARD, x + Math.cos(s.a) * R * .35, y + Math.sin(s.a) * R * .35, 34, rnd(.8, 1.15));
+      const p = add(SHARD, x + Math.cos(s.a) * R * .35, y + Math.sin(s.a) * R * .35, 34, rnd(.8, 1.15)); p.gold = !!gold;
       const v = rnd(170, 360); p.vx = Math.cos(s.a) * v; p.vy = Math.sin(s.a) * v; p.vz = rnd(300, 560); p.vr = rnd(-11, 11); p.spr = s.c; p.size = k; p.bounce = 2; p.dx = Math.cos(s.a) * spr.S * .3 * k; p.dy = Math.sin(s.a) * spr.S * .3 * k;
     }
   }
@@ -175,11 +199,19 @@ const { FX, fxEvent } = (() => {
   // Your hit confirm: four ticks snap out around the target. It frames the coin rather than covering it.
   function hitMark(u, col) { const r = (OV_R[u.kind] || 30) * (u.boss ? 1.6 : 1); overlay(3, u.x, u.y, u.kind === 'champ' ? 20 : 14, .18, { r, col }); }
 
+  // A footsoldier landing a blow: one short star of impact where it connects. Melee quick and small, heavy a thud you can see.
+  function minionHit(type, x, y, team, v) {
+    if (!litAt(x, y, 30)) return;
+    const pal = palT(team), heavy = type === 'heavy', p = add(IMP, x, y, heavy ? 12 : 16, heavy ? .16 : .1); p.spr = Art.impact(pal.imp, pal.imp2, 1 + (Math.random() * 3 | 0)); p.R = heavy ? 34 : 15; p.rot = Math.random() * TAU;
+    if (heavy) { dustRing(x, y, 46, 4); ring(x, y, 62, pal.ring, .22); chips(x, y, 3, pal.chip, 180, 10); const d = Math.hypot(x - G.me.x, y - G.me.y); if (d < 420) G.shake = Math.max(G.shake, 1.6); }
+  }
+
   // ---------- simulation of particles ----------
   function step(dt) {
     for (let i = P.length - 1; i >= 0; i--) {
       const p = P[i]; p.life -= dt;
       if (p.life <= 0) { const l = P.pop(); if (i < P.length) P[i] = l; continue; }
+      if (p.gold && p.life < p.max * .62) { const x = p.x, y = p.y, z = p.z; p.gold = false; p.life = .05; coins(x, y, 2, { z: Math.max(8, z), sp: 150, vzMin: 180, vz: 420, size: 10, life: 1 }); continue; }
       p.x += p.vx * dt; p.y += p.vy * dt; p.z += p.vz * dt; p.rot += p.vr * dt;
       switch (p.k) {
         case SPARK: case DROP: p.vz -= 900 * dt; if (p.z < 1) p.life = 0; break;
@@ -194,6 +226,7 @@ const { FX, fxEvent } = (() => {
           break;
       }
     }
+    for (let i = LATER.length - 1; i >= 0; i--) { const L = LATER[i]; if ((L.d -= dt) <= 0) { LATER.splice(i, 1); L.fn(); } }
     for (let i = flyers.length - 1; i >= 0; i--) {
       const f = flyers[i]; f.t += dt; f.ph += dt * 13;
       if (f.t >= f.dur) { flyers[i] = flyers[flyers.length - 1]; flyers.pop(); G.goldBump = 1; if (arrive.length < 3) arrive.push(0); }
@@ -229,6 +262,7 @@ const { FX, fxEvent } = (() => {
           ctx.globalAlpha = Math.min(p.ph === 2 ? .5 : .9, f * 1.8); ctx.setTransform(dpr * c, dpr * sn * .72, -dpr * sn, dpr * c * .72, dpr * X, dpr * Y); if (p.ph === 2) ctx.drawImage(Art.puff(150, 205, 50), -1, -1, 2, 2); else ctx.drawImage(Art.dustCel(p.ph, p.v), -1, -1, 2, 2); resetT(); break;
         }
         case COIN: { const sp = coinSp(), r = p.size * Z, c = Math.max(.14, Math.abs(Math.cos(p.ph))); ctx.globalAlpha = Math.min(1, f * 3); ctx.drawImage(sp.c, X - r * c * 1.2, Y - r * 1.2, 2.4 * r * c, 2.4 * r); break; }
+        case IMP: { const r = p.R * Z * (.55 + outExpo(e) * .55), c = Math.cos(p.rot) * r, sn = Math.sin(p.rot) * r; ctx.globalAlpha = Math.min(1, f * 2.4); ctx.setTransform(dpr * c, dpr * sn, -dpr * sn, dpr * c, dpr * X, dpr * Y); ctx.drawImage(p.spr, -1, -1, 2, 2); resetT(); break; }
         case CHIP: { const s = p.size * Z * 15, c = Math.cos(p.rot) * s, sn = Math.sin(p.rot) * s; ctx.globalAlpha = Math.min(1, f * 4); ctx.setTransform(dpr * c, dpr * sn, -dpr * sn, dpr * c, dpr * X, dpr * Y); ctx.drawImage(Art.chip(p.col, p.v), -.5, -.5, 1, 1); resetT(); break; }
         case SHARD: { const s = p.size * Z, w = p.spr.width * s, c = Math.cos(p.rot), sn = Math.sin(p.rot); ctx.globalAlpha = Math.min(1, f * 3); ctx.setTransform(dpr * c, dpr * sn, -dpr * sn, dpr * c, dpr * X, dpr * Y); ctx.drawImage(p.spr, -w / 2 - p.dx * Z, -w / 2 - p.dy * Z, w, w); resetT(); break; }
         case LEAF: { const c = Math.cos(p.rot) * p.size * Z, sn = Math.sin(p.rot) * p.size * Z; ctx.globalAlpha = Math.min(1, f * 4); ctx.setTransform(dpr * c, dpr * sn, -dpr * sn, dpr * c, dpr * X, dpr * Y); ctx.drawImage(p.spr, -8, -5); resetT(); break; }
@@ -650,13 +684,23 @@ const { FX, fxEvent } = (() => {
   }
 
   // ---------- floating numbers and flying coins, drawn over the lighting ----------
-  const FONT_AT = [], GOLD_FALLBACK = { x: 64, y: 58 };
+  const FONT_AT = [], GOLD_FALLBACK = { x: 64, y: 58 }, NUMS = new Map();
+  function numSprite(str, col, big) {
+    const ready = !document.fonts || document.fonts.status === 'loaded' ? 1 : 0, id = str + col + (big ? 'B' : 's') + ready; let n = NUMS.get(id); if (n) return n;
+    if (NUMS.size > 180) NUMS.clear();
+    const fs = big ? 24 : 18, S = Math.ceil(dpr * 1.5), font = '700 ' + fs + 'px "Barlow Semi Condensed",sans-serif', m = Art.cv(2, 2).getContext('2d'); m.font = font;
+    const w = Math.ceil(m.measureText(str).width) + 8, h = fs + 8, c = Art.cv(w * S, h * S), g = c.getContext('2d');
+    g.scale(S, S); g.font = font; g.textAlign = 'center'; g.textBaseline = 'middle'; g.lineJoin = 'round'; g.lineWidth = 4; g.strokeStyle = INK; g.strokeText(str, w / 2, h / 2); g.fillStyle = col; g.fillText(str, w / 2, h / 2);
+    NUMS.set(id, n = { c, w, h, fs }); return n;
+  }
   function textLayer(dt) {
     // flashes and speed lines behind the numbers
     for (let i = OV.length - 1; i >= 0; i--) { if ((OV[i].t += dt) >= OV[i].life) OV.splice(i, 1); }
+    drawCine(dt);
     for (const o of OV) {
       const X = sx(o.x), Y = sy(o.y) - o.z * Z, a = o.t / o.life;
-      if (o.kind === 0) { const r = o.r * Z * (.55 + outBack(Math.min(1, a * 1.6)) * .6), c = Math.cos(o.rot) * r, sn = Math.sin(o.rot) * r; ctx.globalAlpha = a > .55 ? (1 - a) / .45 : 1; ctx.setTransform(dpr * c, dpr * sn, -dpr * sn, dpr * c, dpr * X, dpr * Y); ctx.drawImage(o.spr, -1, -1, 2, 2); resetT(); }
+      if (o.kind === 4) { const r = o.r * Z * (a < .3 ? outBack(a / .3) * .9 : .9 + (a - .3) * .24), tilt = o.rot % .3 - .15, c = Math.cos(tilt) * r, sn = Math.sin(tilt) * r; ctx.globalCompositeOperation = 'lighter'; ctx.globalAlpha = a > .55 ? (1 - a) / .45 : 1; ctx.setTransform(dpr * c, dpr * sn, -dpr * sn, dpr * c, dpr * X, dpr * Y); ctx.drawImage(o.spr, -1, -1, 2, 2); resetT(); ctx.globalCompositeOperation = 'source-over'; }
+      else if (o.kind === 0) { const r = o.r * Z * (.55 + outBack(Math.min(1, a * 1.6)) * .6), c = Math.cos(o.rot) * r, sn = Math.sin(o.rot) * r; ctx.globalAlpha = a > .55 ? (1 - a) / .45 : 1; ctx.setTransform(dpr * c, dpr * sn, -dpr * sn, dpr * c, dpr * X, dpr * Y); ctx.drawImage(o.spr, -1, -1, 2, 2); resetT(); }
       else if (o.kind === 3) {
         const r = o.r * Z * (1 + outExpo(a) * .34), d = 12 * Z * (1 - a * .6), al = 1 - a * a, c = Math.SQRT1_2;
         ctx.globalAlpha = al; ctx.lineCap = 'round';
@@ -680,8 +724,8 @@ const { FX, fxEvent } = (() => {
       const f = t.t / t.max, age = 1 - f, grow = age < .12 ? .55 + outBack(age / .12) * .75 : age < .26 ? 1.3 - ((age - .12) / .14) * .3 : 1, size = (t.big ? 19 : 13.5) * grow;
       const X = sx(t.x), Y = sy(t.y) - (t.z + (1 - f * f) * 52) * Z;
       if (X < -60 || X > VW + 60) continue;
-      ctx.font = FONT_AT[size | 0] || (FONT_AT[size | 0] = '700 ' + (size | 0) + 'px "Barlow Semi Condensed",sans-serif'); ctx.globalAlpha = Math.min(1, f * 3.4);
-      ctx.lineWidth = 3; ctx.strokeStyle = INK; ctx.strokeText(t.s, X, Y); ctx.fillStyle = t.col; ctx.fillText(t.s, X, Y);
+      // Each string is drawn once and reused: a stroked line of text is by far the slowest thing a frame could ask for.
+      const spr = numSprite(t.s, t.col, !!t.big), w = spr.w * size / spr.fs, h = spr.h * size / spr.fs; ctx.globalAlpha = Math.min(1, f * 3.4); ctx.drawImage(spr.c, X - w / 2, Y - h / 2, w, h);
     }
     ctx.globalAlpha = 1;
     if (panel) { panel.t += dt; drawPanel(); }
@@ -732,12 +776,13 @@ const { FX, fxEvent } = (() => {
     for (const f of falls) if (f.x === x && f.y === y) return;
     const H = core ? 150 : 104;
     falls.push({ x, y, team, core, t: 0, n: core ? 18 : 12, i: 0, H, boom: false });
+    wave(x, y, core ? 820 : 560, GOLD, .7); wave(x, y, core ? 460 : 320, '#ffd9a0', .45); dustRing(x, y, core ? 220 : 160, 10);
     ring(x, y, core ? 300 : 210, '#ffffff', .34, 14); ring(x, y, core ? 170 : 120, GOLD, .26, 28);
     overlay(0, x, y, H * .55, .16, { spr: Art.impact(NEUT.imp, NEUT.imp2, 2), r: core ? 130 : 90 });
     if (quality >= 1) overlay(2, x, y, H * .5, .3, { spr: Art.speedLines('#ffe0b0', 2), r: core ? 420 : 300, ink: null });
     spark(x, y, core ? 14 : 9, GOLD, 420, .5, 16, H * .5);
     const cr = Terrain.towerCrown(team, core), p = add(SHARD, x, y, H, 1.2); p.spr = cr.c; p.size = cr.w / cr.c.width; p.vz = 540; p.vx = rnd(-110, 110); p.vy = rnd(-40, 40); p.vr = rnd(-6, 6); p.bounce = 1;
-    if (near) { hitStop(.07); slowMo(.34, .5); G.shake = Math.max(G.shake, core ? 11 : 8); G.punch = Math.max(G.punch, core ? .07 : .05); }
+    if (near) { hitStop(.07); slowMo(.34, .5); cine(core ? 1.1 : .7, core ? 1 : .7); G.shake = Math.max(G.shake, core ? 11 : 8); G.punch = Math.max(G.punch, core ? .07 : .05); }
   }
   function finale(won, x, y) { if (won) { const pal = palT(G.me.team); burst(x, y, 90, pal, 2, true); ring(x, y, 420, pal.ring, .9); } }
 
@@ -991,6 +1036,48 @@ const { FX, fxEvent } = (() => {
     } else v.recallYaw = 0;
   }
 
+  // ---------- finishers ----------
+  // A unique last word per champion. ux,uy runs from the killer through the victim. k is 1 for your own kills and deaths and about .6 for a kill you merely witness.
+  const seal = (kit, x, y, r, col, life = .34) => overlay(4, x, y, 34, life, { spr: Art.seal(kit, col), r });
+  const FIN = {
+    vesper(x, y, ux, uy, p, k) { sigil('mark', x, y, 170 * k, p.mid, .36, 3); later(.07, () => { beam(x - ux * 1400, y - uy * 1400, x + ux * 340, y + uy * 340, p.mid, 12, .26, 30); ring(x, y, 130 * k, p.ring, .26, 20); spark(x, y, 8, p.spark, 460, .3, 15, 28); }); },
+    kade(x, y, ux, uy, p, k) { const a0 = Math.atan2(uy, ux); cut(x, y, a0 + .8, 200 * k, p.mid, .2, 26); later(.08, () => cut(x, y, a0 - .8, 200 * k, p.mid, .2, 26)); later(.17, () => { beam(x - ux * 210, y - uy * 210, x + ux * 220, y + uy * 220, '#ffffff', 7, .16, 26); spark(x, y, 9, p.spark, 400, .32, 16, 26); ring(x, y, 120 * k, p.ring, .22, 20); }); },
+    ione(x, y, ux, uy, p, k) { for (let i = 0; i < 6; i++) later(i * .05, () => { const ax = x + rnd(-110, 110) * k, ay = y + rnd(-60, 60) * k; beam(ax + 130, ay - 220, ax, ay, p.mid, 8, .15, 12); ring(ax, ay, 40, p.ring, .2); spark(ax, ay, 3, p.spark, 240, .26, 12, 12); }); },
+    solenne(x, y, ux, uy, p, k) { pillar(x, y, p.out, p.mid, .75); sigil('heal', x, y, 200 * k, p.mid, .55, 1); rise(x, y, 14, p.mid, 80, 1, 14); ring(x, y, 150 * k, p.ring, .36); },
+    sable(x, y, ux, uy, p, k) { puff(x, y, 9, 1, 40, .5, 22, 120); const a = Math.atan2(uy, ux); slash(x, y, Math.cos(a + 1.3), Math.sin(a + 1.3), 150 * k, p.mid, .22); later(.09, () => { slash(x, y, Math.cos(a - 1.3), Math.sin(a - 1.3), 170 * k, '#ffffff', .22); spark(x, y, 7, p.spark, 340, .3, 14, 28); }); },
+    gravel(x, y, ux, uy, p, k) { sigil('stomp', x, y, 210 * k, p.mid, .4, .6); wave(x, y, 330 * k, p.mid, .55); dustRing(x, y, 120 * k, 8); chips(x, y, 8, p.chip, 340, 24); later(.12, () => ring(x, y, 180 * k, p.ring, .3)); },
+    deadbolt(x, y, ux, uy, p, k) { sigil('lockdown', x, y, 190 * k, p.mid, .42, -2.4); for (let i = 0; i < 5; i++) { const a = i / 5 * TAU + rnd(-.2, .2); arcs(x, y, 30, x + Math.cos(a) * 170 * k, y + Math.sin(a) * 170 * k, 6, p.spark, .2, 20); } later(.14, () => { ring(x, y, 110 * k, p.ring, .24, 20); spark(x, y, 8, p.spark, 360, .3, 14, 26); }); },
+    duelist(x, y, ux, uy, p, k) { const a = Math.atan2(uy, ux); [-.5, .2, .85].forEach((o, i) => later(i * .06, () => cut(x, y, a + o, 170 * k, p.mid, .2, 26))); later(.2, () => { const n = nq(10); for (let i = 0; i < n; i++) { const an = Math.random() * TAU, v = rnd(60, 220), q = add(LEAF, x, y, rnd(20, 50), rnd(.7, 1.2)); q.vx = Math.cos(an) * v; q.vy = Math.sin(an) * v; q.vz = rnd(120, 300); q.rot = Math.random() * TAU; q.vr = rnd(-9, 9); q.spr = Art.leaf(i % 2 ? '#ff4a5a' : '#c8243a'); q.size = rnd(.9, 1.5); } ring(x, y, 110 * k, p.ring, .24, 20); }); },
+    hex(x, y, ux, uy, p, k) { sigil('hex', x, y, 190 * k, p.mid, .46, 3.2); puff(x, y, 8, 2, 34, .5, 24, 90); later(.12, () => { const dp = add(DISC, x, y, 34, .5); dp.spr = { c: coinSp().c, w: 32, h: 32 }; dp.vz = 520; dp.vr = 26; dp.v = 1.3; }); },
+    plague(x, y, ux, uy, p, k) { puff(x, y, 12, 2, 54, .9, 16, 130); rise(x, y, 12, p.mid, 90, 1, 12); sigil('quarantine', x, y, 170 * k, p.mid, .5, .5); wave(x, y, 240 * k, p.mid, .6); },
+    shiv(x, y, ux, uy, p, k) { for (let i = 0; i < 7; i++) later(i * .035, () => { const a = Math.random() * Math.PI, X_ = x + rnd(-30, 30), Y_ = y + rnd(-22, 22); cut(X_, Y_, a, 118 * k, i % 2 ? '#ffffff' : p.mid, .13, 26); spark(X_, Y_, 2, p.spark, 300, .2, 12, 24); }); },
+    ironjaw(x, y, ux, uy, p, k) { const b = add(DISC, x, y, 620, .32); b.spr = { c: Art.spikeBall(), w: 96, h: 96 }; b.vz = -1900; b.v = 1; b.bounce = 0; later(.3, () => { wave(x, y, 360 * k, p.mid, .6); ring(x, y, 190 * k, p.ring, .32); dustRing(x, y, 130 * k, 8); chips(x, y, 9, p.chip, 360, 26); spark(x, y, 8, p.spark, 400, .34, 16, 20); G.shake = Math.max(G.shake, 6); }); },
+  };
+  function finisher(u, by, x, y, own) {
+    const kit = by && by.champ, F = FIN[kit], dx = by ? x - by.x : 1, dy = by ? y - by.y : 0, L = Math.hypot(dx, dy) || 1, ux = dx / L, uy = dy / L, p = palK(by || u), k = own ? 1 : .62;
+    if (F) F(x, y, ux, uy, p, k);
+    if (kit) seal(kit, x, y, (own ? 150 : 96), p.mid);
+    wave(x, y, own ? 300 : 180, p.mid, .5);
+  }
+  // Fireworks over a win. Launched in a short volley.
+  function fireworks(x, y, col, n) {
+    const m = quality >= 2 ? n : quality === 1 ? Math.ceil(n * .7) : Math.ceil(n * .4);
+    for (let i = 0; i < m; i++) later(i * .22 + rnd(0, .12), () => {
+      const bx = x + rnd(-280, 280), by = y + rnd(-180, 120), z = rnd(150, 300), q = add(SPARK, bx, by, 40, .32); q.vz = (z - 40) / .32; q.col = col; q.size = 12;
+      later(.3, () => { ring(bx, by, rnd(110, 170), col, .4, z); spark(bx, by, 16, col, 340, .55, 13, z); });
+    });
+  }
+  // A boss goes down: its colour takes the whole screen for a moment.
+  function bossFall(x, y, kind, near) {
+    const col = Art.BOSS_COL[kind] || GOLD;
+    wave(x, y, 680, col, .8); wave(x, y, 380, '#ffe6c0', .45);
+    ring(x, y, 360, col, .5, 8); ring(x, y, 220, GOLD, .4, 20);
+    overlay(0, x, y, 40, .18, { spr: Art.impact(col, '#ffffff', 2), r: 170 }); if (quality >= 1) overlay(2, x, y, 40, .32, { spr: Art.speedLines(col, 2), r: 440, ink: null });
+    pillar(x, y, col, '#fff4d8', .9); dustRing(x, y, 200, 10);
+    coins(x, y, 26, { sp: 340, vz: 820, z: 40, size: 12, life: 1.5 }); spark(x, y, 18, col, 520, .6, 18, 40);
+    if (near) { hitStop(.09); slowMo(.5, .4); cine(1, 1); G.shake = Math.max(G.shake, 11); G.punch = Math.max(G.punch, .07); }
+  }
+
   function fxEvent(e) {
     const s = G.s, me = G.me; if (!s || !me) return;
     switch (e.e) {
@@ -1024,11 +1111,11 @@ const { FX, fxEvent } = (() => {
         if (e.kind === 'champ') {
           const pal = palT(by ? by.team : -1);
           if (iKilled || iDied) {
-            if (u && on) shatter(worldSprite(u), artR(u), ex, ey);
-            if (on) { coins(ex, ey, iKilled ? 8 : 3, { sp: 300, vz: 620 }); spark(ex, ey, 10, iKilled ? GOLD : '#ffffff', 340, .42, 12, 22); ring(ex, ey, 150, iKilled ? GOLD : '#ff5a44', .38); burst(ex, ey, 20, pal, 1, iKilled); }
+            if (u && on) shatter(worldSprite(u), artR(u), ex, ey, true);
+            if (on) { coins(ex, ey, iKilled ? 14 : 6, { sp: 320, vz: 680, size: 12 }); spark(ex, ey, 10, iKilled ? GOLD : '#ffffff', 340, .42, 12, 22); ring(ex, ey, 150, iKilled ? GOLD : '#ff5a44', .38); burst(ex, ey, 20, pal, 1, iKilled); finisher(u, by && by.kind === 'champ' ? by : null, ex, ey, true); cine(iKilled ? .62 : .5, .8); }
             killSplash(e, u, by, iDied);
             G.punch = Math.max(G.punch, .05); G.shake = Math.max(G.shake, 7);
-          } else if (on) { if (u) corpse(worldSprite(u), artR(u), ex, ey); ring(ex, ey, 84, u && u.team === me.team ? '#58a6e6' : '#ff6a54', .26); flash(ex, ey, 18, pal, 34); }
+          } else if (on) { if (u && by && by.kind === 'champ') { shatter(worldSprite(u), artR(u), ex, ey, true); finisher(u, by, ex, ey, false); } else if (u) corpse(worldSprite(u), artR(u), ex, ey); ring(ex, ey, 84, u && u.team === me.team ? '#58a6e6' : '#ff6a54', .26); flash(ex, ey, 18, pal, 34); }
         } else if (e.kind === 'tower') {
           if (u) { const v = visOf(u); v.fallT = 0; }
           if (on) towerFall(ex, ey, u ? u.team : 0, !!(u && u.sub === 'core'), Math.hypot(ex - me.x, ey - me.y) < 800);
@@ -1036,7 +1123,7 @@ const { FX, fxEvent } = (() => {
           const quietOne = !iKilled;
           if (u) corpse(worldSprite(u), artR(u), ex, ey);
           if (!quietOne) coins(ex, ey, e.kind === 'monster' ? 6 : 2, { sp: 150, vz: 420 });
-          if (u && u.boss) { burst(ex, ey, 50, NEUT, 1.6, true); ring(ex, ey, 300, GOLD, .5); coins(ex, ey, 14, { sp: 300, vz: 640 }); if (iKilled) G.shake = Math.max(G.shake, 9); }
+          if (u && u.boss) { burst(ex, ey, 50, NEUT, 1.6, true); bossFall(ex, ey, u.bossKind || 'colossus', Math.hypot(ex - me.x, ey - me.y) < 900); if (iKilled) G.shake = Math.max(G.shake, 9); }
         }
         break;
       }
@@ -1105,7 +1192,30 @@ const { FX, fxEvent } = (() => {
       case 'tower': break;
       case 'forge': { const u = unitById(e.u); if (u === me && onScreen(u.x, u.y, 140)) { ring(u.x, u.y, 90, GOLD, .4); rise(u.x, u.y, 8, GOLD, 34, .7, 10); } break; }
       case 'tshot': { if (e.t === me.id) G.tAim = { id: e.u, t: 1.25 }; break; }
-      case 'atk': case 'matk': {
+      case 'matk': {
+        const u = unitById(e.u); if (!u) return; const v = visOf(u);
+        let t = null, bd = 1e12; const reach = (u.range || 140) + 90, foe = (a, b) => { if (!b || b.alive === false || b.team === u.team || b.delay > 0) return a; const d = Math.hypot(b.x - u.x, b.y - u.y); return d < bd && d < reach ? (bd = d, b) : a; };
+        for (const m of s.minions) t = foe(t, m); for (const c of s.champs) t = foe(t, c); for (const w of s.towers) t = foe(t, w);
+        const dx = t ? t.x - u.x : (u.fx || (u.team ? -1 : 1)), dy = t ? t.y - u.y : (u.fy || 0), l = Math.hypot(dx, dy) || 1;
+        v.adx = dx / l; v.ady = dy / l; v.atkT = 0;
+        if (t) { const r = t.r || 15; v.hitX = t.x - v.adx * r * .7; v.hitY = t.y - v.ady * r * .7; } else { v.hitX = u.x + v.adx * 34; v.hitY = u.y + v.ady * 34; }
+        break;
+      }
+      case 'boss': { G.cheer = Math.max(G.cheer, 3); for (const c of s.champs) if (c.alive && c.team === e.team && onScreen(c.x, c.y, 140)) { const col = Art.BOSS_COL[e.kind] || GOLD; ring(c.x, c.y, 76, col, .4, 10); rise(c.x, c.y, 5, col, 34, .7, 10); } break; }
+      case 'bossup': { const b = (s.bosses || []).find(q => q.kind === e.kind); if (b && onScreen(b.x, b.y, 300)) { const col = Art.BOSS_COL[e.kind] || GOLD; pillar(b.x, b.y, col, '#fff4d8', .8); wave(b.x, b.y, 440, col, .7); ring(b.x, b.y, 240, col, .5, 8); dustRing(b.x, b.y, 150, 8); G.shake = Math.max(G.shake, 5); G.punch = Math.max(G.punch, .03); } break; }
+      case 'mapevent': {
+        const on = e.x !== undefined && onScreen(e.x, e.y, 320), near = on && Math.hypot(e.x - me.x, e.y - me.y) < 900;
+        if (e.phase === 'end' && e.team >= 0) {
+          G.cheer = Math.max(G.cheer, e.team === 0 ? 6 : 0);
+          if (on) { const pal = palT(e.team), col = e.team === 0 ? '#ffe08a' : '#ff5a4a'; wave(e.x, e.y, 680, col, .75); ring(e.x, e.y, 320, pal.ring, .5, 6); coins(e.x, e.y, 20, { sp: 320, vz: 760, z: 30, size: 11, life: 1.4 }); fireworks(e.x, e.y, col, 7); if (e.kind === 'heist' && e.team === 1) spark(e.x, e.y, 14, GOLD, 480, .6, 15, 60); civRun(e.x, e.y, 5, e.team === 1); if (near) { slowMo(.34, .55); cine(.8, .8); G.shake = Math.max(G.shake, 6); G.punch = Math.max(G.punch, .04); } }
+        } else if (e.phase === 'warn' && on) { const col = '#ffe08a'; ring(e.x, e.y, 260, col, .5, 4); wave(e.x, e.y, 360, col, .55); }
+        else if (e.phase === 'start' && on && e.kind === 'drop') { wave(e.x, e.y, 320, '#ffe08a', .45); dustRing(e.x, e.y, 90, 6); chips(e.x, e.y, 4, GOLD, 200, 12); G.shake = Math.max(G.shake, 3); }
+        break;
+      }
+      case 'fund': { const u = unitById(e.u); if (u === me) { G.cheer = Math.max(G.cheer, 2); if (onScreen(u.x, u.y, 140)) { coins(u.x, u.y, 8, { sp: 180, vz: 620, z: 30, size: 11 }); ring(u.x, u.y, 110, GOLD, .4, 12); rise(u.x, u.y, 8, GOLD, 40, .8, 11); } } break; }
+      case 'buyback': { const u = unitById(e.u); if (u && onScreen(u.x, u.y, 140)) { const col = GOLD; wave(u.x, u.y, 260, col, .5); pillar(u.x, u.y, '#8a6f3e', col, .6); ring(u.x, u.y, 130, col, .4, 10); coins(u.x, u.y, 10, { sp: 220, vz: 640, z: 30, size: 11 }); if (u === me) { G.punch = Math.max(G.punch, .03); G.shake = Math.max(G.shake, 3); } } break; }
+      case 'consume': { const u = unitById(e.u); if (u === me && onScreen(u.x, u.y, 140)) { ring(u.x, u.y, 70, HEAL, .3, 10); rise(u.x, u.y, 5, HEAL, 26, .6, 9); } break; }
+      case 'atk': {
         const u = unitById(e.u); if (!u) return; const v = visOf(u), t = e.t ? unitById(e.t) : null;
         const dx = t ? t.x - u.x : (u.fx || 0), dy = t ? t.y - u.y : (u.fy || 0), l = Math.hypot(dx, dy) || 1, k = u === me ? 12 : u.kind === 'champ' ? 6 : 3;
         v.rx += dx / l * k; v.ry += dy / l * k;
@@ -1133,5 +1243,5 @@ const { FX, fxEvent } = (() => {
   }
 
   const goldCoin = () => coinSp();
-  return { FX: { goldCoin, poseStart, poseTick, cosmeticTick, sigil, beam, arcs, cut, reset, spark, puff, dust, drawDust, coins, ring, slash, ghost, ghostLine, corpse, shatter, leaves, splash, rise, popCoin, chips, pillar, burst, draw, projectiles, telegraphs, danger, textLayer, tickWarn, towerFall, finale }, fxEvent };
+  return { FX: { minionHit, wave, cine, later, fireworks, bossFall, finisher, goldCoin, poseStart, poseTick, cosmeticTick, sigil, beam, arcs, cut, reset, spark, puff, dust, drawDust, coins, ring, slash, ghost, ghostLine, corpse, shatter, leaves, splash, rise, popCoin, chips, pillar, burst, draw, projectiles, telegraphs, danger, textLayer, tickWarn, towerFall, finale }, fxEvent };
 })();

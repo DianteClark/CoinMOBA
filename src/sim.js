@@ -1,7 +1,32 @@
 // Mintfall simulation. No DOM in this file, so it can run on a phone today
 // and inside a Cloudflare Durable Object later without changes.
+//
+// ===== NET STATE (6.0): everything new that a guest, the HUD or art needs. Names are final. =====
+// MAP: 20% larger. Sim.W = 5184, Sim.H = 3072. map.arenas = [{kind, x, y, r, side?}] one per boss
+//   (kinds warlord, foreman, colossus; sentinel has two entries, side 0 and 1). map.eventSpots = [{x, y}], convoyPath = [[x,y]...].
+// Slow state on s:
+//   s.bosses = [{kind:'warlord'|'foreman'|'sentinel'|'colossus', name, x, y, r, at, up, id}]  at = s.t of next spawn (when !up); up = alive; x,y current arena; id = monster id or 0.
+//   s.boons = [{warlord,foreman,sentinel,colossus,heist,convoy,blackout,drop}, {...}]  seconds left per team, per boost; 0 = off.
+//   s.event = null | {kind:'heist'|'convoy'|'blackout'|'drop', phase:'warn'|'live', t, total, x, y, r, prog:[heroes,villains] (0..1), hp (convoy only, 0..100), i (convoy waypoint), winner:-1}
+//   s.eventAt = s.t of the next map event; s.fog = [k0, k1] sight multiplier for each team (1 is normal; a Blackout lowers it).
+//   s.fund = [n0, n1] times each team has funded the city; s.reinforceAt = [t0, t1] team's next Reinforcements;
+//   s.votes = [null | {yes:[champ ids], no:[champ ids], t}, same] surrender votes (humans only; passes on a majority of that team's humans, after minute 10; bots neither vote nor count); s.over gains {surrender:true} when a vote passes.
+// Slow state per champion:
+//   c.items is now length 5 (ids or null). c.bounty = extra gold on top of base kill gold (0 unless on a streak of 2+). c.buybackCd = seconds until buyback is usable.
+//   c.potT, c.elixT, c.tonicT (consumable timers, seconds). c.sentT = Sentinel buff seconds on this champion (mirrors s.boons).
+//   c.stats gains: dealt (damage to champions), taken, healing, gold (total earned), towers, objectives (bosses and event wins), rescues. c.stats.dmg stays total damage dealt.
+// Per unit:
+//   m.type = 'melee'|'ranged'|'heavy' on minions (m.ranged kept, true only for ranged). m.heavy true for heavy.
+//   Monsters: m.boss true for all four bosses; m.bossKind = kind above; m.shellT > 0 while the Sentinel's shell is up.
+// Commands (both alive and dead unless noted): {t:'buyback'}, {t:'reinforce',lane}, {t:'fund'}, {t:'surrender',vote:true|false}, {t:'buy',id} also buys consumables (effect is applied at once, needs alive), {t:'sell',slot}.
+// Events: recap{u,list:[{name,kind,kit?,abil?,dmg}],total} (kind: champion|tower|minion|monster|other); boss{team,kind}; bossup{kind}; mapevent{kind,phase,team,x,y} (phase warn|start|end; team = winner or -1 on end, else -1);
+//   feed gains bounty; fund{u,team,a}; reinforce{u,team,lane}; buyback{u}; surrender{team,phase,yes,no,need} (phase open|pass|fail); consume{u,id}; boon{team,kind,on}; civ gains n (allies inside).
+// Exports for UI: Sim.buybackCost(s,c), Sim.reinforceCost(s,c), Sim.fundCost(s,team), Sim.sellValue(id), Sim.CONSUMABLES (id list), Sim.BOSS_INFO[kind] = {name,d,boon}, Sim.EVENT_INFO[kind] = {name,d,boon}, Sim.BOON_INFO[kind] = {name,d}, Sim.ITEM_SLOTS = 5, Sim.SURRENDER_AT = 600.
+// Items: tier 1..3 as before, tier 4 is legendary (it.legendary = true); it.consumable = true for consumables (no slot, no sell).
+// ==== end NET STATE ====
 const Sim = (() => {
-  const W = 4320, H = 2560, TICK = 30, DT = 1 / TICK;
+  const SCALE = 1.2, W = 5184, H = 3072, TICK = 30, DT = 1 / TICK;
+  const S = v => Math.round(v * SCALE);
   const TEAM_NAMES = ['Heroes', 'Villains'];
   const TIERS = [
     { name: 'Copper', at: 0 }, { name: 'Bronze', at: 300 }, { name: 'Silver', at: 900 },
@@ -26,17 +51,17 @@ const Sim = (() => {
   //   main street        y 1070-1490 (420 wide)   river corridor x 1950-2370 (420 wide)
   // Entrances into each jungle half: the diagonal lane mouth, the north gap at x 1500-1760 (from the lane),
   // the two south gaps at x 870-1090 and 1320-1620 (from main street), and the river corridor.
-  const LANE_TOP = [[340, 1280], [470, 880], [720, 600], [1120, 370], [1640, 330], [2160, 330], [2680, 330], [3200, 370], [3600, 600], [3850, 880], [3980, 1280]];
-  const RIVER = [[2240, -80], [2160, 330], [2120, 800], [2160, 1280], [2200, 1760], [2160, 2230], [2080, 2640]];
+  const LANE_TOP = [[340, 1280], [470, 880], [720, 600], [1120, 370], [1640, 330], [2160, 330], [2680, 330], [3200, 370], [3600, 600], [3850, 880], [3980, 1280]].map(p => p.map(S));
+  const RIVER = [[2240, -80], [2160, 330], [2120, 800], [2160, 1280], [2200, 1760], [2160, 2230], [2080, 2640]].map(p => p.map(S));
   const QUAD_CLIFFS = [
     [1130, 540, 370, 90], [1760, 540, 190, 90],   // north side of the jungle: lane wall, with a gank gap between
     [1090, 980, 230, 90], [1620, 980, 320, 90],   // south side of the jungle, leaving gaps to main street
     [780, 880, 90, 230],                          // base rampart, framing the centre gate
     [1430, 1240, 80, 80],                         // main street cover, on the axis
-  ];
-  const QUAD_FOREST = [[0, 0, 440, 470], [0, 470, 210, 260]];
-  const QUAD_BRUSH = [[1300, 465, 75], [1630, 600, 105], [2010, 450, 70], [1490, 1130, 90]];
-  const FOUNTAIN_HEAL_R = 360, FOUNTAIN_BURN_R = 340;
+  ].map(r => r.map(S));
+  const QUAD_FOREST = [[0, 0, 440, 470], [0, 470, 210, 260]].map(r => r.map(S));
+  const QUAD_BRUSH = [[1300, 465, 75], [1630, 600, 105], [2010, 450, 70], [1490, 1130, 90]].map(r => r.map(S));
+  const FOUNTAIN_HEAL_R = 432, FOUNTAIN_BURN_R = 408;
   const four = fn => [[0, 0], [1, 0], [0, 1], [1, 1]].forEach(([mx, my]) => fn(mx, my));
   const WALLS = (() => {
     const out = [], seen = new Set();
@@ -47,15 +72,23 @@ const Sim = (() => {
     QUAD_CLIFFS.forEach(r => add(r, false)); QUAD_FOREST.forEach(r => add(r, true));
     return out;
   })();
+  // Neutral boss arenas. Sentinel alternates between two mirrored arenas, spawning on the trailing side (a soft comeback lever).
+  const ARENAS = [
+    { kind: 'colossus', x: W / 2, y: H / 2, r: 440 },
+    { kind: 'warlord', x: W / 2, y: 960, r: 260 }, { kind: 'foreman', x: W / 2, y: H - 960, r: 260 },
+    { kind: 'sentinel', x: 1500, y: H / 2, r: 240, side: 0 }, { kind: 'sentinel', x: W - 1500, y: H / 2, r: 240, side: 1 },
+  ];
+  const EVENT_SPOTS = [[1900, H / 2], [W - 1900, H / 2], [W / 2, 700], [W / 2, H - 700]];
+  const CONVOY_PATH = [[W / 2 + 60, 300], [W / 2 + 60, 900], [W / 2 + 60, H / 2], [W / 2 + 60, H - 900], [W / 2 + 60, H - 300]];
   function buildMap() {
     const walls = WALLS.map(w => Object.assign({}, w));
     const brush = [];
     for (const [x, y, r] of QUAD_BRUSH) four((mx, my) => brush.push({ x: mx ? W - x : x, y: my ? H - y : y, r }));
     const lanes = [LANE_TOP.map(p => p.slice()), LANE_TOP.map(([x, y]) => [x, H - y])];
     const center = { x: W / 2, y: H / 2 };
-    const fountains = [{ x: 130, y: H / 2 }, { x: W - 130, y: H / 2 }];
-    const plazas = [{ x: 290, y: H / 2, r: 500, kind: 'base', team: 0 }, { x: W - 290, y: H / 2, r: 500, kind: 'base', team: 1 }, { x: center.x, y: center.y, r: 370, kind: 'centre', team: -1 }];
-    const bridges = [{ x: W / 2, y: 330 }, { x: W / 2, y: H - 330 }];
+    const fountains = [{ x: S(130), y: H / 2 }, { x: W - S(130), y: H / 2 }];
+    const plazas = [{ x: S(290), y: H / 2, r: S(500), kind: 'base', team: 0 }, { x: W - S(290), y: H / 2, r: S(500), kind: 'base', team: 1 }, { x: center.x, y: center.y, r: S(370), kind: 'centre', team: -1 }];
+    const bridges = [{ x: W / 2, y: S(330) }, { x: W / 2, y: H - S(330) }];
     const cols = Math.ceil(W / 40), rows = Math.ceil(H / 40);
     const grid = new Uint8Array(cols * rows);
     for (let j = 0; j < rows; j++) for (let i = 0; i < cols; i++) {
@@ -64,7 +97,10 @@ const Sim = (() => {
       for (const w of walls) if (px > w.x - 34 && px < w.x + w.w + 34 && py > w.y - 34 && py < w.y + w.h + 34) b = true;
       grid[j * cols + i] = b ? 1 : 0;
     }
-    return { W, H, walls, brush, lanes, river: RIVER.map(p => p.slice()), center, fountains, plazas, bridges, cols, rows, grid, fountainR: FOUNTAIN_HEAL_R };
+    // Coarse wall buckets, so collision checks only look at nearby walls (about a tenth of the cost on a phone).
+    const wc = 200, wcols = Math.ceil(W / wc), wrows = Math.ceil(H / wc), wbucket = new Array(wcols * wrows).fill(null).map(() => []);
+    for (const w of walls) for (let j = Math.max(0, (w.y - 80) / wc | 0); j <= Math.min(wrows - 1, (w.y + w.h + 80) / wc | 0); j++) for (let i = Math.max(0, (w.x - 80) / wc | 0); i <= Math.min(wcols - 1, (w.x + w.w + 80) / wc | 0); i++) wbucket[j * wcols + i].push(w);
+    return { wbucket, wcols, W, H, walls, brush, lanes, river: RIVER.map(p => p.slice()), center, fountains, plazas, bridges, arenas: ARENAS.map(a => Object.assign({}, a)), eventSpots: EVENT_SPOTS.map(p => ({ x: p[0], y: p[1] })), convoyPath: CONVOY_PATH.map(p => p.slice()), cols, rows, grid, fountainR: FOUNTAIN_HEAL_R };
   }
 
   // How far a line from (x, y) along unit vector (dx, dy) can travel, up to len, before a wall or the map's edge.
@@ -100,7 +136,8 @@ const Sim = (() => {
     return { x, y };
   }
   function pushOut(m, u) {
-    for (const w of m.walls) {
+    const wi = u.x / 200 | 0, wj = u.y / 200 | 0, list = (m.wbucket && wi >= 0 && wj >= 0 && wi < m.wcols) ? (m.wbucket[wj * m.wcols + wi] || m.walls) : m.walls;
+    for (const w of list) {
       const cx = clamp(u.x, w.x, w.x + w.w), cy = clamp(u.y, w.y, w.y + w.h);
       let dx = u.x - cx, dy = u.y - cy, d = Math.hypot(dx, dy);
       if (d < u.r) {
@@ -114,16 +151,18 @@ const Sim = (() => {
   }
 
   // ---------- champion kits ----------
-  const pow = c => (1 + .09 * (c.lvl - 1)) * (1 + c.st.dmg + c.st.ap) * (c.buffT > 0 ? 1.2 : 1);
+  const pow = c => (1 + .09 * (c.lvl - 1)) * (1 + c.st.dmg + c.st.ap) * (c.buffT > 0 ? 1.2 : 1) * (c.elixT > 0 ? 1.15 : 1) * (c.dropT > 0 ? 1.1 : 1) * ((c.buildDef && c.buildDef.pw) || 1);
+  // Which ability a nested projectile, zone, dash or damage over time belongs to, for the death recap.
+  let curAbil = null;
 
   function fire(s, c, aim, o) {
     s.proj.push({
       id: s.nid++, x: c.x, y: c.y, px: c.x, py: c.y, vx: aim.dx * o.speed, vy: aim.dy * o.speed, left: rayWall(c.x, c.y, aim.dx, aim.dy, o.range), wall: rayWall(c.x, c.y, aim.dx, aim.dy, o.range) < o.range - 1, w: o.w,
-      team: c.team, owner: c, fx: o.fx, pierce: o.pierce, hits: new Set(), filter: o.filter || 'units', hit: o.hit, skill: true, counted: false, age: 0,
+      team: c.team, owner: c, fx: o.fx, pierce: o.pierce, hits: new Set(), filter: o.filter || 'units', hit: o.hit, skill: true, counted: false, age: 0, abil: curAbil,
     });
   }
-  function dashDir(c, dx, dy, d, speed, o = {}) { const len = Math.max(0, Math.min(d, rayWall(c.x, c.y, dx, dy, d + c.r) - c.r)); c.dash = Object.assign({ vx: dx * speed, vy: dy * speed, t: len / speed, hits: new Set() }, o); }
-  function blast(s, c, x, y, r, delay, fn, fx) { s.zones.push({ id: s.nid++, kind: 'blast', x, y, r, t: delay, total: delay, team: c.team, owner: c, fn, fx, counted: false }); }
+  function dashDir(c, dx, dy, d, speed, o = {}) { const len = Math.max(0, Math.min(d, rayWall(c.x, c.y, dx, dy, d + c.r) - c.r)); c.dash = Object.assign({ vx: dx * speed, vy: dy * speed, t: len / speed, hits: new Set(), abil: curAbil }, o); }
+  function blast(s, c, x, y, r, delay, fn, fx) { s.zones.push({ id: s.nid++, kind: 'blast', x, y, r, t: delay, total: delay, team: c.team, owner: c, fn, fx, counted: false, abil: curAbil }); }
   function eachEnemy(s, c, x, y, r, fn, withMinions = true) {
     let n = 0; const test = u => { if (u.alive && !u.air && u.team !== c.team && Math.hypot(u.x - x, u.y - y) <= r + u.r) { fn(u); n++; } };
     s.champs.forEach(test); if (withMinions) { s.minions.forEach(test); s.monsters.forEach(test); }
@@ -150,8 +189,8 @@ const Sim = (() => {
   };
   const ROSTER = [['vesper', 'kade', 'ione', 'solenne', 'sable', 'gravel'], ['deadbolt', 'duelist', 'hex', 'plague', 'shiv', 'ironjaw']];
   const charOf = (team, kit) => CHARS.hero[kit] || CHARS.villain[kit] || CHARS[team ? 'villain' : 'hero'][ROSTER[team ? 1 : 0][0]];
-  // Every tower must out-range every basic attack by 80, so nothing can plink a tower from outside its reach.
-  const TOWER_RANGE = 550, CORE_RANGE = 590, MAX_ATTACK_RANGE = TOWER_RANGE - 80;
+  // Every tower must out-range every basic attack by 70, so nothing can plink a tower from outside its reach.
+  const TOWER_RANGE = 430, CORE_RANGE = 470, MAX_ATTACK_RANGE = TOWER_RANGE - 70;
 
   // ---------- shared status helpers ----------
   const shield = (s, t, amt, dur) => { t.shieldHp = Math.max(t.shieldHp > 0 && t.shieldT > 0 ? t.shieldHp : 0, 0) + amt; t.shieldT = Math.max(t.shieldT || 0, dur); s.ev.push({ e: 'shield', u: t.id, a: Math.round(amt) }); };
@@ -159,15 +198,15 @@ const Sim = (() => {
   const root = (s, t, d) => { if (t.kind === 'tower' || t.boss) return; t.rootT = Math.max(t.rootT || 0, d); if (t.dash && !t.dash.unstop && !t.dash.forced) t.dash = null; if (t.charge) t.charge = null; s.ev.push({ e: 'root', u: t.id }); };
   const knock = (s, t, d) => { if (t.kind === 'tower' || t.boss) return; stun(s, t, d); t.knockT = t.knockMax = Math.max(t.knockT || 0, d); s.ev.push({ e: 'knock', u: t.id }); };
   const poly = (s, t, d) => { if (t.kind === 'tower' || t.boss) return; stun(s, t, d); t.polyT = Math.max(t.polyT || 0, d); s.ev.push({ e: 'poly', u: t.id }); };
-  const poison = (s, c, t, dps, d) => { if (t.kind === 'tower') return; t.poisonT = Math.max(t.poisonT || 0, d); t.poisonDps = Math.max(t.poisonT > 0 ? t.poisonDps || 0 : 0, dps); t.poisonBy = c; };
-  const bleed = (s, c, t, dps, d) => { if (t.kind === 'tower') return; t.bleedDps = t.bleedT > 0 ? Math.max(t.bleedDps, dps) : dps; t.bleedT = Math.max(t.bleedT || 0, d); t.bleedBy = c; };
+  const poison = (s, c, t, dps, d) => { if (t.kind === 'tower') return; t.poisonT = Math.max(t.poisonT || 0, d); t.poisonDps = Math.max(t.poisonT > 0 ? t.poisonDps || 0 : 0, dps); t.poisonBy = c; t.poisonAbil = curAbil; };
+  const bleed = (s, c, t, dps, d) => { if (t.kind === 'tower') return; t.bleedDps = t.bleedT > 0 ? Math.max(t.bleedDps, dps) : dps; t.bleedT = Math.max(t.bleedT || 0, d); t.bleedBy = c; t.bleedAbil = curAbil; };
   const hpow = c => pow(c) * (1 + c.st.healPow);
   const curseCap = c => c.f && c.f.cursebinder ? 5 : 3;
   const curse = (s, c, t, n) => { t.curseN = Math.min(curseCap(c), (t.curseT > 0 ? t.curseN || 0 : 0) + n); t.curseT = c.f.cursebinder ? 9 : 6; t.curseBy = c; s.ev.push({ e: 'curse', u: t.id, n: t.curseN }); };
   const stealth = (s, c, d) => { c.stealthT = Math.max(c.stealthT || 0, d); c.revealT = 0; s.ev.push({ e: 'stealth', u: c.id, on: true }); };
   const breakStealth = (s, c) => { if (c.stealthT > 0) { c.stealthT = 0; if (c.champ === 'shiv') c.opener = 1.2; s.ev.push({ e: 'stealth', u: c.id, on: false }); } };
   // Line and timed zones. kind names are the art contract: tripline lockdown coven miasma quarantine ring tether orbit fissure decoy.
-  function field(s, c, kind, o) { const z = Object.assign({ id: s.nid++, kind, team: c.team, owner: c, t: o.dur, total: o.dur, counted: false, fx: kind }, o); s.zones.push(z); return z; }
+  function field(s, c, kind, o) { const z = Object.assign({ id: s.nid++, kind, team: c.team, owner: c, t: o.dur, total: o.dur, counted: false, fx: kind, abil: curAbil }, o); s.zones.push(z); return z; }
   function lineZone(o, x1, y1, x2, y2) { o.x1 = x1; o.y1 = y1; o.x2 = x2; o.y2 = y2; o.x = (x1 + x2) / 2; o.y = (y1 + y2) / 2; o.line = true; return o; }
   // Enemies inside a circle, each passed once; never through a wall when `los` is set.
   const enemiesIn = (s, c, x, y, r, los) => { const out = []; eachEnemy(s, c, x, y, r, t => { if (!los || hasLOS(x, y, t.x, t.y)) out.push(t); }); return out; };
@@ -181,11 +220,11 @@ const Sim = (() => {
     // ---------- Heroes ----------
     vesper: {
       name: 'Vesper', role: 'Marksman', blurb: 'Charge your shot while they try to read it.',
-      sight: 950, hp: 540, hpG: 72, dmg: 60, dmgG: 7, armor: 16, armG: 3, range: 470, as: 1.0, ms: 305, pref: 430, fit: { top: 1, jungle: 0, bottom: 3, support: 0 },
+      sight: 950, hp: 540, hpG: 72, dmg: 60, dmgG: 7, armor: 16, armG: 3, range: 360, as: 1.0, ms: 305, pref: 325, fit: { top: 1, jungle: 0, bottom: 3, support: 0 },
       passive: { name: 'Steady Hand', d: 'Stand still for a moment and your next basic attack hits 30% harder.' },
       builds: [
-        { id: 'marksman', name: 'Marksman', tag: 'Long range', d: 'Long Shot reaches farther and full charges hit far harder, but Smoke Step comes back slowly.', mods: { 0: { range_add: 180, dmgF_add: 60, d: 'Hold to charge. Reaches very far; a full charge pierces and hits hard.' }, 1: { cd_add: 3 } } },
-        { id: 'skirmisher', name: 'Skirmisher', tag: 'Kiting', d: 'Hit a champion with your empowered attack to refund most of Smoke Step. Long Shot charges fast but stays short.', stats: { as: 1.12 }, mods: { 0: { charge: .55, range_add: -180, dmgF_add: -50, d: 'Quick charge, shorter reach.' }, 1: { cd_add: -2, d: 'Dash. Your next attack hits harder; landing it on a champion refunds most of the cooldown.' } } },
+        { id: 'marksman', name: 'Marksman', tag: 'Long range', d: 'Long Shot reaches farther and full charges hit far harder, but Smoke Step comes back slowly.', mods: { 0: { range_add: 135, dmgF_add: 60, d: 'Hold to charge. Reaches very far; a full charge pierces and hits hard.' }, 1: { cd_add: 3 } } },
+        { id: 'skirmisher', name: 'Skirmisher', tag: 'Kiting', d: 'Hit a champion with your empowered attack to refund most of Smoke Step. Long Shot charges fast but stays short.', stats: { as: 1.12 }, mods: { 0: { charge: .55, range_add: -135, dmgF_add: -50, d: 'Quick charge, shorter reach.' }, 1: { cd_add: -2, d: 'Dash. Your next attack hits harder; landing it on a champion refunds most of the cooldown.' } } },
         { id: 'spotter', name: 'Spotter', tag: 'Vision', d: 'Long Shot reveals who it hits for your whole team. Deadeye scans every enemy champion when fired.', mods: { 0: { d: 'Hold to charge. Hits reveal the target to your team.' }, 2: { cd_add: -8, dmg_add: -60, d: 'The longest shot in the game. Firing reveals all enemy champions for 2 seconds.' } } },
         { id: 'executioner', name: 'Executioner', tag: 'Finisher', d: 'Deadeye comes up far more often and finishes low targets. Long Shot hits hurt targets harder.', mods: { 0: { d: 'Hold to charge. Targets under half health take more.' }, 2: { cd: 32, dmg_add: -70, d: 'Deadeye adds 45% of the target\'s missing health. A kill refunds most of the cooldown.' } } },
       ],
@@ -194,23 +233,23 @@ const Sim = (() => {
         [{ id: 'overpen', name: 'Overpenetration', d: 'Deadeye passes through champions, losing a quarter of its power each time.' }, { id: 'stillness', name: 'Absolute Stillness', d: 'Steady Hand arms twice as fast and also crits.' }],
       ],
       kit: [
-        { name: 'Long Shot', d: 'Hold to charge. A full charge pierces.', fx: 'snipe', cd: 6, range: 800, minRange: 500, shape: 'line', w: 34, charge: 1.1, dmg: 70, dmgF: 120,
+        { name: 'Long Shot', d: 'Hold to charge. A full charge pierces.', fx: 'snipe', cd: 6, range: 600, minRange: 375, shape: 'line', w: 34, charge: 1.1, dmg: 70, dmgF: 120,
           cast(s, c, a, A) {
             const f = c.charge ? clamp(c.charge.t / A.charge, 0, 1) : 0; c.charge = null;
             fire(s, c, a, { speed: 1600, range: A.minRange + (A.range - A.minRange) * f, w: 28 + 8 * f, fx: f >= 1 ? 'snipeFull' : 'snipe', pierce: f >= 1, filter: 'units',
               hit(s, c, t, p) { hurt(s, c, t, (A.dmg + A.dmgF * f) * pow(c) * (c.f.executioner && t.hp < t.maxHp * .5 ? 1.3 : 1), { skill: 1 }); if (t.kind === 'champ') { skillHit(c, p); if (c.f.spotter) t.revealT = Math.max(t.revealT || 0, 4); } } });
           },
         },
-        { name: 'Smoke Step', d: 'Dash. Your next basic attack hits harder.', fx: 'dash', cd: 9, range: 270, shape: 'dash', w: 60, pd: [270, 1200],
-          cast(s, c, a, A) { dashDir(c, a.dx, a.dy, 270, 1200); c.empowerT = 3; if (c.f.smokescreen) field(s, c, 'miasma', { x: c.x, y: c.y, r: 130, dur: 2.4, fx: 'smoke', step(s, z) { if (s.tick % 6 === 0) for (const t of enemiesIn(s, c, z.x, z.y, z.r)) slow(t, .35, .4); } }); if (c.f.skirmisher) c.stillT = 2; },
+        { name: 'Smoke Step', d: 'Dash. Your next basic attack hits harder.', fx: 'dash', cd: 9, range: 200, shape: 'dash', w: 60, pd: [200, 1200],
+          cast(s, c, a, A) { dashDir(c, a.dx, a.dy, A.range, 1200); c.empowerT = 3; if (c.f.smokescreen) field(s, c, 'miasma', { x: c.x, y: c.y, r: 130, dur: 2.4, fx: 'smoke', step(s, z) { if (s.tick % 6 === 0) for (const t of enemiesIn(s, c, z.x, z.y, z.r)) slow(t, .35, .4); } }); if (c.f.skirmisher) c.stillT = 2; },
         },
-        { name: 'Deadeye', d: 'The longest shot in the game. Everyone sees it coming.', fx: 'deadeye', cd: 50, range: 1050, shape: 'line', w: 50, windup: true, dmg: 260,
+        { name: 'Deadeye', d: 'The longest shot in the game. Everyone sees it coming.', fx: 'deadeye', cd: 50, range: 800, shape: 'line', w: 50, windup: true, dmg: 260,
           cast(s, c, a, A) {
             if (c.f.spotter) for (const e of s.champs) if (e.alive && e.team !== c.team) e.revealT = Math.max(e.revealT || 0, 2);
-            c.chan = { t: .7, total: .7, kind: 'line', slot: 2, dx: a.dx, dy: a.dy, len: rayWall(c.x, c.y, a.dx, a.dy, 1050), w: 50, fn(s, c) {
+            c.chan = { t: .7, total: .7, kind: 'line', slot: 2, dx: a.dx, dy: a.dy, len: rayWall(c.x, c.y, a.dx, a.dy, A.range), w: 50, fn(s, c) {
               s.ev.push({ e: 'fire', u: c.id, fx: 'deadeye', dx: a.dx, dy: a.dy });
               let pw = 1;
-              fire(s, c, a, { speed: 2600, range: 1050, w: 50, fx: 'deadeye', filter: 'champ', pierce: !!c.f.overpen, hit(s, c, t, p) {
+              fire(s, c, a, { speed: 2600, range: A.range, w: 50, fx: 'deadeye', filter: 'champ', pierce: !!c.f.overpen, hit(s, c, t, p) {
                 const x = (A.dmg * pow(c) + (c.f.executioner ? (t.maxHp - t.hp) * .45 : 0)) * pw;
                 const dead = hurt(s, c, t, x, { skill: 1, crit: c.f.executioner && t.hp < t.maxHp * .35 ? 1 : 0 }) && !t.alive; skillHit(c, p); if (c.f.executioner && dead) c.cd[2] = Math.min(c.cd[2], 10);
                 if (c.f.overpen) pw *= .75; else p.left = 0;
@@ -224,36 +263,36 @@ const Sim = (() => {
     },
     kade: {
       name: 'Kade', role: 'Duelist', blurb: 'Time the parry and the fight is yours.',
-      sight: 720, hp: 640, hpG: 95, dmg: 64, dmgG: 8, armor: 28, armG: 4, range: 165, as: .95, ms: 325, pref: 125, melee: true, fit: { top: 3, jungle: 2, bottom: 0, support: 0 },
+      sight: 720, hp: 640, hpG: 95, dmg: 64, dmgG: 8, armor: 28, armG: 4, range: 140, as: .95, ms: 325, pref: 105, melee: true, fit: { top: 3, jungle: 2, bottom: 0, support: 0 },
       passive: { name: 'Riposte', d: 'After a successful Parry, or Lunging into a champion, your next attack hits 60% harder and slows.' },
       builds: [
         { id: 'parrymaster', name: 'Parrymaster', tag: 'Counter', d: 'Parry comes up fast, holds longer and stuns longer. Lunge comes back slower.', mods: { 1: { cd: 7, parry: .7, stunT: 1.25, d: 'Near-constant block. Catching a hit stuns the attacker longer.' }, 0: { cd_add: 2 } } },
-        { id: 'blitz', name: 'Blitz', tag: 'Engage', d: 'Lunge reaches farther and refunds on champions. Crash leaps far more often, but Parry is a sliver of a window.', mods: { 0: { range: 340, pd: [340, 1200], pdr: [300, 1200], d: 'Long dash. Hit a champion and you can dash again.' }, 2: { cd: 30, range: 620 }, 1: { parry: .32 } } },
+        { id: 'blitz', name: 'Blitz', tag: 'Engage', d: 'Lunge reaches farther and refunds on champions. Crash leaps far more often, but Parry is a sliver of a window.', mods: { 0: { range: 255, pd: [255, 1200], pdr: [225, 1200], d: 'Long dash. Hit a champion and you can dash again.' }, 2: { cd: 30, range: 465 }, 1: { parry: .32 } } },
         { id: 'vanguard', name: 'Vanguard', tag: 'Frontline', d: 'Parries shield nearby allies. Crash shields everyone you land beside. Sturdy, lighter hits.', stats: { hp: 1.1, dmg: .9 }, mods: { 1: { d: 'Half a second of perfect block. A catch also shields nearby allies.' }, 2: { d: 'Leap, untouchable, and land with a stun. Shields nearby allies.' } } },
         { id: 'breaker', name: 'Breaker', tag: 'Split push', d: 'Basic attacks and Lunge shred towers. Lunge chews through waves. Weak in long team fights.', stats: { dmg: 1.05, hp: .95 }, mods: { 0: { dmg_add: 18, d: 'Dash through a line. Strong against minions and towers.' } } },
       ],
       evolves: [
-        [{ id: 'longlunge', name: 'Long Lunge', d: 'Lunge reaches 60 farther.', mods: { 0: { range_add: 60 } } }, { id: 'reflex', name: 'Quick Reflexes', d: 'Parry cooldown is 2 seconds shorter.', mods: { 1: { cd_add: -2 } } }],
+        [{ id: 'longlunge', name: 'Long Lunge', d: 'Lunge reaches 45 farther.', mods: { 0: { range_add: 45 } } }, { id: 'reflex', name: 'Quick Reflexes', d: 'Parry cooldown is 2 seconds shorter.', mods: { 1: { cd_add: -2 } } }],
         [{ id: 'aftershock', name: 'Aftershock', d: 'Crash leaves shaking ground that slows for 2.5 seconds.' }, { id: 'heroicfall', name: 'Heroic Fall', d: 'Crash cooldown 10 shorter, and landing heals you for 15%.', mods: { 2: { cd_add: -10 } } }],
       ],
       kit: [
-        { name: 'Lunge', d: 'Dash through a line. Hit a champion and you can dash again.', fx: 'dash', cd: 7, range: 290, shape: 'dash', w: 80, pd: [290, 1100], pdr: [260, 1100], dmg: 74,
+        { name: 'Lunge', d: 'Dash through a line. Hit a champion and you can dash again.', fx: 'dash', cd: 7, range: 220, shape: 'dash', w: 80, pd: [220, 1100], pdr: [195, 1100], dmg: 74,
           cast(s, c, a, A) { const car = {}; dashDir(c, a.dx, a.dy, A.range, 1100, { onHit(s, c, t) { hurt(s, c, t, A.dmg * pow(c) * (c.f.breaker && t.kind !== 'champ' ? 1.6 : 1), { skill: 1 }); if (t.kind === 'champ') { skillHit(c, car); c.recast[0] = 2.5; c.ripT = 3.5; if (c.f.blitz) c.cd[0] *= .6; } } }); },
-          recast(s, c, a, A) { dashDir(c, a.dx, a.dy, Math.min(A.range, 260), 1100, { onHit(s, c, t) { hurt(s, c, t, A.dmg * pow(c), { skill: 1 }); } }); },
+          recast(s, c, a, A) { dashDir(c, a.dx, a.dy, Math.min(A.range, 195), 1100, { onHit(s, c, t) { hurt(s, c, t, A.dmg * pow(c), { skill: 1 }); } }); },
         },
         { name: 'Parry', d: 'Half a second of perfect block. Catch a hit to stun the attacker.', fx: 'parry', cd: 11, range: 0, shape: 'self', instant: true, noCdr: true, parry: .5, stunT: .9,
           cast(s, c, a, A) { c.parryT = A.parry; c.parryStun = A.stunT; },
         },
-        { name: 'Crash', d: 'Leap, untouchable, and land with a stun at the centre.', fx: 'crash', cd: 45, range: 520, shape: 'circle', r: 190, over: true, dmg: 185,
+        { name: 'Crash', d: 'Leap, untouchable, and land with a stun at the centre.', fx: 'crash', cd: 45, range: 390, shape: 'circle', r: 165, over: true, dmg: 185,
           cast(s, c, a, A) {
             c.air = .45; c.leap = { sx: c.x, sy: c.y, tx: a.tx, ty: a.ty, t: 0, total: .45, fn(s, c) {
-              s.ev.push({ e: 'boom', x: c.x, y: c.y, r: 190, fx: 'crash' });
+              s.ev.push({ e: 'boom', x: c.x, y: c.y, r: A.r, fx: 'crash' });
               let hit = false;
-              eachEnemy(s, c, c.x, c.y, 190, t => { hurt(s, c, t, A.dmg * pow(c), { skill: 1 }); if (t.kind === 'champ') { hit = true; if (Math.hypot(t.x - c.x, t.y - c.y) < 110 + t.r) stun(s, t, 1); else slow(t, .4, 1.5); } });
+              eachEnemy(s, c, c.x, c.y, A.r, t => { hurt(s, c, t, A.dmg * pow(c), { skill: 1 }); if (t.kind === 'champ') { hit = true; if (Math.hypot(t.x - c.x, t.y - c.y) < 95 + t.r) stun(s, t, 1); else slow(t, .4, 1.5); } });
               if (hit) c.stats.skillHits++;
               if (c.f.heroicfall) heal(s, c, c, c.maxHp * .15);
               if (c.f.vanguard) for (const al of alliesIn(s, c.team, c.x, c.y, 300)) shield(s, al, 120 * hpow(c), 4);
-              if (c.f.aftershock) field(s, c, 'miasma', { x: c.x, y: c.y, r: 190, dur: 2.5, fx: 'crash', step(s, z) { if (s.tick % 6 === 0) for (const t of enemiesIn(s, c, z.x, z.y, z.r)) slow(t, .35, .4); } });
+              if (c.f.aftershock) field(s, c, 'miasma', { x: c.x, y: c.y, r: A.r, dur: 2.5, fx: 'crash', step(s, z) { if (s.tick % 6 === 0) for (const t of enemiesIn(s, c, z.x, z.y, z.r)) slow(t, .35, .4); } });
             } };
           },
         },
@@ -263,74 +302,74 @@ const Sim = (() => {
     },
     ione: {
       name: 'Ione', role: 'Mage', blurb: 'Mark them, then break the mark.',
-      sight: 850, hp: 500, hpG: 68, dmg: 50, dmgG: 5, armor: 14, armG: 3, range: 420, as: .85, ms: 300, pref: 390, fit: { top: 1, jungle: 0, bottom: 2, support: 2 },
+      sight: 850, hp: 500, hpG: 68, dmg: 50, dmgG: 5, armor: 14, armG: 3, range: 320, as: .85, ms: 300, pref: 290, fit: { top: 1, jungle: 0, bottom: 2, support: 2 },
       passive: { name: 'Stardust', d: 'Breaking a mark refunds 2 seconds of Sigil Orb and restores a little health.' },
       builds: [
         { id: 'constellation', name: 'Constellation', tag: 'Burst', d: 'Marks linger, Sigil Orb is quick, and Rupture hits marked targets far harder and unmarked ones barely.', mods: { 0: { cd: 3.2, markT: 7 }, 1: { dmg_add: -40, dmgM_add: 75, d: 'Ground blast. Barely hurts unmarked targets; marked targets take massive damage and a stun.' } } },
-        { id: 'meteor', name: 'Meteor', tag: 'Zone', d: 'Rupture falls slow and huge. Hit where they must stand.', mods: { 1: { cd_add: 2, r: 165, delay: .9, dmg_add: 75, dmgM_add: 75, d: 'A slow, wide ground blast.' }, 2: { d: 'Three slow meteors walk forward. Each one marks.', delay_add: .35, dmg_add: 40 } } },
-        { id: 'comet', name: 'Comet', tag: 'Poke', d: 'Sigil Orb flies far and fast through minions. Rupture is a small quick snap.', mods: { 0: { range: 860, speed: 1400, cd_add: .8, passThrough: true, d: 'Long, fast and passes through minions. Marks the first champion hit.' }, 1: { r: 85, delay: .24, cd_add: -1.5, dmg_add: -15, d: 'A small, near-instant blast.' } } },
+        { id: 'meteor', name: 'Meteor', tag: 'Zone', d: 'Rupture falls slow and huge. Hit where they must stand.', mods: { 1: { cd_add: 2, r: 150, delay: .9, dmg_add: 75, dmgM_add: 75, d: 'A slow, wide ground blast.' }, 2: { d: 'Three slow meteors walk forward. Each one marks.', delay_add: .35, dmg_add: 40 } } },
+        { id: 'comet', name: 'Comet', tag: 'Poke', d: 'Sigil Orb flies far and fast through minions. Rupture is a small quick snap.', mods: { 0: { range: 645, speed: 1400, cd_add: .8, passThrough: true, d: 'Long, fast and passes through minions. Marks the first champion hit.' }, 1: { r: 75, delay: .24, cd_add: -1.5, dmg_add: -15, d: 'A small, near-instant blast.' } } },
         { id: 'stellar', name: 'Guiding Star', tag: 'Support', d: 'Sigil Orb flies through allies and shields them. Cascade hastens allies it passes.', mods: { 0: { d: 'Passes through allies, shielding them. Marks the first enemy hit.' }, 2: { d: 'Three blasts walk forward. Each marks enemies and hastens allies.' } } },
       ],
       evolves: [
-        [{ id: 'swiftsigil', name: 'Swift Sigil', d: 'Sigil Orb cooldown 0.8 shorter.', mods: { 0: { cd_add: -.8 } } }, { id: 'widerupture', name: 'Wide Rupture', d: 'Rupture radius 25 larger.', mods: { 1: { r_add: 25 } } }],
+        [{ id: 'swiftsigil', name: 'Swift Sigil', d: 'Sigil Orb cooldown 0.8 shorter.', mods: { 0: { cd_add: -.8 } } }, { id: 'widerupture', name: 'Wide Rupture', d: 'Rupture radius 20 larger.', mods: { 1: { r_add: 20 } } }],
         [{ id: 'longcascade', name: 'Long Cascade', d: 'Cascade adds a fourth blast.' }, { id: 'starsurge', name: 'Star Surge', d: 'Cascade\'s last blast stuns champions for 0.8.' }],
       ],
       kit: [
-        { name: 'Sigil Orb', d: 'Marks the first enemy it hits.', fx: 'orb', cd: 4, range: 640, shape: 'line', w: 42, speed: 950, dmg: 92, markT: 4,
+        { name: 'Sigil Orb', d: 'Marks the first enemy it hits.', fx: 'orb', cd: 4, range: 480, shape: 'line', w: 42, speed: 950, dmg: 92, markT: 4,
           cast(s, c, a, A) { fire(s, c, a, { speed: A.speed, range: A.range, w: A.w, fx: 'orb', filter: c.f.stellar ? "allunits" : A.passThrough ? "champ" : "units", hit(s, c, t, p) {
             if (t.team === c.team) { shield(s, t, 90 * hpow(c), 3); p.pass = 1; return; }
             hurt(s, c, t, A.dmg * pow(c), { skill: 1 }); t.markT = A.markT; s.ev.push({ e: 'mark', u: t.id }); if (t.kind === 'champ') skillHit(c, p); p.left = 0; } }); },
         },
-        { name: 'Rupture', d: 'Ground blast. Breaks marks for double damage and a stun.', fx: 'rupture', cd: 6.5, range: 540, shape: 'circle', r: 115, delay: .42, dmg: 85, dmgM: 180,
+        { name: 'Rupture', d: 'Ground blast. Breaks marks for double damage and a stun.', fx: 'rupture', cd: 6.5, range: 405, shape: 'circle', r: 100, delay: .42, dmg: 85, dmgM: 180,
           cast(s, c, a, A) { const car = {}; blast(s, c, a.tx, a.ty, A.r, A.delay, (s, z) => { eachEnemy(s, c, z.x, z.y, A.r, t => { const m = t.markT > 0; hurt(s, c, t, (m ? A.dmgM : A.dmg) * pow(c), { skill: 1 }); if (m) { t.markT = 0; if (t.kind === 'champ') { stun(s, t, 1); c.cd[0] = Math.max(0, c.cd[0] - 2); heal(s, c, c, c.maxHp * .03); } s.ev.push({ e: 'boom', x: t.x, y: t.y, r: 60, fx: 'break' }); } if (t.kind === 'champ') skillHit(c, car); }); }, 'rupture'); },
         },
-        { name: 'Cascade', d: 'Three blasts walk forward. Each one marks.', fx: 'rupture', cd: 46, range: 640, shape: 'line', w: 200, delay: 0, dmg: 115,
-          cast(s, c, a, A) { const reach = rayWall(c.x, c.y, a.dx, a.dy, 640), n = c.f.longcascade ? 4 : 3; for (let i = 0; i < n; i++) { const dl = .32 + i * .28 + A.delay, k = 220 + i * 200, car = {}, last = i === n - 1; if (k > reach + 60) continue; blast(s, c, c.x + a.dx * k, c.y + a.dy * k, 135, dl, (s, z) => { eachEnemy(s, c, z.x, z.y, 135, t => { hurt(s, c, t, A.dmg * pow(c), { skill: 1 }); t.markT = 4; if (t.kind === 'champ') { skillHit(c, car); if (c.f.starsurge && last) stun(s, t, .8); } }); if (c.f.stellar) for (const al of alliesIn(s, c.team, z.x, z.y, 200)) haste(al, .2, 2.5); }, 'rupture'); } },
+        { name: 'Cascade', d: 'Three blasts walk forward. Each one marks.', fx: 'rupture', cd: 46, range: 480, shape: 'line', w: 170, delay: 0, dmg: 115,
+          cast(s, c, a, A) { const reach = rayWall(c.x, c.y, a.dx, a.dy, A.range), n = c.f.longcascade ? 4 : 3; for (let i = 0; i < n; i++) { const dl = .32 + i * .28 + A.delay, k = 165 + i * 150, car = {}, last = i === n - 1; if (k > reach + 60) continue; blast(s, c, c.x + a.dx * k, c.y + a.dy * k, 118, dl, (s, z) => { eachEnemy(s, c, z.x, z.y, 118, t => { hurt(s, c, t, A.dmg * pow(c), { skill: 1 }); t.markT = 4; if (t.kind === 'champ') { skillHit(c, car); if (c.f.starsurge && last) stun(s, t, .8); } }); if (c.f.stellar) for (const al of alliesIn(s, c.team, z.x, z.y, 170)) haste(al, .2, 2.5); }, 'rupture'); } },
         },
       ],
     },
     solenne: {
       name: 'Solenne', role: 'Support', blurb: 'Every heal is a shot you can miss.',
-      sight: 850, hp: 540, hpG: 76, dmg: 46, dmgG: 5, armor: 20, armG: 3.5, range: 390, as: .85, ms: 310, pref: 360, support: true, fit: { top: 0, jungle: 0, bottom: 1, support: 3 },
+      sight: 850, hp: 540, hpG: 76, dmg: 46, dmgG: 5, armor: 20, armG: 3.5, range: 300, as: .85, ms: 310, pref: 270, support: true, fit: { top: 0, jungle: 0, bottom: 1, support: 3 },
       passive: { name: 'First Light', d: 'Whenever you heal an ally they gain 15% move speed for 2 seconds.' },
       builds: [
         { id: 'lifebringer', name: 'Lifebringer', tag: 'Healer', d: 'Mending Ray pierces allies and heals more, and Daybreak heals enormously. Your burn is weak.', stats: { dmg: .9 }, mods: { 0: { heal_add: 40, dmg_add: -20, cd_add: -.5, d: 'Heals every ally it passes. Burns the first enemy, weakly.' }, 2: { heal_add: 120 } } },
-        { id: 'protector', name: 'Protector', tag: 'Shields', d: 'Aegis is wider, lasts longer and refreshes faster. Allies inside are shielded.', mods: { 1: { cd: 9.5, r_add: 40, dur: 3.6, d: 'A wide dome that destroys projectiles and shields allies inside.' } } },
+        { id: 'protector', name: 'Protector', tag: 'Shields', d: 'Aegis is wider, lasts longer and refreshes faster. Allies inside are shielded.', mods: { 1: { cd: 9.5, r_add: 30, dur: 3.6, d: 'A wide dome that destroys projectiles and shields allies inside.' } } },
         { id: 'sunlance', name: 'Sunlance', tag: 'Damage', d: 'Mending Ray burns hard and sets targets alight. Weaker heals. Viable bottom.', stats: { dmg: 1.12 }, mods: { 0: { dmg_add: 42, heal_add: -35, d: 'Burns the first enemy hard, leaving them alight. Heals weakly.' } } },
         { id: 'radiant', name: 'Radiant', tag: 'Aura', d: 'Mending Ray hops from an ally to another nearby. Nearby allies slowly regenerate.', mods: { 0: { d: 'Heals the first ally it hits, then hops to another nearby ally for 60%.' } } },
       ],
       evolves: [
-        [{ id: 'quickray', name: 'Quick Ray', d: 'Mending Ray cooldown 1 shorter.', mods: { 0: { cd_add: -1 } } }, { id: 'longray', name: 'Long Ray', d: 'Mending Ray reaches 120 farther.', mods: { 0: { range_add: 120 } } }],
+        [{ id: 'quickray', name: 'Quick Ray', d: 'Mending Ray cooldown 1 shorter.', mods: { 0: { cd_add: -1 } } }, { id: 'longray', name: 'Long Ray', d: 'Mending Ray reaches 90 farther.', mods: { 0: { range_add: 90 } } }],
         [{ id: 'sundome', name: 'Sun Dome', d: 'Aegis heals allies inside it.' }, { id: 'solaris', name: 'Solaris', d: 'Daybreak also hastens allies and its cooldown is 10 shorter.', mods: { 2: { cd_add: -10 } } }],
       ],
       kit: [
-        { name: 'Mending Ray', d: 'Heals the first ally it hits, or burns the first enemy.', fx: 'ray', cd: 5, range: 680, shape: 'line', w: 46, heal: 132, dmg: 82,
+        { name: 'Mending Ray', d: 'Heals the first ally it hits, or burns the first enemy.', fx: 'ray', cd: 5, range: 510, shape: 'line', w: 46, heal: 132, dmg: 82,
           cast(s, c, a, A) { fire(s, c, a, { speed: 1150, range: A.range, w: 46, fx: 'ray', filter: 'allchamp', hit(s, c, t, p) {
-            if (t.team === c.team) { heal(s, c, t, A.heal * pow(c)); haste(t, .15, 2); skillHit(c, p); if (c.f.lifebringer) { p.pass = 1; return; } if (c.f.radiant && !p.hopped) { p.hopped = 1; const o = s.champs.find(x => x !== t && x !== c && x.alive && x.team === c.team && Math.hypot(x.x - t.x, x.y - t.y) < 360 && hasLOS(t.x, t.y, x.x, x.y)); if (o) heal(s, c, o, A.heal * .6 * pow(c)); } }
+            if (t.team === c.team) { heal(s, c, t, A.heal * pow(c)); haste(t, .15, 2); skillHit(c, p); if (c.f.lifebringer) { p.pass = 1; return; } if (c.f.radiant && !p.hopped) { p.hopped = 1; const o = s.champs.find(x => x !== t && x !== c && x.alive && x.team === c.team && Math.hypot(x.x - t.x, x.y - t.y) < 280 && hasLOS(t.x, t.y, x.x, x.y)); if (o) heal(s, c, o, A.heal * .6 * pow(c)); } }
             else { hurt(s, c, t, A.dmg * pow(c), { skill: 1 }); slow(t, .3, 1.5); if (c.f.sunlance) bleed(s, c, t, 20 * pow(c), 2.5); skillHit(c, p); }
             p.left = 0; } }); },
         },
-        { name: 'Aegis', d: 'Place a dome that destroys enemy projectiles.', fx: 'dome', cd: 12, range: 460, shape: 'circle', r: 135, dur: 2.6,
+        { name: 'Aegis', d: 'Place a dome that destroys enemy projectiles.', fx: 'dome', cd: 12, range: 345, shape: 'circle', r: 120, dur: 2.6,
           cast(s, c, a, A) {
             const z = field(s, c, 'dome', { x: a.tx, y: a.ty, r: A.r, dur: A.dur, fx: 'dome' });
             z.step = c.f.protector || c.f.sundome ? (s, z) => { if (s.tick % 15 === 0) for (const al of alliesIn(s, c.team, z.x, z.y, z.r)) { if (c.f.protector && !z.sh) shield(s, al, 70 * hpow(c), 2); if (c.f.sundome) heal(s, c, al, 28 * pow(c)); } z.sh = 1; } : null;
           },
         },
-        { name: 'Daybreak', d: 'Heals allies around you, cleanses stuns and throws enemies back.', fx: 'heal', cd: 52, range: 0, shape: 'self', r: 340, heal: 230,
-          cast(s, c, a, A) { blast(s, c, c.x, c.y, 340, .3, (s, z) => {
-            for (const e of s.champs) if (e.alive && Math.hypot(e.x - z.x, e.y - z.y) < 340) {
+        { name: 'Daybreak', d: 'Heals allies around you, cleanses stuns and throws enemies back.', fx: 'heal', cd: 52, range: 0, shape: 'self', r: 270, heal: 230,
+          cast(s, c, a, A) { blast(s, c, c.x, c.y, A.r, .3, (s, z) => {
+            for (const e of s.champs) if (e.alive && Math.hypot(e.x - z.x, e.y - z.y) < A.r) {
               if (e.team === c.team) { heal(s, c, e, A.heal * pow(c)); e.stunT = 0; e.slowT = 0; e.rootT = 0; if (c.f.solaris) haste(e, .25, 3); }
-              else { const n = norm(e.x - z.x, e.y - z.y); hurt(s, c, e, 90 * pow(c), { skill: 1 }); dashDir(e, n.x, n.y, 210, 800, { forced: true }); }
+              else { const n = norm(e.x - z.x, e.y - z.y); hurt(s, c, e, 90 * pow(c), { skill: 1 }); dashDir(e, n.x, n.y, 160, 800, { forced: true }); }
             }
             c.stats.skillHits++;
           }, 'heal'); },
         },
       ],
-      tick(s, c) { if (c.f.radiant && s.tick % 30 === 0) for (const al of alliesIn(s, c.team, c.x, c.y, 300)) if (al !== c) heal(s, c, al, 12 * pow(c)); },
+      tick(s, c) { if (c.f.radiant && s.tick % 30 === 0) for (const al of alliesIn(s, c.team, c.x, c.y, 260)) if (al !== c) heal(s, c, al, 12 * pow(c)); },
     },
     sable: {
       name: 'Sable', role: 'Assassin', blurb: 'Strike from behind, then be somewhere else.',
-      sight: 720, hp: 510, hpG: 74, dmg: 66, dmgG: 8, armor: 18, armG: 3, range: 135, as: 1.05, ms: 335, pref: 100, melee: true, fit: { top: 2, jungle: 3, bottom: 0, support: 0 },
+      sight: 720, hp: 510, hpG: 74, dmg: 66, dmgG: 8, armor: 18, armG: 3, range: 125, as: 1.05, ms: 335, pref: 92, melee: true, fit: { top: 2, jungle: 3, bottom: 0, support: 0 },
       passive: { name: 'Nightstalker', d: 'Move 15% faster whenever no enemy can see you.' },
       builds: [
         { id: 'ghost', name: 'Ghost', tag: 'Evasive', d: 'Echo comes back quickly and waits longer. Snapping back heals you.', mods: { 1: { cd: 6.5, window: 5.5, d: 'Blink away and leave an echo. Snap back within 5 seconds to heal.' } } },
@@ -339,50 +378,50 @@ const Sim = (() => {
         { id: 'twin', name: 'Twin', tag: 'Trickster', d: 'While your echo stands, Rend also strikes from the echo.', mods: { 0: { d: 'Short slash. While your echo stands, it slashes too.' } } },
       ],
       evolves: [
-        [{ id: 'sharperend', name: 'Sharper Rend', d: 'Rend cooldown 0.7 shorter.', mods: { 0: { cd_add: -.7 } } }, { id: 'wideblade', name: 'Wide Blade', d: 'Rend reaches 40 farther and sweeps wider.', mods: { 0: { range_add: 40, dot: .5 } } }],
+        [{ id: 'sharperend', name: 'Sharper Rend', d: 'Rend cooldown 0.7 shorter.', mods: { 0: { cd_add: -.7 } } }, { id: 'wideblade', name: 'Wide Blade', d: 'Rend reaches 30 farther and sweeps wider.', mods: { 0: { range_add: 30, dot: .5 } } }],
         [{ id: 'phantom', name: 'Phantom', d: 'Snapping back with Echo stuns the enemies around you for 0.6.' }, { id: 'deathmark', name: 'Death Mark', d: 'A target hit by Reap takes 15% more from you for 4 seconds.' }],
       ],
       kit: [
-        { name: 'Rend', d: 'Short slash. Hits half again as hard from behind.', fx: 'slash', cd: 3.5, range: 240, shape: 'cone', w: 180, dmg: 92, dot: .72,
+        { name: 'Rend', d: 'Short slash. Hits half again as hard from behind.', fx: 'slash', cd: 3.5, range: 180, shape: 'cone', w: 150, dmg: 92, dot: .72,
           cast(s, c, a, A) { const hitF = (px, py, dx, dy, mul) => { let hit = 0; eachEnemy(s, c, px, py, A.range, t => { const n = norm(t.x - px, t.y - py); if (n.x * dx + n.y * dy < A.dot || !hasLOS(px, py, t.x, t.y)) return; const back = (t.fx || 0) * -n.x + (t.fy || 0) * -n.y < -.25; let d = A.dmg * pow(c) * (back ? 1.5 : 1) * mul; if (c.f.hunter && t.kind === 'monster') d *= 1.8; hurt(s, c, t, d, { skill: 1, crit: back }); if (t.kind === 'champ') hit = 1; }); return hit; };
             let hit = hitF(c.x, c.y, a.dx, a.dy, 1); if (c.f.twin && c.echo) hit |= hitF(c.echo.x, c.echo.y, a.dx, a.dy, .7);
             if (hit) c.stats.skillHits++; },
         },
-        { name: 'Echo', d: 'Blink away and leave an echo. Cast again to snap back.', fx: 'blink', cd: 10, range: 320, shape: 'dash', w: 60, over: true, recastInstant: true, armsRecast: true, window: 3.5,
+        { name: 'Echo', d: 'Blink away and leave an echo. Cast again to snap back.', fx: 'blink', cd: 10, range: 240, shape: 'dash', w: 60, over: true, recastInstant: true, armsRecast: true, window: 3.5,
           cast(s, c, a, A) { c.echo = { x: c.x, y: c.y }; const f = nearestFree(s.map, a.tx, a.ty); s.ev.push({ e: 'blink', x: c.x, y: c.y }); c.x = f.x; c.y = f.y; c.recast[1] = A.window; s.ev.push({ e: 'blink', x: c.x, y: c.y }); },
-          recast(s, c, a, A) { if (!c.echo) return; s.ev.push({ e: 'blink', x: c.x, y: c.y }); c.x = c.echo.x; c.y = c.echo.y; c.echo = null; s.ev.push({ e: 'blink', x: c.x, y: c.y }); if (c.f.ghost) heal(s, c, c, c.maxHp * .1); if (c.f.phantom) for (const t of enemiesIn(s, c, c.x, c.y, 180)) if (t.kind === 'champ') stun(s, t, .6); },
+          recast(s, c, a, A) { if (!c.echo) return; s.ev.push({ e: 'blink', x: c.x, y: c.y }); c.x = c.echo.x; c.y = c.echo.y; c.echo = null; s.ev.push({ e: 'blink', x: c.x, y: c.y }); if (c.f.ghost) heal(s, c, c, c.maxHp * .1); if (c.f.phantom) for (const t of enemiesIn(s, c, c.x, c.y, 150)) if (t.kind === 'champ') stun(s, t, .6); },
         },
-        { name: 'Reap', d: 'Blink behind a champion. Execute damage. A kill resets it.', fx: 'blink', cd: 40, range: 480, shape: 'circle', r: 90, over: true, target: true, dmg: 125, missing: .35,
-          cast(s, c, a, A) { const t = nearChamp(s, c, a.tx, a.ty, 220); if (!t || dist(c, t) > 540) return false; const n = { x: t.fx || 1, y: t.fy || 0 }; s.ev.push({ e: 'blink', x: c.x, y: c.y }); const f = nearestFree(s.map, t.x - n.x * 90, t.y - n.y * 90); c.x = f.x; c.y = f.y; c.fx = n.x; c.fy = n.y; c.reap = { id: t.id, t: 2 }; hurt(s, c, t, (A.dmg * pow(c)) + (t.maxHp - t.hp) * A.missing, { skill: 1, crit: 1 }); c.stats.skillHits++; if (c.f.deathmark) { t.markedBy = c.id; t.dmarkT = 4; } s.ev.push({ e: 'blink', x: c.x, y: c.y }); },
+        { name: 'Reap', d: 'Blink behind a champion. Execute damage. A kill resets it.', fx: 'blink', cd: 40, range: 360, shape: 'circle', r: 90, over: true, target: true, dmg: 125, missing: .35,
+          cast(s, c, a, A) { const t = nearChamp(s, c, a.tx, a.ty, 180); if (!t || dist(c, t) > A.range + 45) return false; const n = { x: t.fx || 1, y: t.fy || 0 }; s.ev.push({ e: 'blink', x: c.x, y: c.y }); const f = nearestFree(s.map, t.x - n.x * 90, t.y - n.y * 90); c.x = f.x; c.y = f.y; c.fx = n.x; c.fy = n.y; c.reap = { id: t.id, t: 2 }; hurt(s, c, t, (A.dmg * pow(c)) + (t.maxHp - t.hp) * A.missing, { skill: 1, crit: 1 }); c.stats.skillHits++; if (c.f.deathmark) { t.markedBy = c.id; t.dmarkT = 4; } s.ev.push({ e: 'blink', x: c.x, y: c.y }); },
         },
       ],
       tick(s, c) { const seen = canSee(s, 1 - c.team, c); if (!seen) haste(c, .15, .1); if (c.f.hunter && s.tick % 15 === 0) for (const e of s.champs) if (e.alive && e.team !== c.team && e.hp / e.maxHp < .3) e.revealT = Math.max(e.revealT || 0, .6); },
     },
     gravel: {
       name: 'Gravel', role: 'Tank', blurb: 'One good hook moves the whole fight.',
-      sight: 680, hp: 720, hpG: 112, dmg: 54, dmgG: 6, armor: 34, armG: 5, range: 190, as: .8, ms: 305, pref: 150, melee: true, fit: { top: 2, jungle: 2, bottom: 0, support: 3 },
+      sight: 680, hp: 720, hpG: 112, dmg: 54, dmgG: 6, armor: 34, armG: 5, range: 150, as: .8, ms: 305, pref: 120, melee: true, fit: { top: 2, jungle: 2, bottom: 0, support: 3 },
       passive: { name: 'Immovable', d: 'Dropping below 40% health hardens you for 3 seconds. Once every 30 seconds.' },
       builds: [
-        { id: 'anchor', name: 'Anchor', tag: 'Catch', d: 'Chain reaches farther and stuns longer, but takes longer to come back.', mods: { 0: { range: 740, stun: .5, cd_add: 2, d: 'Long reach. Drags the first enemy to you and holds them a moment.' } } },
-        { id: 'juggernaut', name: 'Juggernaut', tag: 'Bruiser', d: 'Avalanche comes up far more often. Stomp is wider and hits harder. Lighter hook.', mods: { 0: { dmg_add: -20 }, 1: { r_add: 45, dmg_add: 30, d: 'Wide, strong stomp. Slow everyone around you and harden.' }, 2: { cd: 30 } } },
+        { id: 'anchor', name: 'Anchor', tag: 'Catch', d: 'Chain reaches farther and stuns longer, but takes longer to come back.', mods: { 0: { range: 555, stun: .5, cd_add: 2, d: 'Long reach. Drags the first enemy to you and holds them a moment.' } } },
+        { id: 'juggernaut', name: 'Juggernaut', tag: 'Bruiser', d: 'Avalanche comes up far more often. Stomp is wider and hits harder. Lighter hook.', mods: { 0: { dmg_add: -20 }, 1: { r_add: 35, dmg_add: 30, d: 'Wide, strong stomp. Slow everyone around you and harden.' }, 2: { cd: 30 } } },
         { id: 'warden', name: 'Warden', tag: 'Protect', d: 'Chain hooks allies to safety. Stomp shields allies beside you.', mods: { 0: { filter: 'allchamp', d: 'Hook the first champion it hits: drags an enemy to you, or pulls an ally to safety.' }, 1: { d: 'Slow everyone around you, harden, and shield nearby allies.' } } },
         { id: 'seismic', name: 'Seismic', tag: 'Zone', d: 'Stomp sends an aftershock a moment later and slows much harder.', mods: { 1: { slowA: .55, d: 'Slow everyone around you hard; a second pulse follows.' } } },
       ],
       evolves: [
-        [{ id: 'longchain', name: 'Long Chain', d: 'Chain reaches 80 farther.', mods: { 0: { range_add: 80 } } }, { id: 'hardstomp', name: 'Hard Stomp', d: 'Stomp radius 35 larger.', mods: { 1: { r_add: 35 } } }],
+        [{ id: 'longchain', name: 'Long Chain', d: 'Chain reaches 60 farther.', mods: { 0: { range_add: 60 } } }, { id: 'hardstomp', name: 'Hard Stomp', d: 'Stomp radius 30 larger.', mods: { 1: { r_add: 30 } } }],
         [{ id: 'lastwall', name: 'Last Wall', d: 'Avalanche stuns 0.4 longer.' }, { id: 'unbroken', name: 'Unbroken', d: 'Stomp hardens you for a full 4 seconds.' }],
       ],
       kit: [
-        { name: 'Chain', d: 'Hook the first enemy it hits and drag them to you.', fx: 'chain', cd: 9, range: 620, shape: 'line', w: 50, dmg: 64, stun: .15, filter: 'chainable',
+        { name: 'Chain', d: 'Hook the first enemy it hits and drag them to you.', fx: 'chain', cd: 9, range: 465, shape: 'line', w: 50, dmg: 64, stun: .15, filter: 'chainable',
           cast(s, c, a, A) { fire(s, c, a, { speed: 1050, range: A.range, w: 50, fx: 'chain', filter: A.filter === 'allchamp' ? 'allchainable' : A.filter, hit(s, c, t, p) {
             if (t.team === c.team) { const n = norm(c.x - t.x, c.y - t.y), l = Math.max(0, n.l - 90); dashDir(t, n.x, n.y, l, 1200, { forced: true }); shield(s, t, 90 * hpow(c), 3); skillHit(c, p); p.left = 0; return; }
             hurt(s, c, t, A.dmg * pow(c), { skill: 1 }); const n = norm(c.x - t.x, c.y - t.y), l = Math.max(0, n.l - 90); dashDir(t, n.x, n.y, l, 1300, { forced: true }); t.stunT = Math.max(t.stunT || 0, l / 1300 + A.stun); if (t.kind === 'champ') skillHit(c, p); p.left = 0; } }); },
         },
-        { name: 'Stomp', d: 'Slow everyone around you and harden for a moment.', fx: 'stomp', cd: 8, range: 0, shape: 'self', r: 215, dmg: 62, slowA: .4,
-          cast(s, c, a, A) { const go = () => { let hit = false; s.ev.push({ e: 'boom', x: c.x, y: c.y, r: A.r, fx: 'stomp' }); eachEnemy(s, c, c.x, c.y, A.r, t => { hurt(s, c, t, A.dmg * pow(c), { skill: 1 }); slow(t, A.slowA, 1.5); if (t.kind === 'champ') hit = true; }); return hit; }; const hit = go(); c.drT = c.f.unbroken ? 4 : 2.5; if (c.f.warden) for (const al of alliesIn(s, c.team, c.x, c.y, A.r + 60)) shield(s, al, 80 * hpow(c), 3); if (c.f.seismic) blast(s, c, c.x, c.y, A.r, .55, () => { go(); }, 'stomp'); if (hit) c.stats.skillHits++; },
+        { name: 'Stomp', d: 'Slow everyone around you and harden for a moment.', fx: 'stomp', cd: 8, range: 0, shape: 'self', r: 180, dmg: 62, slowA: .4,
+          cast(s, c, a, A) { const go = () => { let hit = false; s.ev.push({ e: 'boom', x: c.x, y: c.y, r: A.r, fx: 'stomp' }); eachEnemy(s, c, c.x, c.y, A.r, t => { hurt(s, c, t, A.dmg * pow(c), { skill: 1 }); slow(t, A.slowA, 1.5); if (t.kind === 'champ') hit = true; }); return hit; }; const hit = go(); c.drT = c.f.unbroken ? 4 : 2.5; if (c.f.warden) for (const al of alliesIn(s, c.team, c.x, c.y, A.r + 45)) shield(s, al, 80 * hpow(c), 3); if (c.f.seismic) blast(s, c, c.x, c.y, A.r, .55, () => { go(); }, 'stomp'); if (hit) c.stats.skillHits++; },
         },
-        { name: 'Avalanche', d: 'Unstoppable charge. Stuns around the first champion you hit.', fx: 'dash', cd: 48, range: 640, shape: 'line', w: 110, pd: [640, 1000], dmg: 165,
-          cast(s, c, a, A) { dashDir(c, a.dx, a.dy, 640, 1000, { unstop: true, champOnly: true, onHit(s, c, t) { c.dash = null; s.ev.push({ e: 'boom', x: c.x, y: c.y, r: 180, fx: 'crash' }); eachEnemy(s, c, c.x, c.y, 180, e => { hurt(s, c, e, A.dmg * pow(c), { skill: 1 }); if (e.kind === 'champ') stun(s, e, 1.25 + (c.f.lastwall ? .4 : 0)); }, true); c.stats.skillHits++; } }); },
+        { name: 'Avalanche', d: 'Unstoppable charge. Stuns around the first champion you hit.', fx: 'dash', cd: 48, range: 480, shape: 'line', w: 110, pd: [480, 1000], dmg: 165,
+          cast(s, c, a, A) { dashDir(c, a.dx, a.dy, A.range, 1000, { unstop: true, champOnly: true, onHit(s, c, t) { c.dash = null; s.ev.push({ e: 'boom', x: c.x, y: c.y, r: 155, fx: 'crash' }); eachEnemy(s, c, c.x, c.y, 155, e => { hurt(s, c, e, A.dmg * pow(c), { skill: 1 }); if (e.kind === 'champ') stun(s, e, 1.25 + (c.f.lastwall ? .4 : 0)); }, true); c.stats.skillHits++; } }); },
         },
       ],
       tick(s, c) { if (c.pcdT > 0) c.pcdT -= DT; if (c.hp < c.maxHp * .4 && !(c.pcdT > 0) && c.alive) { c.pcdT = 30; c.drT = Math.max(c.drT, 3); s.ev.push({ e: 'boom', x: c.x, y: c.y, r: 90, fx: 'stomp' }); } c.pready = c.pcdT > 0 ? 0 : 1; },
@@ -391,20 +430,20 @@ const Sim = (() => {
     // ---------- Villains ----------
     deadbolt: {
       name: 'Deadbolt', role: 'Marksman', blurb: 'Lay the wire, then finish what it caught.',
-      sight: 950, hp: 505, hpG: 70, dmg: 58, dmgG: 7, armor: 15, armG: 3, range: 470, as: 1.0, ms: 305, pref: 430, fit: { top: 1, jungle: 0, bottom: 3, support: 0 },
+      sight: 950, hp: 505, hpG: 70, dmg: 58, dmgG: 7, armor: 15, armG: 3, range: 360, as: 1.0, ms: 305, pref: 325, fit: { top: 1, jungle: 0, bottom: 3, support: 0 },
       passive: { name: 'Deadlock', d: 'Basic attacks against rooted or slowed targets crit for 50% more.' },
       builds: [
         { id: 'trapper', name: 'Trapper', tag: 'Traps', d: 'Up to three wires, longer lasting and tighter. Your bullets stay modest.', stats: { dmg: .93 }, mods: { 0: { cd: 6.5, dur: 22, maxWires: 3, rootT: 1.5, d: 'Lay up to three wires. Each roots the first enemy to cross it.' } } },
-        { id: 'deadeyed', name: 'Dead Aim', tag: 'Poke', d: 'Ricochet flies far and hits very hard but never bounces.', mods: { 1: { range: 920, dmg_add: 75, bounces: 0, cd_add: 1.5, d: 'A long, heavy shot. No bounce.' } } },
+        { id: 'deadeyed', name: 'Dead Aim', tag: 'Poke', d: 'Ricochet flies far and hits very hard but never bounces.', mods: { 1: { range: 690, dmg_add: 75, bounces: 0, cd_add: 1.5, d: 'A long, heavy shot. No bounce.' } } },
         { id: 'gunslinger', name: 'Gunslinger', tag: 'Attack speed', d: 'Ricochet bounces three times. Every fourth basic attack also crits.', stats: { as: 1.14, dmg: .94 }, mods: { 1: { bounces: 3, bdmg: .7, d: 'A shot that bounces between up to four targets.' } } },
-        { id: 'jailer', name: 'Jailer', tag: 'Control', d: 'Lockdown comes up more, is wider and slows much harder, but its shots are gentle.', mods: { 2: { cd: 38, r_add: 60, slowA: .45, shot: 28, d: 'Marks a wide zone that reveals, slows hard and fires light shots.' } } },
+        { id: 'jailer', name: 'Jailer', tag: 'Control', d: 'Lockdown comes up more, is wider and slows much harder, but its shots are gentle.', mods: { 2: { cd: 38, r_add: 45, slowA: .45, shot: 28, d: 'Marks a wide zone that reveals, slows hard and fires light shots.' } } },
       ],
       evolves: [
         [{ id: 'taut', name: 'Taut Wire', d: 'Tripwire roots 0.3 longer.', mods: { 0: { rootT_add: .3 } } }, { id: 'hairtrigger', name: 'Hair Trigger', d: 'Ricochet cooldown 1.5 shorter.', mods: { 1: { cd_add: -1.5 } } }],
-        [{ id: 'crossfire', name: 'Crossfire', d: 'Lockdown fires twice as fast.' }, { id: 'killbox', name: 'Kill Box', d: 'Lockdown is 60 wider and roots enemies inside it when it starts.', mods: { 2: { r_add: 60 } } }],
+        [{ id: 'crossfire', name: 'Crossfire', d: 'Lockdown fires twice as fast.' }, { id: 'killbox', name: 'Kill Box', d: 'Lockdown is 45 wider and roots enemies inside it when it starts.', mods: { 2: { r_add: 45 } } }],
       ],
       kit: [
-        { name: 'Tripwire', d: 'Lay a wire across a path. The first enemy to cross it is rooted.', fx: 'tripwire', cd: 9, range: 620, shape: 'circle', r: 150, wire: true, dur: 13, maxWires: 2, rootT: 1.25, dmg: 62,
+        { name: 'Tripwire', d: 'Lay a wire across a path. The first enemy to cross it is rooted.', fx: 'tripwire', cd: 9, range: 465, shape: 'circle', r: 130, wire: true, dur: 13, maxWires: 2, rootT: 1.25, dmg: 62,
           cast(s, c, a, A) {
             const nx = -a.dy, ny = a.dx, w1 = rayWall(a.tx, a.ty, nx, ny, A.r), w2 = rayWall(a.tx, a.ty, -nx, -ny, A.r);
             const mine = s.zones.filter(z => z.kind === 'tripline' && z.owner === c); if (mine.length >= A.maxWires) mine[0].dead = true;
@@ -412,20 +451,20 @@ const Sim = (() => {
             z.step = (s, z) => { if (z.arm > 0) { z.arm -= DT; return; } for (const t of s.champs) if (t.alive && !t.air && t.team !== c.team && segDist(t.x, t.y, z.x1, z.y1, z.x2, z.y2) < t.r + 12) { hurt(s, c, t, A.dmg * pow(c), { skill: 1 }); root(s, t, A.rootT); z.t = 0; s.ev.push({ e: 'boom', x: t.x, y: t.y, r: 70, fx: 'tripwire' }); c.stats.skillHits++; return; } };
           },
         },
-        { name: 'Ricochet', d: 'A shot that bounces to a second target.', fx: 'ricochet', cd: 6, range: 660, shape: 'line', w: 36, dmg: 80, bounces: 1, bdmg: .7,
+        { name: 'Ricochet', d: 'A shot that bounces to a second target.', fx: 'ricochet', cd: 6, range: 495, shape: 'line', w: 36, dmg: 80, bounces: 1, bdmg: .7,
           cast(s, c, a, A) { fire(s, c, a, { speed: 1500, range: A.range, w: A.w, fx: 'ricochet', filter: 'units', hit(s, c, t, p) {
             hurt(s, c, t, A.dmg * pow(c), { skill: 1 }); if (t.kind === 'champ') skillHit(c, p); p.left = 0;
             ricochetNext(s, c, A, t, new Set([t.id]), A.bounces, A.bdmg);
           } }); },
         },
-        { name: 'Lockdown', d: 'Marks a zone that reveals and slows and fires at those inside.', fx: 'lockdown', cd: 55, range: 900, shape: 'circle', r: 260, dur: 4.5, slowA: .25, shot: 56,
+        { name: 'Lockdown', d: 'Marks a zone that reveals and slows and fires at those inside.', fx: 'lockdown', cd: 55, range: 675, shape: 'circle', r: 215, dur: 4.5, slowA: .25, shot: 56,
           cast(s, c, a, A) {
             const every = c.f.crossfire ? 11 : 21;
             const z = field(s, c, 'lockdown', { x: a.tx, y: a.ty, r: A.r, dur: A.dur, n: 0 });
             if (c.f.killbox) for (const t of enemiesIn(s, c, a.tx, a.ty, A.r)) if (t.kind === 'champ') root(s, t, .9);
             z.step = (s, z) => {
               if (s.tick % 6 === 0) for (const t of s.champs) if (t.alive && t.team !== c.team && Math.hypot(t.x - z.x, t.y - z.y) < z.r + t.r) { t.revealT = Math.max(t.revealT || 0, .4); slow(t, A.slowA, .35); if (t.stealthT > 0) breakStealth(s, t); }
-              if (++z.n >= every) { z.n = 0; const list = s.champs.filter(t => t.alive && !t.air && t.team !== c.team && Math.hypot(t.x - z.x, t.y - z.y) < z.r + t.r); if (list.length) { const t = list[s.rand() * list.length | 0]; blast(s, c, t.x + (t.vx || 0) * .2, t.y + (t.vy || 0) * .2, 78, .28, (s, b) => { for (const e of enemiesIn(s, c, b.x, b.y, 78)) if (e.kind === 'champ') { hurt(s, c, e, A.shot * pow(c), { skill: 1 }); if (!z.counted) { z.counted = true; c.stats.skillHits++; } } }, 'lockdown'); } }
+              if (++z.n >= every) { z.n = 0; const list = s.champs.filter(t => t.alive && !t.air && t.team !== c.team && Math.hypot(t.x - z.x, t.y - z.y) < z.r + t.r); if (list.length) { const t = list[s.rand() * list.length | 0]; blast(s, c, t.x + (t.vx || 0) * .2, t.y + (t.vy || 0) * .2, 70, .28, (s, b) => { for (const e of enemiesIn(s, c, b.x, b.y, 70)) if (e.kind === 'champ') { hurt(s, c, e, A.shot * pow(c), { skill: 1 }); if (!z.counted) { z.counted = true; c.stats.skillHits++; } } }, 'lockdown'); } }
             };
           },
         },
@@ -434,7 +473,7 @@ const Sim = (() => {
     },
     duelist: {
       name: 'Duelist', role: 'Fighter', blurb: 'Circle them, cut them, salute them.',
-      sight: 720, hp: 600, hpG: 90, dmg: 62, dmgG: 8, armor: 26, armG: 4, range: 165, as: .98, ms: 330, pref: 125, melee: true, fit: { top: 3, jungle: 2, bottom: 0, support: 0 },
+      sight: 720, hp: 600, hpG: 90, dmg: 62, dmgG: 8, armor: 26, armG: 4, range: 140, as: .98, ms: 330, pref: 105, melee: true, fit: { top: 3, jungle: 2, bottom: 0, support: 0 },
       passive: { name: 'Flurry of Angles', d: 'Hitting a target from a new angle builds up to 5 stacks, each adding 5% damage. Stacks fade after 3 seconds.' },
       builds: [
         { id: 'fencer', name: 'Fencer', tag: 'Combo', d: 'Flourish refreshes on a clean finish. Longer window, and the third cut stuns longer.', mods: { 0: { cd: 6, window: 2.4, knockT: .9, d: 'Three quick cuts. Land the third on a champion to refund half the cooldown.' } } },
@@ -443,26 +482,26 @@ const Sim = (() => {
         { id: 'bladestorm', name: 'Bladestorm', tag: 'Waves', d: 'The third cut of Flourish spins around you. Stacks of Flurry also grant speed.', mods: { 0: { dmg1_add: 14, dmg2_add: 30, d: 'Three quick cuts. The third is a whirl that hits everything around you.' } } },
       ],
       evolves: [
-        [{ id: 'lunging', name: 'Lunging Cut', d: 'The second cut of Flourish reaches 50 farther.', mods: { 0: { reach1_add: 50 } } }, { id: 'pirouette', name: 'Pirouette', d: 'Feint also dashes you the opposite way.' }],
+        [{ id: 'lunging', name: 'Lunging Cut', d: 'The second cut of Flourish reaches 40 farther.', mods: { 0: { reach1_add: 40 } } }, { id: 'pirouette', name: 'Pirouette', d: 'Feint also dashes you the opposite way.' }],
         [{ id: 'coupdegrace', name: 'Coup de Grace', d: 'The third cut adds 12% of the target\'s missing health.' }, { id: 'lastbow', name: 'Last Bow', d: 'Final Salute stuns the target for 0.5 when it starts.' }],
       ],
       kit: [
-        { name: 'Flourish', d: 'Three quick cuts, each within a window. The third knocks up.', fx: 'flourish', cd: 8, range: 0, shape: 'self', instant: true, armsRecast: true, chain: 2, window: 1.8, knockT: .6, reach0: 210, reach1: 250, reach2: 230, dmg0: 48, dmg1: 56, dmg2: 82,
+        { name: 'Flourish', d: 'Three quick cuts, each within a window. The third knocks up.', fx: 'flourish', cd: 8, range: 0, shape: 'self', instant: true, armsRecast: true, chain: 2, window: 1.8, knockT: .6, reach0: 160, reach1: 190, reach2: 175, dmg0: 48, dmg1: 56, dmg2: 82,
           cast(s, c, a, A) { flourish(s, c, A, 0); c.fstep = 1; c.recast[0] = A.window; },
           recast(s, c, a, A) { const n = c.fstep || 1; flourish(s, c, A, n); if (n < 2) { c.fstep = n + 1; c.recast[0] = A.window; } else { c.fstep = 0; c.recast[0] = 0; } },
         },
-        { name: 'Feint', d: 'A decoy steps away while you briefly vanish.', fx: 'feint', cd: 12, range: 340, shape: 'dash', w: 60, stealth: 1.3, keepStealth: true,
+        { name: 'Feint', d: 'A decoy steps away while you briefly vanish.', fx: 'feint', cd: 12, range: 255, shape: 'dash', w: 60, stealth: 1.3, keepStealth: true,
           cast(s, c, a, A) {
             const z = field(s, c, 'decoy', { x: c.x, y: c.y, r: 26, dur: 1.5, x0: c.x, vx: a.dx * 300, vy: a.dy * 300 });
             z.step = (s, z) => { z.x += z.vx * DT; z.y += z.vy * DT; if (rayWall(z.x, z.y, a.dx, a.dy, 8) < 8) z.vx = z.vy = 0; };
-            z.end = (s, z) => { s.ev.push({ e: 'boom', x: z.x, y: z.y, r: 120, fx: 'feint' }); if (c.f.masquerade) for (const t of enemiesIn(s, c, z.x, z.y, 170, true)) hurt(s, c, t, 150 * pow(c), { skill: 1 }); };
-            stealth(s, c, A.stealth); if (c.f.pirouette) dashDir(c, -a.dx, -a.dy, 200, 1000);
+            z.end = (s, z) => { s.ev.push({ e: 'boom', x: z.x, y: z.y, r: 120, fx: 'feint' }); if (c.f.masquerade) for (const t of enemiesIn(s, c, z.x, z.y, 145, true)) hurt(s, c, t, 150 * pow(c), { skill: 1 }); };
+            stealth(s, c, A.stealth); if (c.f.pirouette) dashDir(c, -a.dx, -a.dy, 150, 1000);
           },
         },
-        { name: 'Final Salute', d: 'Binds one enemy into a short duel ring neither can leave.', fx: 'salute', cd: 50, range: 420, shape: 'circle', r: 110, target: true, dur: 3.2, dmgBoost: 1.12,
+        { name: 'Final Salute', d: 'Binds one enemy into a short duel ring neither can leave.', fx: 'salute', cd: 50, range: 315, shape: 'circle', r: 110, target: true, dur: 3.2, dmgBoost: 1.12,
           cast(s, c, a, A) {
-            const t = nearChamp(s, c, a.tx, a.ty, 180); if (!t || dist(c, t) > A.range + 60 || !hasLOS(c.x, c.y, t.x, t.y)) return false;
-            const z = field(s, c, 'ring', { x: (c.x + t.x) / 2, y: (c.y + t.y) / 2, r: 240, dur: A.dur, a: c, b: t, boost: A.dmgBoost, tgt: t.id });
+            const t = nearChamp(s, c, a.tx, a.ty, 180); if (!t || dist(c, t) > A.range + 45 || !hasLOS(c.x, c.y, t.x, t.y)) return false;
+            const z = field(s, c, 'ring', { x: (c.x + t.x) / 2, y: (c.y + t.y) / 2, r: 200, dur: A.dur, a: c, b: t, boost: A.dmgBoost, tgt: t.id });
             c.duelZ = z; t.duelZ = z; c.stats.skillHits++; if (c.f.lastbow) stun(s, t, .5);
             z.step = (s, z) => { if (!z.a.alive || !z.b.alive) { z.t = 0; if (c.f.honorbound && !z.b.alive && z.a.alive) c.cd[2] = Math.min(c.cd[2], 6); } };
             z.end = (s, z) => { z.a.duelZ = z.b.duelZ = null; };
@@ -478,29 +517,29 @@ const Sim = (() => {
     },
     hex: {
       name: 'Hex', role: 'Curse mage', blurb: 'Stack the curses, then call them in.',
-      sight: 850, hp: 495, hpG: 66, dmg: 50, dmgG: 5, armor: 14, armG: 3, range: 420, as: .85, ms: 300, pref: 390, fit: { top: 1, jungle: 0, bottom: 3, support: 2 },
+      sight: 850, hp: 495, hpG: 66, dmg: 50, dmgG: 5, armor: 14, armG: 3, range: 320, as: .85, ms: 300, pref: 290, fit: { top: 1, jungle: 0, bottom: 3, support: 2 },
       passive: { name: 'Contagion', d: 'When a cursed enemy dies, their curses spread to enemies nearby.' },
       builds: [
         { id: 'cursebinder', name: 'Cursebinder', tag: 'Stacks', d: 'Curses stack to five and linger. Hex Bolt is faster, and full stacks detonate far harder.', mods: { 0: { cd: 2.6, d: 'Stacks curses up to five. At five, the next hit detonates them.' } } },
         { id: 'transmuter', name: 'Transmuter', tag: 'Control', d: 'Polymorph comes up fast and turns targets into very fragile coins.', mods: { 1: { cd: 8.5, w_add: 10, d: 'Turns a target into a spinning coin that takes 25% more damage.' } } },
-        { id: 'ritualist', name: 'Ritualist', tag: 'Team fight', d: 'Coven comes up sooner, drags harder and detonates wider.', mods: { 2: { cd: 38, r_add: 60, pull_add: 70 } } },
+        { id: 'ritualist', name: 'Ritualist', tag: 'Team fight', d: 'Coven comes up sooner, drags harder and detonates wider.', mods: { 2: { cd: 38, r_add: 45, pull_add: 70 } } },
         { id: 'jinx', name: 'Jinx', tag: 'Support', d: 'Curses slow, and allies who hit a cursed enemy heal a little.', mods: { 0: { d: 'Stacks curses that slow. Allies heal by hitting cursed enemies.' } } },
       ],
       evolves: [
         [{ id: 'swiftbolt', name: 'Swift Bolt', d: 'Hex Bolt cooldown 0.6 shorter.', mods: { 0: { cd_add: -.6 } } }, { id: 'bigpoly', name: 'Long Change', d: 'Polymorph lasts 0.3 longer and is a little wider.', mods: { 1: { dur_add: .3, w_add: 12 } } }],
-        [{ id: 'covenant', name: 'Covenant', d: 'Coven is 40 wider and drags harder.', mods: { 2: { r_add: 40, pull_add: 50 } } }, { id: 'hexburst', name: 'Hex Burst', d: 'Detonations also curse enemies around the target.' }],
+        [{ id: 'covenant', name: 'Covenant', d: 'Coven is 30 wider and drags harder.', mods: { 2: { r_add: 30, pull_add: 50 } } }, { id: 'hexburst', name: 'Hex Burst', d: 'Detonations also curse enemies around the target.' }],
       ],
       kit: [
-        { name: 'Hex Bolt', d: 'Stacks curses. At full stacks the next hit detonates them.', fx: 'hexbolt', cd: 3.5, range: 660, shape: 'line', w: 40, dmg: 76,
+        { name: 'Hex Bolt', d: 'Stacks curses. At full stacks the next hit detonates them.', fx: 'hexbolt', cd: 3.5, range: 495, shape: 'line', w: 40, dmg: 76,
           cast(s, c, a, A) { fire(s, c, a, { speed: 1100, range: A.range, w: A.w, fx: 'hexbolt', filter: 'units', hit(s, c, t, p) {
             hurt(s, c, t, A.dmg * pow(c), { skill: 1 }); if (t.kind === 'champ') skillHit(c, p); p.left = 0;
             if (t.alive) { if ((t.curseT > 0 ? t.curseN : 0) >= curseCap(c)) detonate(s, c, t, 1); else curse(s, c, t, 1); if (c.f.jinx && t.curseN) slow(t, .08 * t.curseN, 1.5); }
           } }); },
         },
-        { name: 'Polymorph', d: 'Skillshot. Turns a target into a harmless spinning coin for a moment.', fx: 'polymorph', cd: 13, range: 600, shape: 'line', w: 36, dur: 1.25,
+        { name: 'Polymorph', d: 'Skillshot. Turns a target into a harmless spinning coin for a moment.', fx: 'polymorph', cd: 13, range: 450, shape: 'line', w: 36, dur: 1.25,
           cast(s, c, a, A) { fire(s, c, a, { speed: 1250, range: A.range, w: A.w, fx: 'polymorph', filter: 'champ', hit(s, c, t, p) { if (t.team === c.team) return; poly(s, t, A.dur); if (c.f.transmuter) t.vulnT = A.dur; skillHit(c, p); p.left = 0; } }); },
         },
-        { name: 'Coven', d: 'A zone that drags enemies to its centre and detonates curses.', fx: 'coven', cd: 50, range: 640, shape: 'circle', r: 280, dur: 1.9, pull: 150, dmg: 120,
+        { name: 'Coven', d: 'A zone that drags enemies to its centre and detonates curses.', fx: 'coven', cd: 50, range: 480, shape: 'circle', r: 240, dur: 1.9, pull: 150, dmg: 120,
           cast(s, c, a, A) {
             const z = field(s, c, 'coven', { x: a.tx, y: a.ty, r: A.r, dur: A.dur });
             z.step = (s, z) => { for (const t of s.champs) if (t.alive && !t.air && t.team !== c.team && Math.hypot(t.x - z.x, t.y - z.y) < z.r + t.r && !(t.dash && t.dash.unstop)) { const n = norm(z.x - t.x, z.y - t.y); if (n.l > 30) { t.x += n.x * A.pull * DT; t.y += n.y * A.pull * DT; pushOut(s.map, t); } } };
@@ -511,45 +550,45 @@ const Sim = (() => {
     },
     plague: {
       name: 'Plague Doctor', role: 'Attrition support', blurb: 'Nobody leaves the ward healthy.',
-      sight: 850, hp: 520, hpG: 76, dmg: 46, dmgG: 5, armor: 20, armG: 3.5, range: 380, as: .85, ms: 310, pref: 350, support: true, fit: { top: 2, jungle: 0, bottom: 1, support: 3 },
+      sight: 850, hp: 520, hpG: 76, dmg: 46, dmgG: 5, armor: 20, armG: 3.5, range: 300, as: .85, ms: 310, pref: 270, support: true, fit: { top: 2, jungle: 0, bottom: 1, support: 3 },
       passive: { name: 'Vile Recovery', d: 'Poisoned enemies nearby slowly heal you.' },
       builds: [
         { id: 'apothecary', name: 'Apothecary', tag: 'Support', d: 'Leech feeds allies for much more and comes back faster. Weak poison.', mods: { 1: { cd: 7, heal: .9, d: 'Tether an enemy, draining them and feeding your lowest ally for much more.' }, 0: { dps_add: -8 } } },
-        { id: 'pestilence', name: 'Pestilence', tag: 'Damage over time', d: 'Miasma is wider, longer and far deadlier.', mods: { 0: { r_add: 45, dur: 7.5, dps_add: 9 }, 1: { heal: .3 } } },
+        { id: 'pestilence', name: 'Pestilence', tag: 'Damage over time', d: 'Miasma is wider, longer and far deadlier.', mods: { 0: { r_add: 35, dur: 7.5, dps_add: 9 }, 1: { heal: .3 } } },
         { id: 'bloodletter', name: 'Bloodletter', tag: 'Bruiser', d: 'Leech feeds only you, drains hard, and your attacks land sturdily. A top laner who will not die.', stats: { hp: 1.15, dmg: 1.1 }, mods: { 1: { dps_add: 24, heal: .8, d: 'Tether an enemy and drain them. Feeds only you.' } } },
-        { id: 'ward', name: 'The Ward', tag: 'Zone', d: 'Quarantine comes up far sooner and slows harder.', mods: { 2: { cd: 32, slowA: .42, r_add: 40 } } },
+        { id: 'ward', name: 'The Ward', tag: 'Zone', d: 'Quarantine comes up far sooner and slows harder.', mods: { 2: { cd: 32, slowA: .42, r_add: 30 } } },
       ],
       evolves: [
-        [{ id: 'thickfog', name: 'Thick Fog', d: 'Miasma radius 30 larger.', mods: { 0: { r_add: 30 } } }, { id: 'fastdraw', name: 'Quick Draw', d: 'Leech cooldown 2 shorter.', mods: { 1: { cd_add: -2 } } }],
+        [{ id: 'thickfog', name: 'Thick Fog', d: 'Miasma radius 25 larger.', mods: { 0: { r_add: 25 } } }, { id: 'fastdraw', name: 'Quick Draw', d: 'Leech cooldown 2 shorter.', mods: { 1: { cd_add: -2 } } }],
         [{ id: 'lockward', name: 'Locked Ward', d: 'Quarantine reveals enemies inside.' }, { id: 'blacktide', name: 'Black Tide', d: 'Miasma also slows by 25%.' }],
       ],
       kit: [
-        { name: 'Miasma', d: 'A lingering poison cloud.', fx: 'miasma', cd: 8, range: 560, shape: 'circle', r: 170, dur: 5, dps: 23,
+        { name: 'Miasma', d: 'A lingering poison cloud.', fx: 'miasma', cd: 8, range: 420, shape: 'circle', r: 145, dur: 5, dps: 23,
           cast(s, c, a, A) {
             const z = field(s, c, 'miasma', { x: a.tx, y: a.ty, r: A.r, dur: A.dur, n: 0 });
             z.step = (s, z) => { if (s.tick % 9) return; for (const t of enemiesIn(s, c, z.x, z.y, z.r)) { poison(s, c, t, A.dps * pow(c), 2); if (c.f.blacktide) slow(t, .25, .4); if (t.kind === 'champ' && !z.counted) { z.counted = true; c.stats.skillHits++; } } };
           },
         },
-        { name: 'Leech', d: 'A tether draining an enemy and feeding an ally.', fx: 'leech', cd: 10, range: 540, shape: 'circle', r: 120, target: true, dur: 3, dps: 44, heal: .6,
+        { name: 'Leech', d: 'A tether draining an enemy and feeding an ally.', fx: 'leech', cd: 10, range: 405, shape: 'circle', r: 120, target: true, dur: 3, dps: 44, heal: .6,
           cast(s, c, a, A) {
-            const t = nearChamp(s, c, a.tx, a.ty, 200); if (!t || dist(c, t) > A.range + 60 || !hasLOS(c.x, c.y, t.x, t.y)) return false;
+            const t = nearChamp(s, c, a.tx, a.ty, 180); if (!t || dist(c, t) > A.range + 45 || !hasLOS(c.x, c.y, t.x, t.y)) return false;
             c.stats.skillHits++;
             const z = field(s, c, 'tether', { x: c.x, y: c.y, r: 20, dur: A.dur, tgt: t.id, n: 0 });
-            z.step = (s, z) => { z.x = c.x; z.y = c.y; if (!c.alive || !t.alive || t.air || dist(c, t) > A.range + 200 || !hasLOS(c.x, c.y, t.x, t.y)) { z.t = 0; return; } if (s.tick % 6 === 0) { const a2 = hurt(s, c, t, A.dps * .2 * pow(c), { skill: 1, dot: 1 }); const to = c.f.bloodletter ? c : lowestAlly(s, c, 620, true) || c; heal(s, c, to, (a2 || 0) * A.heal); } };
+            z.step = (s, z) => { z.x = c.x; z.y = c.y; if (!c.alive || !t.alive || t.air || dist(c, t) > A.range + 150 || !hasLOS(c.x, c.y, t.x, t.y)) { z.t = 0; return; } if (s.tick % 6 === 0) { const a2 = hurt(s, c, t, A.dps * .2 * pow(c), { skill: 1, dot: 1 }); const to = c.f.bloodletter ? c : lowestAlly(s, c, 480, true) || c; heal(s, c, to, (a2 || 0) * A.heal); } };
           },
         },
-        { name: 'Quarantine', d: 'A zone that blocks healing and slows.', fx: 'quarantine', cd: 52, range: 640, shape: 'circle', r: 300, dur: 5, slowA: .28,
+        { name: 'Quarantine', d: 'A zone that blocks healing and slows.', fx: 'quarantine', cd: 52, range: 480, shape: 'circle', r: 250, dur: 5, slowA: .28,
           cast(s, c, a, A) {
             const z = field(s, c, 'quarantine', { x: a.tx, y: a.ty, r: A.r, dur: A.dur });
             z.step = (s, z) => { if (s.tick % 5) return; for (const t of s.champs) if (t.alive && t.team !== c.team && Math.hypot(t.x - z.x, t.y - z.y) < z.r + t.r) { t.noHealT = .3; slow(t, A.slowA, .3); if (c.f.lockward) t.revealT = Math.max(t.revealT || 0, .3); if (!z.counted) { z.counted = true; c.stats.skillHits++; } } };
           },
         },
       ],
-      tick(s, c) { if (s.tick % 15) return; let n = 0; for (const t of s.champs) if (t.alive && t.team !== c.team && t.poisonT > 0 && Math.hypot(t.x - c.x, t.y - c.y) < 520) n++; if (n && c.hp < c.maxHp) heal(s, c, c, c.maxHp * .004 * n); },
+      tick(s, c) { if (s.tick % 15) return; let n = 0; for (const t of s.champs) if (t.alive && t.team !== c.team && t.poisonT > 0 && Math.hypot(t.x - c.x, t.y - c.y) < 420) n++; if (n && c.hp < c.maxHp) heal(s, c, c, c.maxHp * .004 * n); },
     },
     shiv: {
       name: 'Shiv', role: 'Stealth assassin', blurb: 'If you can see her, she missed.',
-      sight: 720, hp: 500, hpG: 72, dmg: 68, dmgG: 8, armor: 18, armG: 3, range: 135, as: 1.05, ms: 335, pref: 100, melee: true, fit: { top: 2, jungle: 3, bottom: 0, support: 0 },
+      sight: 720, hp: 500, hpG: 72, dmg: 68, dmgG: 8, armor: 18, armG: 3, range: 125, as: 1.05, ms: 335, pref: 92, melee: true, fit: { top: 2, jungle: 3, bottom: 0, support: 0 },
       passive: { name: 'Opening Cut', d: 'The first strike out of stealth crits for 60% more.' },
       builds: [
         { id: 'cutthroat', name: 'Cutthroat', tag: 'Burst', d: 'Shank bleeds harder and refreshes on any bleeding kill.', mods: { 0: { dps_add: 16, d: 'Dash through. Deep bleed. A kill on a bleeding enemy resets it.' } } },
@@ -558,18 +597,18 @@ const Sim = (() => {
         { id: 'venomous', name: 'Venomous', tag: 'Attrition', d: 'Attacks poison, and Shank has a shorter cooldown but less bite. Nothing about this is quick, just inevitable.', mods: { 0: { cd: 4.8, dmg_add: -18, d: 'Quick dash through. Light bleed that slows.' } } },
       ],
       evolves: [
-        [{ id: 'longshank', name: 'Long Shank', d: 'Shank reaches 70 farther.', mods: { 0: { range_add: 70 } } }, { id: 'deepcut', name: 'Deep Cut', d: 'Shank bleeds for 25% more.', mods: { 0: { dps_mul: 1.25 } } }],
+        [{ id: 'longshank', name: 'Long Shank', d: 'Shank reaches 50 farther.', mods: { 0: { range_add: 50 } } }, { id: 'deepcut', name: 'Deep Cut', d: 'Shank bleeds for 25% more.', mods: { 0: { dps_mul: 1.25 } } }],
         [{ id: 'fadeaway', name: 'Fade Away', d: 'Starting Vanish cleanses slows and roots and heals you 8%.' }, { id: 'finishing', name: 'Finishing Stroke', d: 'The last strike of Thousand Cuts adds 15% of missing health.' }],
       ],
       kit: [
-        { name: 'Shank', d: 'Dash through with a bleed.', fx: 'shank', cd: 7, range: 320, shape: 'dash', w: 70, pd: [320, 1250], dmg: 58, dps: 22,
+        { name: 'Shank', d: 'Dash through with a bleed.', fx: 'shank', cd: 7, range: 240, shape: 'dash', w: 70, pd: [240, 1250], dmg: 58, dps: 22,
           cast(s, c, a, A) { const car = {}; dashDir(c, a.dx, a.dy, A.range, 1250, { onHit(s, c, t) { hurt(s, c, t, A.dmg * pow(c), { skill: 1 }); if (t.alive) { bleed(s, c, t, A.dps * pow(c), 3); if (c.f.venomous) slow(t, .22, 2); } if (t.kind === 'champ') { skillHit(c, car); } } }); },
         },
         { name: 'Vanish', d: 'Short stealth, hidden even with vision. Fades on attack.', fx: 'vanish', cd: 13, range: 0, shape: 'self', instant: true, keepStealth: true, dur: 2.2, ms: .2,
           cast(s, c, a, A) { stealth(s, c, A.dur); haste(c, A.ms, A.dur); if (c.f.fadeaway) { c.slowT = 0; c.rootT = 0; heal(s, c, c, c.maxHp * .08); } },
         },
-        { name: 'Thousand Cuts', d: 'Rapid untargetable strikes on one target.', fx: 'cuts', cd: 42, range: 430, shape: 'circle', r: 100, target: true, over: true, strikes: 6, dmg: 36,
-          cast(s, c, a, A) { const t = nearChamp(s, c, a.tx, a.ty, 200); if (!t || dist(c, t) > A.range + 60) return false; c.stats.skillHits++; c.cuts = { id: t.id, n: A.strikes, next: 0, A }; c.air = 1; s.ev.push({ e: 'blink', x: c.x, y: c.y }); },
+        { name: 'Thousand Cuts', d: 'Rapid untargetable strikes on one target.', fx: 'cuts', cd: 42, range: 320, shape: 'circle', r: 100, target: true, over: true, strikes: 6, dmg: 36,
+          cast(s, c, a, A) { const t = nearChamp(s, c, a.tx, a.ty, 180); if (!t || dist(c, t) > A.range + 45) return false; c.stats.skillHits++; c.cuts = { id: t.id, n: A.strikes, next: 0, A }; c.air = 1; s.ev.push({ e: 'blink', x: c.x, y: c.y }); },
         },
       ],
       onBasic(s, c, t, o) { if (c.f.venomous) poison(s, c, t, 14 * pow(c), 2); },
@@ -577,36 +616,36 @@ const Sim = (() => {
     },
     ironjaw: {
       name: 'Ironjaw', role: 'Brawler tank', blurb: 'Hit him. It only makes it worse.',
-      sight: 680, hp: 655, hpG: 100, dmg: 54, dmgG: 6, armor: 30, armG: 4, range: 190, as: .82, ms: 305, pref: 150, melee: true, fit: { top: 3, jungle: 2, bottom: 0, support: 3 },
+      sight: 680, hp: 655, hpG: 100, dmg: 54, dmgG: 6, armor: 30, armG: 4, range: 150, as: .82, ms: 305, pref: 120, melee: true, fit: { top: 3, jungle: 2, bottom: 0, support: 3 },
       passive: { name: 'Rage', d: 'Taking damage builds rage. Rage makes your basic attacks up to 50% stronger.' },
       builds: [
         { id: 'brawler', name: 'Brawler', tag: 'Brawl', d: 'Attacking builds rage too, and full rage reaches further.', stats: { as: 1.08 }, mods: {} },
-        { id: 'wrecker', name: 'Wrecker', tag: 'Area', d: 'Wrecking Ball orbits longer, wider and comes up sooner.', mods: { 0: { cd: 7, dur: 4.2, orbit_add: 40, dmg_add: 10 } } },
-        { id: 'bouncer', name: 'Bouncer', tag: 'Catch', d: 'Grab reaches far and hurls enemies straight at your nearest ally or tower.', mods: { 1: { range: 320, stunT: 1.25, d: 'Seize an enemy from farther and hurl them at your nearest ally or tower.' } } },
+        { id: 'wrecker', name: 'Wrecker', tag: 'Area', d: 'Wrecking Ball orbits longer, wider and comes up sooner.', mods: { 0: { cd: 7, dur: 4.2, orbit_add: 30, dmg_add: 10 } } },
+        { id: 'bouncer', name: 'Bouncer', tag: 'Catch', d: 'Grab reaches far and hurls enemies straight at your nearest ally or tower.', mods: { 1: { range: 240, stunT: 1.25, d: 'Seize an enemy from farther and hurl them at your nearest ally or tower.' } } },
         { id: 'fortress', name: 'Fortress', tag: 'Tank', d: 'Rage hardens into a shield. Demolish comes up sooner, lighter hits.', stats: { hp: 1.12, dmg: .88 }, mods: { 2: { cd: 34 } } },
       ],
       evolves: [
-        [{ id: 'heavyball', name: 'Heavy Ball', d: 'Wrecking Ball slows on contact.' }, { id: 'longreach', name: 'Long Reach', d: 'Grab reaches 60 farther.', mods: { 1: { range_add: 60 } } }],
+        [{ id: 'heavyball', name: 'Heavy Ball', d: 'Wrecking Ball slows on contact.' }, { id: 'longreach', name: 'Long Reach', d: 'Grab reaches 45 farther.', mods: { 1: { range_add: 45 } } }],
         [{ id: 'aftermath', name: 'Aftermath', d: 'Demolish leaves a slowing rift for 2 seconds.' }, { id: 'bloodlust', name: 'Blood Lust', d: 'Rage also adds 12% attack speed at full.' }],
       ],
       kit: [
-        { name: 'Wrecking Ball', d: 'A ball orbits you briefly, hitting anything it touches.', fx: 'wrecking', cd: 9, range: 0, shape: 'self', instant: true, dur: 3, orbit: 170, dmg: 46,
+        { name: 'Wrecking Ball', d: 'A ball orbits you briefly, hitting anything it touches.', fx: 'wrecking', cd: 9, range: 0, shape: 'self', instant: true, dur: 3, orbit: 140, dmg: 46,
           cast(s, c, a, A) {
             const z = field(s, c, 'orbit', { x: c.x, y: c.y, r: 34, dur: A.dur, ang: Math.atan2(c.fy, c.fx), orbit: A.orbit, hits: {} });
             z.step = (s, z) => { z.ang += 7.5 * DT; z.x = c.x + Math.cos(z.ang) * z.orbit; z.y = c.y + Math.sin(z.ang) * z.orbit; if (!c.alive) { z.t = 0; return; } eachEnemy(s, c, z.x, z.y, z.r, t => { if ((z.hits[t.id] || 0) > s.t) return; z.hits[t.id] = s.t + .85; hurt(s, c, t, A.dmg * pow(c), { skill: 1 }); if (c.f.heavyball) slow(t, .3, 1); if (t.kind === 'champ' && !z.counted) { z.counted = true; c.stats.skillHits++; } }); };
           },
         },
-        { name: 'Grab', d: 'Seize a nearby enemy and hurl them behind you.', fx: 'grab', cd: 10, range: 250, shape: 'cone', w: 130, dmg: 70, stunT: .7,
+        { name: 'Grab', d: 'Seize a nearby enemy and hurl them behind you.', fx: 'grab', cd: 10, range: 190, shape: 'cone', w: 130, dmg: 70, stunT: .7,
           cast(s, c, a, A) {
             let t = null, bd = A.range + 26; for (const e of [...s.champs, ...s.minions, ...s.monsters]) { if (!e.alive || e.air || e.boss || e.team === c.team || (e.kind === 'champ' && !canSee(s, c.team, e))) continue; const n = norm(e.x - c.x, e.y - c.y), v = n.l - e.r; if (n.x * a.dx + n.y * a.dy > .55 && hasLOS(c.x, c.y, e.x, e.y) && (v < bd || (t && t.kind !== 'champ' && e.kind === 'champ'))) { if (e.kind === 'champ' || !t || t.kind !== 'champ') { bd = v; t = e; } } }
             if (!t) return false;
-            let hx = c.x - a.dx * 240, hy = c.y - a.dy * 240;
+            let hx = c.x - a.dx * 190, hy = c.y - a.dy * 190;
             if (c.f.bouncer) { let b = null, bb = 900; for (const o of [...s.champs.filter(x => x.alive && x.team === c.team && x !== c), ...s.towers.filter(x => x.alive && x.team === c.team)]) { const d2 = dist(o, c); if (d2 < bb) { bb = d2; b = o; } } if (b) { const n = norm(b.x - t.x, b.y - t.y); hx = b.x - n.x * 60; hy = b.y - n.y * 60; } }
             const n = norm(hx - t.x, hy - t.y); dashDir(t, n.x, n.y, Math.min(n.l, c.f.bouncer ? 420 : 340), 1500, { forced: true });
             stun(s, t, Math.min(n.l, 420) / 1500 + A.stunT); hurt(s, c, t, A.dmg * pow(c), { skill: 1 }); if (t.kind === 'champ') c.stats.skillHits++;
           },
         },
-        { name: 'Demolish', d: 'A ground fissure line that knocks up all along it.', fx: 'demolish', cd: 48, range: 660, shape: 'line', w: 130, delay: .42, dmg: 165, knockT: 1,
+        { name: 'Demolish', d: 'A ground fissure line that knocks up all along it.', fx: 'demolish', cd: 48, range: 495, shape: 'line', w: 130, delay: .42, dmg: 165, knockT: 1,
           cast(s, c, a, A) {
             const len = rayWall(c.x, c.y, a.dx, a.dy, A.range);
             const z = field(s, c, 'fissure', lineZone({ r: A.w / 2, dur: A.delay }, c.x, c.y, c.x + a.dx * len, c.y + a.dy * len));
@@ -621,21 +660,43 @@ const Sim = (() => {
     },
   };
 
+  // ---------- balance table ----------
+  // Sweep-driven tuning lives here, multiplying the base numbers above, so a balance pass is a table edit.
+  // Kit: hp, dmg (basic attack), as, ms (added), abil (ability damage and healing). Build: pw (ability power), hp, dmg, as.
+  const TUNE = {
+    kits: {},
+    builds: {},
+  };
+  const ABIL_KEYS = ['dmg', 'dmgF', 'dmgM', 'dmg0', 'dmg1', 'dmg2', 'dps', 'heal', 'shot'];
+  for (const id in KITS) {
+    const k = KITS[id], t = TUNE.kits[id] || {};
+    if (t.hp) { k.hp = Math.round(k.hp * t.hp); k.hpG = Math.round(k.hpG * t.hp * 10) / 10; }
+    if (t.dmg) { k.dmg = Math.round(k.dmg * t.dmg * 10) / 10; k.dmgG = Math.round(k.dmgG * t.dmg * 100) / 100; }
+    if (t.as) k.as = Math.round(k.as * t.as * 1000) / 1000;
+    if (t.ms) k.ms += t.ms;
+    if (t.abil) for (const a of k.kit) for (const key of ABIL_KEYS) if (typeof a[key] === 'number') a[key] = Math.round(a[key] * t.abil * 100) / 100;
+    for (const b of k.builds) {
+      const u = TUNE.builds[b.id] || {};
+      if (u.pw) b.pw = u.pw;
+      if (u.hp || u.dmg || u.as) { b.stats = Object.assign({}, b.stats || {}); if (u.hp) b.stats.hp = (b.stats.hp || 1) * u.hp; if (u.dmg) b.stats.dmg = (b.stats.dmg || 1) * u.dmg; if (u.as) b.stats.as = (b.stats.as || 1) * u.as; }
+    }
+  }
+
   // A ricochet is a straight shot aimed at launch, leading the next target once. It never steers.
   function ricochetNext(s, c, A, from, seen, left, pw) {
     if (left <= 0) return;
-    let n = null, bd = 380;
+    let n = null, bd = 285;
     const tryIt = e => { if (!e.alive || e.air || e.team === c.team || seen.has(e.id) || !canSee(s, c.team, e)) return; const d = dist(from, e); if (d < bd && hasLOS(from.x, from.y, e.x, e.y)) { bd = d; n = e; } };
     s.champs.forEach(tryIt); if (!n) { s.minions.forEach(tryIt); s.monsters.forEach(tryIt); } if (!n) return;
     const hits = new Set(seen); seen.add(n.id);
     const fly = bd / 1500, aim = norm(n.x + (n.vx || 0) * fly - from.x, n.y + (n.vy || 0) * fly - from.y), reach = rayWall(from.x, from.y, aim.x, aim.y, bd * 1.3 + 60);
-    s.proj.push({ id: s.nid++, x: from.x, y: from.y, px: from.x, py: from.y, vx: aim.x * 1500, vy: aim.y * 1500, left: reach, w: 30, team: c.team, owner: c, fx: 'ricochet', pierce: false, hits, filter: 'units', skill: true, counted: false, age: 0,
+    s.proj.push({ id: s.nid++, x: from.x, y: from.y, px: from.x, py: from.y, vx: aim.x * 1500, vy: aim.y * 1500, left: reach, w: 30, team: c.team, owner: c, fx: 'ricochet', pierce: false, hits, filter: 'units', skill: true, counted: false, age: 0, abil: curAbil,
       hit(s, c, t, p) { hurt(s, c, t, A.dmg * pow(c) * pw, { skill: 1 }); if (t.kind === 'champ') skillHit(c, p); p.left = 0; ricochetNext(s, c, A, t, seen, left - 1, pw * A.bdmg); } });
   }
   // Flourish cut n (0, 1, 2). Auto-faces for phones. Lands in the direction of the nearest visible champion.
   function flourish(s, c, A, n) {
     const reach = A['reach' + n], f = autoFace(s, c, reach + 80), a = { dx: f.dx, dy: f.dy };
-    if (n === 1) dashDir(c, a.dx, a.dy, 100 + (c.f.lunging ? 50 : 0), 1100);
+    if (n === 1) dashDir(c, a.dx, a.dy, 75 + (c.f.lunging ? 40 : 0), 1100);
     let hit = 0; const spin = n === 2 && c.f.bladestorm;
     eachEnemy(s, c, c.x, c.y, reach, t => { const v = norm(t.x - c.x, t.y - c.y); if (!spin && v.x * a.dx + v.y * a.dy < .35) return; if (!hasLOS(c.x, c.y, t.x, t.y)) return;
       let d = A['dmg' + n] * pow(c); if (n === 2 && c.f.coupdegrace) d += (t.maxHp - t.hp) * .12; if (t.kind === 'champ') { hit = 1; c.pstack = Math.min(5, (c.pstack || 0) + 1); c.ptime = 3; }
@@ -648,9 +709,9 @@ const Sim = (() => {
     hurt(s, c, t, (36 + 31 * n * (c.f.cursebinder && n >= cap ? 1.3 : 1)) * pow(c) * mul, { skill: 1, crit: n >= cap ? 1 : 0 });
     s.ev.push({ e: 'boom', x: t.x, y: t.y, r: 70, fx: 'break' });
     if (t.alive && t.kind === 'champ' && n >= 3) stun(s, t, .5 + (n - 3) * .1);
-    if (c.f.hexburst) for (const o of enemiesIn(s, c, t.x, t.y, 200)) if (o !== t) curse(s, c, o, 1);
+    if (c.f.hexburst) for (const o of enemiesIn(s, c, t.x, t.y, 170)) if (o !== t) curse(s, c, o, 1);
   }
-  function spreadCurses(s, t) { const c = t.curseBy; if (!c || !c.alive) return; const n = t.curseN; for (const o of enemiesIn(s, c, t.x, t.y, 340, true)) if (o !== t) curse(s, c, o, Math.max(1, n - 1)); }
+  function spreadCurses(s, t) { const c = t.curseBy; if (!c || !c.alive) return; const n = t.curseN; for (const o of enemiesIn(s, c, t.x, t.y, 280, true)) if (o !== t) curse(s, c, o, Math.max(1, n - 1)); }
 
   // Items: stats add up across the three slots. cost is the price of this step from its upgradesFrom.
   const ITEMS = [
@@ -673,7 +734,23 @@ const Sim = (() => {
     { id: 'phase', name: 'Phase Treads', d: '+48 move speed and 8% shorter cooldowns. Speed burst after any ability.', cost: 750, tier: 3, tags: ['mobility', 'ability'], upgradesFrom: 'spurs', ms: 48, cdr: .08, u: 'phase' },
     { id: 'overclock', name: 'Overclock', d: '28% shorter cooldowns and +22% ability damage.', cost: 850, tier: 3, tags: ['ability'], upgradesFrom: 'capacitor', cdr: .28, ap: .22 },
     { id: 'sanctum', name: 'Sanctum', d: '+55% healing and shields, regeneration, and allies near you take 8% less damage.', cost: 800, tier: 3, tags: ['support'], upgradesFrom: 'medkit', healPow: .55, regen: .006, hp: 220, u: 'sanctum' },
+    // Legendary: the top tier. Unique effects stack onto the tier below.
+    { id: 'guillotine', name: 'Guillotine', d: '+44% damage. Targets under 35% health take 28% more.', cost: 1250, tier: 4, tags: ['attack'], upgradesFrom: 'headsman', dmg: .44, u: 'guillotine', legendary: true },
+    { id: 'gorefang', name: 'Sanguine Fang', d: '+32% damage and 24% lifesteal.', cost: 1250, tier: 4, tags: ['attack', 'sustain'], upgradesFrom: 'bloodfang', dmg: .32, lifesteal: .24, legendary: true },
+    { id: 'tempest', name: 'Tempest', d: '+26% damage and 60% attack speed. Every third attack arcs on; attacks mark targets.', cost: 1250, tier: 4, tags: ['attack'], upgradesFrom: 'stormlash', dmg: .26, as: .6, u: ['storm', 'tempest'], legendary: true },
+    { id: 'citadel', name: 'Citadel', d: '+800 health, 60 armour. A bigger shield below half health, every 20 seconds.', cost: 1250, tier: 4, tags: ['tank'], upgradesFrom: 'bastion', hp: 800, armor: 60, u: ['bastion', 'citadel'], legendary: true },
+    { id: 'thornwall', name: 'Thornwall', d: '+620 health, 72 armour. Melee attackers take 40% back.', cost: 1250, tier: 4, tags: ['tank'], upgradesFrom: 'spikeguard', hp: 620, armor: 72, u: ['thorns', 'thornwall'], legendary: true },
+    { id: 'ghoststep', name: 'Ghoststep', d: '+64 move speed, 12% shorter cooldowns, and a bigger burst after any ability.', cost: 1200, tier: 4, tags: ['mobility', 'ability'], upgradesFrom: 'phase', ms: 64, cdr: .12, u: 'phase', legendary: true },
+    { id: 'singularity', name: 'Singularity', d: '38% shorter cooldowns and +34% ability damage.', cost: 1250, tier: 4, tags: ['ability'], upgradesFrom: 'overclock', cdr: .38, ap: .34, legendary: true },
+    { id: 'sanctuary', name: 'Sanctuary', d: '+85% healing and shields, more regeneration, and allies near you take 15% less damage.', cost: 1200, tier: 4, tags: ['support'], upgradesFrom: 'sanctum', healPow: .85, regen: .009, hp: 360, u: ['sanctum', 'sanctuary'], legendary: true },
+    // Consumables: bought and used in one tap, no slot.
+    { id: 'potion', name: 'Health Potion', d: 'Restores 40% of max health over 8 seconds.', cost: 110, tier: 1, tags: ['consumable'], consumable: true },
+    { id: 'cleanse', name: 'Cleanse', d: 'Clears stuns, roots, slows, poison and curses at once. 25 second cooldown.', cost: 170, tier: 1, tags: ['consumable'], consumable: true },
+    { id: 'tonic', name: 'Speed Tonic', d: '+20% move speed for 8 seconds.', cost: 120, tier: 1, tags: ['consumable'], consumable: true },
+    { id: 'elixir', name: 'War Elixir', d: '+15% damage for 90 seconds.', cost: 280, tier: 1, tags: ['consumable'], consumable: true },
+    { id: 'beaconkit', name: 'Beacon Kit', d: 'One extra vision beacon, right now.', cost: 90, tier: 1, tags: ['consumable'], consumable: true },
   ];
+  const ITEM_SLOTS = 5, CONSUMABLES = ['potion', 'cleanse', 'tonic', 'elixir', 'beaconkit'];
   const ITEM_BY = {}; ITEMS.forEach((it, i) => { ITEM_BY[it.id] = it; it.i = i; });
   const itemPath = id => { const out = []; for (let it = ITEM_BY[id]; it; it = ITEM_BY[it.upgradesFrom]) out.unshift(it.id); return out; };
   // The full cost of a step: from an owned ancestor if there is one, otherwise the whole chain.
@@ -701,7 +778,15 @@ const Sim = (() => {
     cutthroat: ['headsman', 'phase', 'bloodfang'], nightblade: ['headsman', 'bloodfang', 'phase'], butcher: ['bloodfang', 'headsman', 'phase'], venomous: ['stormlash', 'bloodfang', 'phase'],
     brawler: ['bloodfang', 'bastion', 'phase'], wrecker: ['overclock', 'bastion', 'phase'], bouncer: ['bastion', 'phase', 'spikeguard'], fortress: ['bastion', 'spikeguard', 'sanctum'],
   };
-  function recommended(champ, build) { const k = KITS[champ]; if (!k) return []; const b = build || k.builds[0].id; return (REC[b] || REC[k.builds[0].id]).slice(); }
+  // Filler for the last two slots per kit class, after the build's three core items.
+  const REC_FILL = { back: ['bloodfang', 'bastion'], front: ['spikeguard', 'bastion'], flank: ['bloodfang', 'bastion'], peel: ['bastion', 'overclock'] };
+  const LEGEND = { headsman: 'guillotine', bloodfang: 'gorefang', stormlash: 'tempest', bastion: 'citadel', spikeguard: 'thornwall', phase: 'ghoststep', overclock: 'singularity', sanctum: 'sanctuary' };
+  // Five final items in buying order: the build's three cores, then two fillers from different chains.
+  function recommended(champ, build) {
+    const k = KITS[champ]; if (!k) return []; const b = build || k.builds[0].id, core = (REC[b] || REC[k.builds[0].id]).slice();
+    for (const f of [...REC_FILL[CLASS[champ] || 'front'], 'bastion', 'overclock', 'bloodfang', 'phase', 'sanctum', 'spikeguard', 'headsman']) if (core.length < 5 && !core.includes(f)) core.push(f);
+    return core;
+  }
   // Default build per kit and role, for bots and for a seat with none chosen.
   function defaultBuild(champ, role, roll) {
     const k = KITS[champ], ids = k.builds.map(x => x.id), avoid = BOT_BUILD_AVOID[champ] || {}, pool = ids.filter(b => !(avoid[b] || []).includes(role));
@@ -773,31 +858,32 @@ const Sim = (() => {
   function createMatch(cfg) {
     const s = {
       t: 0, tick: 0, nid: 1, rand: rng(cfg.seed || 7), map: buildMap(), champs: [], minions: [], towers: [], monsters: [], proj: [], zones: [], ev: [], over: null,
-      nextWave: 8, wave: 0, bossAt: 240, kills: [0, 0], buff: [0, 0], camps: [], gaps: {}, navLeft: 2, hope: 50, hopeTeam: -1, sites: [],
-      laneInfo: [[{}, {}], [{}, {}]], beacons: [], practice: !!cfg.practice, catchup: [0, 0], seed: cfg.seed || 7,
+      nextWave: 8, wave: 0, bossAt: BOSS_FIRST.colossus, kills: [0, 0], buff: [0, 0], camps: [], gaps: {}, navLeft: 2, hope: 50, hopeTeam: -1, sites: [],
+      laneInfo: [[{}, {}], [{}, {}]], beacons: [], practice: !!cfg.practice, catchup: [0, 0], seed: cfg.seed || 7, bosses: [], boons: [blankBoons(), blankBoons()], event: null, eventAt: EVENT_FIRST, eventI: 0, eventOrder: [], fog: [1, 1], fund: [0, 0], reinforceAt: [0, 0], reinforceQ: [[0, 0], [0, 0]], votes: [null, null], voteCd: [0, 0],
       ai: [0, 1].map(() => ({ defend: null, hoard: null, hoardGo: false, push: null, pushUntil: 0, thp: {}, sites: {}, help: {}, focus: 0 })),
     };
     s.fountains = s.map.fountains;
     const mir = (x, team) => team ? W - x : x;
     [0, 1].forEach(team => {
       const mk = (x, y, kind, lane, tier) => {
-        const hp = kind === 'core' ? 3000 : tier === 0 ? 1450 : 1850;
+        const hp = kind === 'core' ? CORE_HP : tier === 0 ? TOWER_HP[0] : TOWER_HP[1];
         s.towers.push({ id: s.nid++, kind: 'tower', sub: kind, team, x: mir(x, team), y, px: mir(x, team), py: y, r: kind === 'core' ? 54 : 36, hp, maxHp: hp, armor: 30, range: kind === 'core' ? CORE_RANGE : TOWER_RANGE, sight: 750, alive: true, cd: 0, lane, tier, stack: 0, last: null, vx: 0, vy: 0 });
       };
-      for (const lane of [0, 1]) { const f = y => lane ? H - y : y; mk(1480, f(402), 'tower', lane, 0); mk(800, f(640), 'tower', lane, 1); }
-      mk(340, H / 2, 'core', -1, 2);
+      for (const lane of [0, 1]) { const f = y => lane ? H - y : y; mk(S(1480), f(S(402)), 'tower', lane, 0); mk(S(800), f(S(640)), 'tower', lane, 1); }
+      mk(S(340), H / 2, 'core', -1, 2);
     });
     // Jungle: four quadrants, each with a small trio and one heavy
     for (const [mx, my] of [[0, 0], [1, 0], [0, 1], [1, 1]]) {
       const px = x => mx ? W - x : x, py = y => my ? H - y : y;
-      s.camps.push({ id: s.camps.length, x: px(1130), y: py(810), big: false, at: 30, alive: false, side: mx });
-      s.camps.push({ id: s.camps.length, x: px(1640), y: py(810), big: true, at: 45, alive: false, side: mx });
+      s.camps.push({ id: s.camps.length, x: px(S(1130)), y: py(S(810)), big: false, at: 30, alive: false, side: mx });
+      s.camps.push({ id: s.camps.length, x: px(S(1640)), y: py(S(810)), big: true, at: 45, alive: false, side: mx });
     }
     // Civilian sites: two per quadrant, nudged onto open ground if a position is walled.
-    for (const [mx, my] of [[0, 0], [1, 0], [0, 1], [1, 1]]) for (const [x, y] of [[1400, 810], [1880, 810]]) {
+    for (const [mx, my] of [[0, 0], [1, 0], [0, 1], [1, 1]]) for (const [x, y] of [[S(1400), S(810)], [S(1880), S(810)]]) {
       const f = nearestFree(s.map, mx ? W - x : x, my ? H - y : y);
       s.sites.push({ id: s.sites.length, x: f.x, y: f.y, alive: true, at: 0, prog: [0, 0], need: 2.5, con: {} });
     }
+    initBosses(s);
     rebuildNav(s);
     s.practiceSide = Math.max(0, cfg.teams.findIndex(l => l.some(p => p.human)));
     cfg.teams.forEach((list, team) => {
@@ -808,12 +894,12 @@ const Sim = (() => {
       const c = {
         id: s.nid++, kind: 'champ', team, slot: i, role, solo: false, atkPref: 0, champ, pname: p.name, tier: p.tier || 0, human: !!p.human, remote: !!p.remote, skill: p.skill, build, buildDef: k.builds.find(b => b.id === build),
         finish: p.finish, trail: p.trail, recall: p.recall,
-        x: mir(180, team), y: H / 2 + (i - 1.5) * 46, r: 26, sight: k.sight, lvl: 1, xp: 0, gold: 300, up: { edge: 0, guard: 0, haste: 0 },
-        hp: k.hp, maxHp: k.hp, armor: k.armor, dmgBase: k.dmg, range: k.range, msBase: k.ms, as: k.as, kit: k.kit, f: { [build]: 1 }, evolved: [-1, -1], items: [null, null, null], atkMode: 'champ', beacons: 2, beaconT: 0, st: blankStats(),
+        x: mir(S(180), team), y: H / 2 + (i - 1.5) * 46, r: 26, sight: k.sight, lvl: 1, xp: 0, gold: 300, up: { edge: 0, guard: 0, haste: 0 },
+        hp: k.hp, maxHp: k.hp, armor: k.armor, dmgBase: k.dmg, range: k.range, msBase: k.ms, as: k.as, kit: k.kit, f: { [build]: 1 }, evolved: [-1, -1], items: Array(ITEM_SLOTS).fill(null), atkMode: 'champ', beacons: 2, beaconT: 0, st: blankStats(),
         alive: true, respawn: 0, atkCd: 0, lock: 0, fx: team ? -1 : 1, fy: 0, cd: [0, 0, 0], recast: [0, 0, 0], q: [], mv: { x: 0, y: 0 }, atk: false,
-        stunT: 0, slowT: 0, slowA: 0, markT: 0, parryT: 0, drT: 0, air: 0, buffT: 0, empowerT: 0, revealT: 0, rootT: 0, polyT: 0, knockT: 0, knockMax: 0, stealthT: 0, noHealT: 0, hasteT: 0, hasteA: 0, shieldHp: 0, shieldT: 0, vulnT: 0, dmarkT: 0, opener: 0, ripT: 0, curseN: 0, curseT: 0, poisonT: 0, poisonDps: 0, bleedT: 0, bleedDps: 0, pstack: 0, pready: 0, rage: 0, streak: 0,
+        stunT: 0, slowT: 0, slowA: 0, markT: 0, parryT: 0, drT: 0, air: 0, buffT: 0, empowerT: 0, revealT: 0, rootT: 0, polyT: 0, knockT: 0, knockMax: 0, stealthT: 0, noHealT: 0, hasteT: 0, hasteA: 0, shieldHp: 0, shieldT: 0, vulnT: 0, dmarkT: 0, opener: 0, ripT: 0, curseN: 0, curseT: 0, poisonT: 0, poisonDps: 0, bleedT: 0, bleedDps: 0, pstack: 0, pready: 0, rage: 0, streak: 0, bounty: 0, potT: 0, elixT: 0, tonicT: 0, sentT: 0, dropT: 0, buybackCd: 0, fundCd: 0, cleanseCd: 0, dlog: [],
         vx: 0, vy: 0, assist: {}, charge: null, chan: null, dash: null, leap: null, cuts: null, duelZ: null, inBrush: -1, recentHit: 0,
-        stats: { casts: 0, skillHits: 0, parries: 0, kills: 0, deaths: 0, assists: 0, dmg: 0 },
+        stats: { casts: 0, skillHits: 0, parries: 0, kills: 0, deaths: 0, assists: 0, dmg: 0, dealt: 0, taken: 0, healing: 0, gold: 0, towers: 0, objectives: 0, rescues: 0 },
       };
       applyMods(c); applyStats(c, false); c.hp = c.maxHp;
       c.px = c.x; c.py = c.y;
@@ -842,7 +928,7 @@ const Sim = (() => {
   // Practice: dummies stand still along the middle road. side: -1 near the human's base, +1 further out.
   function placeDummy(s, c, side) { const off = 760 + c.slot * 90 + (side > 0 ? 500 : 0); c.hx = s.practiceSide ? W - off : off; c.hy = H / 2 + (c.slot - 1.5) * 150; c.x = c.px = c.hx; c.y = c.py = c.hy; }
   const blankStats = () => ({ dmg: 0, ad: 0, ap: 0, hp: 0, armor: 0, as: 0, ms: 0, cdr: 0, lifesteal: 0, healPow: 0, regen: 0, u: {} });
-  function itemStats(c) { const st = blankStats(); for (const id of c.items) { if (!id) continue; const it = ITEM_BY[id]; for (const k in st) if (k !== 'u' && it[k]) st[k] += it[k]; if (it.u) st.u[it.u] = 1; } st.cdr = Math.min(.45, st.cdr); return st; }
+  function itemStats(c) { const st = blankStats(); for (const id of c.items) { if (!id) continue; const it = ITEM_BY[id]; for (const k in st) if (k !== 'u' && it[k]) st[k] += it[k]; if (it.u) for (const u of [].concat(it.u)) st.u[u] = 1; } st.cdr = Math.min(.45, st.cdr); return st; }
   const cdOf = (c, i) => { const a = c.kit[i]; return a.noCdr ? a.cd : a.cd * (1 - c.st.cdr); };
 
   const towerOpen = (s, t) => {
@@ -857,10 +943,11 @@ const Sim = (() => {
     if (cache.tick !== s.tick) { cache.tick = s.tick; cache.list[0] = cache.list[1] = null; }
     if (cache.list[team]) return cache.list[team];
     const out = [];
-    for (const c of s.champs) if (c.team === team && c.alive) out.push({ x: c.x, y: c.y, r: c.sight || 800 });
-    for (const t of s.towers) if (t.team === team && t.alive) out.push({ x: t.x, y: t.y, r: t.sight || 750 });
-    for (const m of s.minions) if (m.team === team && m.alive && !(m.delay > 0)) out.push({ x: m.x, y: m.y, r: m.sight || 500 });
-    for (const b of s.beacons) if (b.team === team && b.alive) out.push({ x: b.x, y: b.y, r: b.sight });
+    const k = s.fog ? s.fog[team] : 1;
+    for (const c of s.champs) if (c.team === team && c.alive) out.push({ x: c.x, y: c.y, r: (c.sight || 800) * k });
+    for (const t of s.towers) if (t.team === team && t.alive) out.push({ x: t.x, y: t.y, r: (t.sight || 750) * k });
+    for (const m of s.minions) if (m.team === team && m.alive && !(m.delay > 0)) out.push({ x: m.x, y: m.y, r: (m.sight || 500) * k });
+    for (const b of s.beacons) if (b.team === team && b.alive) out.push({ x: b.x, y: b.y, r: b.sight * k });
     return cache.list[team] = out;
   }
   function canSee(s, team, u) {
@@ -871,7 +958,7 @@ const Sim = (() => {
     return false;
   }
 
-  function heal(s, src, t, amt) { if (t.noHealT > 0) return; amt *= (1 + .15 * roleK(src, 'support')) * (1 + (src.st ? src.st.healPow : 0)); const a = Math.min(amt, t.maxHp - t.hp); t.hp += a; if (a > 1) s.ev.push({ e: 'heal', u: t.id, a: Math.round(amt) }); }
+  function heal(s, src, t, amt) { if (t.noHealT > 0) return; amt *= (1 + .15 * roleK(src, 'support')) * (1 + (src.st ? src.st.healPow : 0)); const a = Math.min(amt, t.maxHp - t.hp); t.hp += a; if (src.stats) src.stats.healing += a; if (a > 1) s.ev.push({ e: 'heal', u: t.id, a: Math.round(amt) }); }
 
   function hurt(s, src, t, amt, o = {}) {
     if (!t.alive || t.air) return 0;
@@ -887,32 +974,37 @@ const Sim = (() => {
     const champSrc = src && src.kind === 'champ';
     if (champSrc) {
       if (src.opener > 0 && t.kind === 'champ' && !o.dot) { a *= 1.6; o.crit = 1; src.opener = 0; }
-      if (src.st.u.headsman && t.hp < t.maxHp * .35) a *= 1.15;
+      if (t.hp < t.maxHp * .35) { if (src.st.u.guillotine) a *= 1.28; else if (src.st.u.headsman) a *= 1.15; }
       if (t.dmarkT > 0 && t.markedBy === src.id) a *= 1.15;
       if (src.duelZ && src.duelZ.b === t) a *= src.duelZ.boost;
       if (t.vulnT > 0) a *= 1.25;
       if (src.team === s.hopeTeam) a *= 1.08;
+      if (s.boons[src.team].warlord > 0) a *= o.basic ? 1.22 : 1.08;
     }
     if (t.drT > 0) a *= .7;
+    if (t.shellT > 0) a *= .55;
     for (const z of s.zones) if (z.kind === 'dome' && z.team === t.team && Math.hypot(z.x - t.x, z.y - t.y) < z.r) { a *= 1 - .25 * (1 + .15 * roleK(z.owner, 'support')); break; }
-    if (t.kind === 'champ') for (const al of s.champs) if (al.team === t.team && al.alive && al.st.u.sanctum && al !== t && dist(al, t) < 350) { a *= .92; break; }
+    if (t.kind === 'champ') for (const al of s.champs) if (al.team === t.team && al.alive && al.st.u.sanctum && al !== t && dist(al, t) < 350) { a *= al.st.u.sanctuary ? .85 : .92; break; }
     // Structures weaken late so a match always reaches an ending.
     if (t.kind === 'tower') a *= structureK(s);
+    if (t.kind === 'tower' && src && src.kind === 'minion') a *= src.towerK || 1;
     if (s.practice && t.kind === 'tower') { s.ev.push({ e: 'hit', u: t.id, a: Math.round(a), sk: o.skill ? 1 : 0, crit: 0, by: src ? src.id : 0 }); return a; }
     if (t.kind === 'monster' && champSrc) { t.hitAt = s.t; if (!t.tgt) t.tgt = src; a *= 1 + .35 * roleK(src, 'jungle'); }
     if (t.shieldHp > 0) { const ab = Math.min(t.shieldHp, a); t.shieldHp -= ab; a -= ab; }
     t.hp -= a;
+    if (t.kind === 'champ' && a > 0) { t.stats.taken += a; logDamage(s, src, t, a, o); }
     if (t.chan && t.chan.recall) t.chan = null;
     if (t.kind === 'champ') {
       for (const z of s.sites) if (z.con[t.id]) z.con[t.id] = 0;
       if (t.stealthT > 0) t.revealT = Math.max(t.revealT, .4);
       const K = KITS[t.champ]; if (K.onDamaged) K.onDamaged(s, t, a);
-      if (t.st.u.bastion && t.hp < t.maxHp * .5 && t.hp > 0 && !(t.bastAt > s.t)) { t.bastAt = s.t + 30; shield(s, t, t.maxHp * .22, 4); }
-      if (o.basic && src && src.kind === 'champ' && KITS[src.champ].melee && t.st.u.thorns) hurt(s, t, src, a * .25 * (100 + src.armor) / 100, { dot: 1 });
+      if (t.st.u.bastion && t.hp < t.maxHp * .5 && t.hp > 0 && !(t.bastAt > s.t)) { t.bastAt = s.t + (t.st.u.citadel ? 20 : 30); shield(s, t, t.maxHp * (t.st.u.citadel ? .34 : .22), 4); }
+      if (o.basic && src && src.kind === 'champ' && t.st.u.thorns && KITS[src.champ].melee) hurt(s, t, src, a * (t.st.u.thornwall ? .4 : .25) * (100 + src.armor) / 100, { dot: 1 });
     }
     if (champSrc) {
-      src.stats.dmg += a;
+      src.stats.dmg += a; if (t.kind === 'champ') src.stats.dealt += a;
       if (!o.dot) { src.revealT = 1.2; if (t.kind === 'champ') { t.assist[src.id] = s.t; src.recentHit = s.t; } }
+      if (o.basic && t.alive && t.kind === 'champ' && src.st.u.tempest) t.markT = Math.max(t.markT || 0, 1.5);
       if (src.st.lifesteal && !o.dot && (t.kind === 'champ' || t.kind === 'monster' || t.kind === 'minion')) heal(s, src, src, a * src.st.lifesteal * (t.kind === 'champ' ? 1 : .4));
       if (o.basic && src.st.u.bleed && t.kind === 'champ' && t.alive) bleed(s, src, t, 10 * pow(src), 2);
       if (t.kind === 'champ' && t.curseN > 0 && t.curseT > 0 && !o.dot && t.curseBy && t.curseBy.team === src.team && t.curseBy.f.jinx) heal(s, t.curseBy, src, a * .08);
@@ -920,6 +1012,26 @@ const Sim = (() => {
     s.ev.push({ e: 'hit', u: t.id, a: Math.round(a), sk: o.skill ? 1 : 0, crit: o.crit ? 1 : 0, by: src ? src.id : 0 });
     if (t.hp <= 0) kill(s, src, t);
     return a;
+  }
+
+  // Death recap: a rolling 15 second record of what hurt a champion, by source and ability.
+  function logDamage(s, src, t, a, o) {
+    const L = t.dlog; let name = 'Unknown', kind = 'other', kit, abil;
+    if (src && src.kind === 'champ') { kind = 'champion'; kit = src.champ; name = charOf(src.team, src.champ).name; abil = o.basic ? 'Basic attack' : (curAbil || (o.dot ? 'Poison and bleed' : 'Ability')); }
+    else if (src && src.kind === 'tower') { kind = 'tower'; name = src.sub === 'core' ? 'Core' : 'Tower'; }
+    else if (src && src.kind === 'minion') { kind = 'minion'; name = src.heavy ? 'Heavy minion' : src.type === 'ranged' ? 'Ranged minion' : 'Minion'; }
+    else if (src && src.kind === 'monster') { kind = 'monster'; name = src.bossKind ? BOSS_INFO[src.bossKind].name : (src.big ? 'Jungle brute' : 'Jungle pack'); }
+    else if (!src) { name = 'Enemy fountain'; }
+    L.push({ t: s.t, name, kind, kit, abil, dmg: a });
+    if (L.length > 90 || (L.length > 20 && L[0].t < s.t - 15)) { while (L.length && L[0].t < s.t - 15) L.shift(); }
+  }
+  function sendRecap(s, c) {
+    const map = {}; let total = 0;
+    for (const e of c.dlog) { if (e.t < s.t - 15) continue; const k = e.name + '|' + (e.abil || '') + '|' + e.kind; if (!map[k]) map[k] = { name: e.name, kind: e.kind, kit: e.kit, abil: e.abil, dmg: 0 }; map[k].dmg += e.dmg; total += e.dmg; }
+    const list = Object.values(map).sort((a, b) => b.dmg - a.dmg).slice(0, 8);
+    for (const e of list) { e.dmg = Math.round(e.dmg); if (e.kit === undefined) delete e.kit; if (e.abil === undefined) delete e.abil; }
+    c.dlog.length = 0;
+    s.ev.push({ e: 'recap', u: c.id, list, total: Math.round(total) });
   }
 
   function giveXp(s, c, xp) {
@@ -930,16 +1042,18 @@ const Sim = (() => {
   function applyStats(c, keepFrac) {
     const k = KITS[c.champ], f = c.hp / c.maxHp, st = itemStats(c), b = (c.buildDef && c.buildDef.stats) || {};
     c.st = st;
-    c.maxHp = (k.hp + k.hpG * (c.lvl - 1) + st.hp) * (b.hp || 1) * (c.solo ? 1 + .08 * roleK(c, 'top') : 1);
+    c.maxHp = (k.hp + k.hpG * (c.lvl - 1) + st.hp) * (b.hp || 1) * (c.solo ? 1 + .08 * roleK(c, 'top') : 1) * (c.sentT > 0 ? 1.1 : 1);
     c.armor = k.armor + k.armG * (c.lvl - 1) + st.armor + (b.armor || 0);
-    c.dmgBase = (k.dmg + k.dmgG * (c.lvl - 1)) * (1 + st.dmg + st.ad) * (b.dmg || 1);
+    c.dmgBase = (k.dmg + k.dmgG * (c.lvl - 1)) * (1 + st.dmg + st.ad) * (b.dmg || 1) * (c.elixT > 0 ? 1.15 : 1);
     c.msBase = k.ms + st.ms + (b.ms || 0);
     c.as = k.as * (1 + st.as) * (b.as || 1);
     c.range = Math.min(k.range + (b.range || 0), MAX_ATTACK_RANGE);
     if (keepFrac) c.hp = Math.max(1, c.maxHp * f);
   }
   // Catch-up pay for the side that has fallen behind.
-  const earn = (s, c, g) => { c.gold += g * (1 + .22 * (s.catchup ? s.catchup[c.team] : 0)); };
+  const earn = (s, c, g) => { g *= (1 + .22 * (s.catchup ? s.catchup[c.team] : 0)) * (s.boons[c.team].heist > 0 ? 1.25 : 1); c.gold += g; c.stats.gold += g; };
+  // Paying a champion without catch-up multipliers: objectives, bounties and refunds already carry their own numbers.
+  const pay = (s, c, g) => { c.gold += g; c.stats.gold += g; };
   const teamNear = (s, team, x, y, r) => s.champs.filter(c => c.team === team && c.alive && Math.hypot(c.x - x, c.y - y) < r);
 
   function kill(s, src, t) {
@@ -952,27 +1066,26 @@ const Sim = (() => {
     if (t.kind === 'champ' && src && src.kind === 'champ') for (const c of s.champs) if (c.team === src.team && c.f.reaper && (c === src || (t.assist[c.id] !== undefined && s.t - t.assist[c.id] < 9))) c.cd[2] = Math.min(c.cd[2], 1);
     const et = 1 - t.team;
     if (t.kind === 'champ') {
+      sendRecap(s, t);
       t.deaths = (t.deaths || 0) + 1; t.stats.deaths++; if (t.bot) t.bot.deaths.push(s.t); t.respawn = 5 + t.lvl * 1.6 + s.t / 120 + Math.max(0, s.t - 780) / 22; t.chan = t.dash = t.charge = t.leap = null; t.air = 0; t.stealthT = 0; t.duelZ = null; t.shieldHp = 0;
-      const streak = t.streak || 0, bounty = streak >= 2 ? Math.min(330, 70 * (streak - 1)) : 0; t.streak = 0;
+      const bounty = t.bounty || 0; t.streak = 0; t.bounty = 0;
       if (s.practice) t.respawn = .6;
       s.kills[et]++;
       let multi = 1;
       if (src && src.kind === 'champ') { multi = s.t - (src.lastKill || -99) < 10 ? (src.multi || 1) + 1 : 1; src.multi = multi; src.lastKill = s.t; }
       const first = !s.firstBlood; s.firstBlood = true;
-      if (src && src.kind === 'champ') { src.streak = (src.streak || 0) + 1; earn(s, src, 260 + bounty); src.stats.kills++; giveXp(s, src, 120 + 16 * t.lvl); s.ev.push({ e: 'gold', u: src.id, a: 260 + bounty }); }
-      for (const id in t.assist) if (s.t - t.assist[id] < 9 && (!src || +id !== src.id)) { const a = s.champs.find(c => c.id === +id); if (a) { earn(s, a, 130); a.stats.assists++; giveXp(s, a, 70); } }
-      supportShare(s, src, t.x, t.y, 130, 70);
+      if (src && src.kind === 'champ') { src.streak = (src.streak || 0) + 1; src.bounty = bountyFor(src.streak); earn(s, src, KILL_GOLD + bounty); src.stats.kills++; giveXp(s, src, 120 + 16 * t.lvl); s.ev.push({ e: 'gold', u: src.id, a: KILL_GOLD + bounty }); }
+      for (const id in t.assist) if (s.t - t.assist[id] < 9 && (!src || +id !== src.id)) { const a = s.champs.find(c => c.id === +id); if (a) { earn(s, a, ASSIST_GOLD); a.stats.assists++; giveXp(s, a, 70); } }
+      supportShare(s, src, t.x, t.y, ASSIST_GOLD, 70);
       t.assist = {};
       s.ev.push({ e: 'feed', a: src ? src.id : 0, b: t.id, multi, first, bounty });
     } else if (t.kind === 'minion') {
       const near = teamNear(s, et, t.x, t.y, 850);
       near.forEach(c => { giveXp(s, c, 42 / Math.max(1, near.length * .7)); if (c !== src) earn(s, c, 7); });
-      if (src && src.kind === 'champ') { const g = Math.round(22 * (1 + .25 * roleK(src, 'bottom'))); earn(s, src, g); s.ev.push({ e: 'gold', u: src.id, a: g }); supportShare(s, src, t.x, t.y, 22, 28); }
+      if (src && src.kind === 'champ') { const g = Math.round((t.heavy ? 48 : t.type === 'ranged' ? 18 : 22) * (1 + .25 * roleK(src, 'bottom'))); earn(s, src, g); s.ev.push({ e: 'gold', u: src.id, a: g }); supportShare(s, src, t.x, t.y, 22, 28); }
     } else if (t.kind === 'monster') {
       if (t.boss) {
-        s.buff[src ? src.team : 0] = 1; const team = src ? src.team : 0;
-        s.champs.filter(c => c.team === team).forEach(c => { c.buffT = 90; c.gold += 120; giveXp(s, c, 160); });
-        s.bossAt = s.t + 210; s.ev.push({ e: 'boss', team });
+        bossDown(s, t, src);
       } else {
         const near = teamNear(s, src ? src.team : 0, t.x, t.y, 700);
         near.forEach(c => { giveXp(s, c, (t.big ? 130 : 44)); earn(s, c, (t.big ? 95 : 32) * (1 + .3 * roleK(c, 'jungle'))); });
@@ -980,7 +1093,7 @@ const Sim = (() => {
         const camp = s.camps[t.camp]; camp.left--; if (camp.left <= 0) { camp.alive = false; camp.at = s.t + 70; }
       }
     } else if (t.kind === 'tower') {
-      s.champs.filter(c => c.team === et).forEach(c => { c.gold += 140; giveXp(s, c, 70); });
+      s.champs.filter(c => c.team === et).forEach(c => { pay(s, c, 140); giveXp(s, c, 70); if (c.alive && dist(c, t) < 900) c.stats.towers++; });
       rebuildNav(s);
       s.ev.push({ e: 'tower', team: t.team, sub: t.sub });
       if (t.sub === 'core') s.over = { winner: et, t: s.t };
@@ -990,14 +1103,25 @@ const Sim = (() => {
   function spawnWave(s) {
     s.wave++;
     const scale = 1 + s.wave * .035 + Math.max(0, s.t - 780) / 140;
-    for (const team of [0, 1]) for (const lane of [0, 1]) for (let i = 0; i < 4; i++) {
-      const path = team ? [...s.map.lanes[lane]].reverse() : s.map.lanes[lane];
-      const ranged = i === 3, x = path[0][0] + (s.rand() - .5) * 30, y = path[0][1] + (s.rand() - .5) * 30 + i * 8;
-      const hp = (ranged ? 270 : 400) * scale;
-      s.minions.push({ id: s.nid++, kind: 'minion', team, lane, x, y, px: x, py: y, r: ranged ? 14 : 17, sight: 500, hp, maxHp: hp, armor: 10, dmg: (ranged ? 28 : 22) * scale, range: ranged ? 300 : 95, ranged, ms: 215, as: .9, alive: true, cd: 0, wp: 1, path, stunT: 0, slowT: 0, slowA: 0, markT: 0, vx: 0, vy: 0, delay: i * .45, fx: team ? -1 : 1, fy: 0 });
+    for (const team of [0, 1]) for (const lane of [0, 1]) {
+      const path = team ? [...s.map.lanes[lane]].reverse() : s.map.lanes[lane], reinf = s.reinforceQ[team][lane] > 0; if (reinf) s.reinforceQ[team][lane]--;
+      const boonK = (s.boons[team].foreman > 0 ? 1.4 : 1) * (reinf ? 1.35 : 1), n = 4 + (s.wave % 3 === 0 ? 1 : 0) + (reinf ? 2 : 0);
+      for (let i = 0; i < n; i++) {
+        // Two melee, two ranged, a heavy every third wave; reinforcements add heavies at the back.
+        const type = i < 2 ? 'melee' : i < 4 ? 'ranged' : 'heavy', T = MINION_TYPES[type], x = path[0][0] + (s.rand() - .5) * 30, y = path[0][1] + (s.rand() - .5) * 30 + i * 8;
+        const hp = T.hp * scale * boonK;
+        s.minions.push({ id: s.nid++, kind: 'minion', type, heavy: type === 'heavy', team, lane, x, y, px: x, py: y, r: T.r, sight: 500, hp, maxHp: hp, armor: T.armor, dmg: T.dmg * scale * boonK, towerK: T.towerK, range: T.range, ranged: type === 'ranged', ms: T.ms, as: T.as, alive: true, cd: 0, wp: 1, path, stunT: 0, slowT: 0, slowA: 0, markT: 0, vx: 0, vy: 0, delay: i * .45, fx: team ? -1 : 1, fy: 0 });
+      }
     }
   }
-  const CAMP_LEASH = 280, BOSS_LEASH = 350;
+  const CAMP_LEASH = 280, BOSS_LEASH = 450;
+  const KILL_GOLD = 320, ASSIST_GOLD = 170, bountyFor = streak => streak >= 2 ? Math.min(800, 150 * (streak - 1)) : 0;
+  const TOWER_HP = [1800, 2300], CORE_HP = 3800;
+  const MINION_TYPES = {
+    melee: { hp: 400, dmg: 22, range: 88, ms: 215, as: .9, armor: 10, r: 17, towerK: 1.1 },
+    ranged: { hp: 270, dmg: 28, range: 250, ms: 215, as: .9, armor: 10, r: 14, towerK: 1.1 },
+    heavy: { hp: 1050, dmg: 40, range: 110, ms: 165, as: .7, armor: 45, r: 25, towerK: 3.4 },
+  };
   function spawnCamp(s, camp) {
     camp.alive = true; const n = camp.big ? 1 : 3; camp.left = n;
     for (let i = 0; i < n; i++) {
@@ -1006,14 +1130,179 @@ const Sim = (() => {
       s.monsters.push({ id: s.nid++, kind: 'monster', team: 2, camp: camp.id, big: camp.big, x, y, px: x, py: y, hx: x, hy: y, r: camp.big ? 32 : 19, leash: CAMP_LEASH, hp, maxHp: hp, armor: 18, dmg: (camp.big ? 44 : 20) * (1 + s.t / 900), range: 110, ms: 260, as: .9, alive: true, cd: 0, tgt: null, stunT: 0, slowT: 0, slowA: 0, markT: 0, vx: 0, vy: 0, fx: 1, fy: 0 });
     }
   }
-  function spawnBoss(s) {
-    const hp = 7000 * (1 + s.t / 1200), x = W / 2, y = H / 2;
-    s.monsters.push({ id: s.nid++, kind: 'monster', team: 2, boss: true, x, y, px: x, py: y, hx: x, hy: y, r: 58, leash: BOSS_LEASH, hp, maxHp: hp, armor: 45, dmg: 150, range: 170, ms: 170, as: .7, alive: true, cd: 0, slam: 3, tgt: null, stunT: 0, slowT: 0, slowA: 0, markT: 0, vx: 0, vy: 0, fx: 1, fy: 0 });
-    s.bossUp = true; s.ev.push({ e: 'bossup' });
+  // ---------- bosses ----------
+  const BOSS_FIRST = { warlord: 300, foreman: 390, sentinel: 480, colossus: 780 };
+  const BOSS_RESPAWN = { warlord: 240, foreman: 260, sentinel: 280, colossus: 330 };
+  const BOSS_STATS = {
+    warlord: { name: 'The Warlord', hp: 3900, armor: 40, dmg: 120, range: 150, ms: 190, as: .85, r: 46, fxSlam: 'crash', slamEvery: 3.4, slamR: 130, slamDmg: 170, slamDelay: .8 },
+    foreman: { name: 'The Foreman', hp: 4400, armor: 45, dmg: 96, range: 175, ms: 170, as: .7, r: 50, fxSlam: 'stomp', slamEvery: 4.5, slamR: 250, slamDmg: 120, slamDelay: 1.1 },
+    sentinel: { name: 'The Sentinel', hp: 4800, armor: 55, dmg: 90, range: 170, ms: 160, as: .75, r: 50, fxSlam: 'dome', slamEvery: 6, slamR: 210, slamDmg: 100, slamDelay: .9 },
+    colossus: { name: 'The Colossus', hp: 8200, armor: 50, dmg: 150, range: 180, ms: 170, as: .7, r: 58, fxSlam: 'crash', slamEvery: 4, slamR: 170, slamDmg: 200, slamDelay: 1 },
+  };
+  const BOSS_INFO = {
+    warlord: { name: 'The Warlord', d: 'Team-wide bonus attack damage for 2 minutes.', boon: 'warlord' },
+    foreman: { name: 'The Foreman', d: 'Your minions spawn stronger for 2 minutes.', boon: 'foreman' },
+    sentinel: { name: 'The Sentinel', d: 'Team-wide shield and bonus max health for 2 minutes.', boon: 'sentinel' },
+    colossus: { name: 'The Colossus', d: 'Late-game titan. Team-wide damage for 2 minutes and a huge bounty.', boon: 'colossus' },
+  };
+  const BOON_T = 120, blankBoons = () => ({ warlord: 0, foreman: 0, sentinel: 0, colossus: 0, heist: 0, convoy: 0, blackout: 0, drop: 0 });
+  const BOON_INFO = {
+    warlord: { name: 'Warlord', d: '+22% basic attack, +8% ability damage.' }, foreman: { name: 'Foreman', d: 'Minions spawn with 40% more health and damage.' }, sentinel: { name: 'Sentinel', d: 'Shield every 20s and 10% more max health.' },
+    colossus: { name: 'Colossus', d: '+20% damage, +5% move speed.' }, heist: { name: 'Bank Heist', d: '+25% gold income.' }, convoy: { name: 'Rescue Convoy', d: '+10% move speed.' },
+    blackout: { name: 'Lights On', d: 'See farther while the enemy stumbles in the dark.' }, drop: { name: 'Supply Drop', d: '+10% damage.' },
+  };
+  function initBosses(s) {
+    s.bosses = ['warlord', 'foreman', 'sentinel', 'colossus'].map(kind => { const a = s.map.arenas.find(x => x.kind === kind); return { kind, name: BOSS_STATS[kind].name, x: a.x, y: a.y, r: a.r, at: BOSS_FIRST[kind], up: false, id: 0 }; });
+  }
+  function spawnBoss(s, B) {
+    const S2 = BOSS_STATS[B.kind], k = 1 + s.t / 1200;
+    if (B.kind === 'sentinel') {
+      // The Sentinel rises on the trailing side's half, on an even game it alternates.
+      const list = s.map.arenas.filter(x => x.kind === 'sentinel'); let side = (B.flip = (B.flip || 0) + 1) % 2;
+      if (s.catchup[0] > .1) side = 0; else if (s.catchup[1] > .1) side = 1;
+      const a = list.find(x => x.side === side) || list[0]; B.x = a.x; B.y = a.y;
+    }
+    const hp = S2.hp * k, x = B.x, y = B.y;
+    const m = { id: s.nid++, kind: 'monster', team: 2, boss: true, bossKind: B.kind, x, y, px: x, py: y, hx: x, hy: y, r: S2.r, leash: Math.max(BOSS_LEASH, B.r), hp, maxHp: hp, armor: S2.armor, dmg: S2.dmg, range: S2.range, ms: S2.ms, as: S2.as, alive: true, cd: 0, slam: S2.slamEvery * .7, tgt: null, stunT: 0, slowT: 0, slowA: 0, markT: 0, vx: 0, vy: 0, fx: 1, fy: 0 };
+    s.monsters.push(m); B.up = true; B.id = m.id; B.at = 0;
+    if (B.kind === 'colossus') s.bossUp = true;
+    s.ev.push({ e: 'bossup', kind: B.kind });
+  }
+  function grantBoon(s, team, kind, secs) { const had = s.boons[team][kind] > 0; s.boons[team][kind] = secs; if (!had) s.ev.push({ e: 'boon', team, kind, on: true }); }
+  function bossDown(s, m, src) {
+    const team = src && src.team !== 2 ? src.team : 0, B = s.bosses.find(b => b.kind === m.bossKind);
+    if (B) { B.up = false; B.id = 0; B.at = s.t + BOSS_RESPAWN[B.kind]; }
+    for (const c of s.champs) if (c.team === team) { pay(s, c, m.bossKind === 'colossus' ? 200 : 130); giveXp(s, c, m.bossKind === 'colossus' ? 200 : 140); if (Math.hypot(c.x - m.x, c.y - m.y) < 1000) c.stats.objectives++; }
+    grantBoon(s, team, m.bossKind, BOON_T);
+    if (m.bossKind === 'colossus') { s.buff[team] = 1; s.bossAt = s.t + BOSS_RESPAWN.colossus; s.bossUp = false; for (const c of s.champs) if (c.team === team) c.buffT = BOON_T; }
+    if (m.bossKind === 'sentinel') for (const c of s.champs) if (c.team === team) { c.sentT = BOON_T; applyStats(c, true); if (c.alive) shield(s, c, c.maxHp * .12, 10); }
+    s.ev.push({ e: 'boss', team, kind: m.bossKind });
+  }
+  // Timers: boons run down, Sentinel keeps refreshing its shield, a boon ending is announced.
+  function stepBoons(s) {
+    for (const team of [0, 1]) { const B = s.boons[team]; for (const k in B) if (B[k] > 0) { B[k] -= DT; if (B[k] <= 0) { B[k] = 0; s.ev.push({ e: 'boon', team, kind: k, on: false }); } } }
+    if (s.tick % 600 === 0) for (const c of s.champs) if (c.alive && c.sentT > 0) shield(s, c, c.maxHp * .08, 8);
   }
 
+  // ---------- map events ----------
+  const EVENT_FIRST = 180, EVENT_EVERY = 120, EVENT_WARN = 10;
+  const EVENT_INFO = {
+    heist: { name: 'Bank Heist', d: 'Villains rob the vault while Heroes guard it. Hold it uncontested to fill your bar first.', boon: 'heist', live: 42, need: 1, gold: 130, hope: 6 },
+    convoy: { name: 'Rescue Convoy', d: 'Heroes walk the civilians along the river road. Villains stop them.', boon: 'convoy', live: 65, gold: 150, hope: 8 },
+    blackout: { name: 'Blackout', d: 'The lights fail. Whoever restarts the generator keeps their sight.', boon: 'blackout', live: 45, need: 1, gold: 100, hope: 4 },
+    drop: { name: 'Supply Drop', d: 'A crate is falling. It pays whoever claims it.', boon: 'drop', live: 50, need: 1, gold: 180, hope: 3 },
+  };
+  function shuffled(s, list) { const a = list.slice(); for (let i = a.length - 1; i > 0; i--) { const j = s.rand() * (i + 1) | 0; const t = a[i]; a[i] = a[j]; a[j] = t; } return a; }
+  function nextEventKind(s) {
+    if (!s.eventOrder.length) { s.eventOrder = shuffled(s, ['heist', 'convoy', 'blackout', 'drop']); }
+    return s.eventOrder.shift();
+  }
+  function startEvent(s) {
+    const kind = nextEventKind(s), I = EVENT_INFO[kind], spots = s.map.eventSpots;
+    s.eventI++;
+    const P = kind === 'convoy' ? { x: s.map.convoyPath[0][0], y: s.map.convoyPath[0][1] } : spots[(s.eventI * 2 + (s.rand() * 2 | 0)) % spots.length];
+    s.event = { kind, phase: 'warn', t: EVENT_WARN, total: EVENT_WARN, x: P.x, y: P.y, r: kind === 'convoy' ? 210 : kind === 'heist' ? 190 : 170, prog: [0, 0], hp: kind === 'convoy' ? 100 : 0, i: 1, winner: -1 };
+    s.ev.push({ e: 'mapevent', kind, phase: 'warn', team: -1, x: P.x, y: P.y });
+  }
+  function eventWon(s, team) {
+    const E = s.event, I = EVENT_INFO[E.kind]; E.winner = team;
+    s.ev.push({ e: 'mapevent', kind: E.kind, phase: 'end', team, x: E.x, y: E.y });
+    if (team >= 0) {
+      for (const c of s.champs) if (c.team === team) { pay(s, c, I.gold); giveXp(s, c, 110); if (c.alive && Math.hypot(c.x - E.x, c.y - E.y) < E.r + 500) c.stats.objectives++; }
+      grantBoon(s, team, I.boon, BOON_T);
+      setHope(s, s.hope + (team ? -I.hope : I.hope));
+      if (E.kind === 'drop') for (const c of s.champs) if (c.team === team) c.dropT = BOON_T;
+      if (E.kind === 'blackout') for (const c of s.champs) if (c.team !== team && c.alive && Math.hypot(c.x - E.x, c.y - E.y) < 1400) c.revealT = Math.max(c.revealT || 0, 3);
+    }
+    s.event = null;
+  }
+  function stepEvent(s) {
+    const E = s.event;
+    if (!E) { if (s.t >= s.eventAt) { s.eventAt += EVENT_EVERY; startEvent(s); } return; }
+    E.t -= DT;
+    if (E.phase === 'warn') {
+      if (E.t <= 0) { E.phase = 'live'; E.t = E.total = EVENT_INFO[E.kind].live; s.ev.push({ e: 'mapevent', kind: E.kind, phase: 'start', team: -1, x: E.x, y: E.y }); }
+      return;
+    }
+    let n0 = 0, n1 = 0;
+    for (const c of s.champs) if (c.alive && !c.air && Math.hypot(c.x - E.x, c.y - E.y) < E.r) { if (c.team) n1++; else n0++; }
+    const rate = (n, base) => n ? (base * (1 + (n - 1) * .35)) * DT : 0;
+    if (E.kind === 'heist') {
+      // A race with equal terms: villains fill the vault bar by robbing, heroes fill theirs by guarding uncontested.
+      if (n1 && !n0) E.prog[1] += rate(n1, 1 / 14); else if (n0 && !n1) E.prog[0] += rate(n0, 1 / 14);
+      if (E.prog[1] >= 1) return eventWon(s, 1);
+      if (E.prog[0] >= 1) return eventWon(s, 0);
+      if (E.t <= 0) return eventWon(s, E.prog[0] > E.prog[1] ? 0 : E.prog[1] > E.prog[0] ? 1 : -1);
+    } else if (E.kind === 'convoy') {
+      const path = s.map.convoyPath, wp = path[E.i], n = norm(wp[0] - E.x, wp[1] - E.y), sp = (n0 && !n1 ? 58 : !n1 ? 28 : n1 && !n0 ? 0 : 20) * DT;
+      if (n.l <= sp) { E.i++; if (E.i >= path.length) return eventWon(s, 0); } else { E.x += n.x * sp; E.y += n.y * sp; }
+      if (n1 && !n0) E.hp = Math.max(0, E.hp - (100 / 16) * (1 + (n1 - 1) * .35) * DT);
+      if (E.hp <= 0) return eventWon(s, 1);
+      if (E.t <= 0) return eventWon(s, 1);
+    } else {
+      const base = E.kind === 'drop' ? 1 / 5 : 1 / 7;
+      if (n0 && !n1) E.prog[0] += rate(n0, base); else if (n1 && !n0) E.prog[1] += rate(n1, base);
+      if (!n0 && E.prog[0] > 0) E.prog[0] = Math.max(0, E.prog[0] - DT * .2);
+      if (!n1 && E.prog[1] > 0) E.prog[1] = Math.max(0, E.prog[1] - DT * .2);
+      if (E.prog[0] >= 1) return eventWon(s, 0);
+      if (E.prog[1] >= 1) return eventWon(s, 1);
+      if (E.t <= 0) return eventWon(s, -1);
+    }
+  }
+  function stepFog(s) {
+    const E = s.event, dark = E && E.kind === 'blackout' && E.phase === 'live';
+    for (const t of [0, 1]) s.fog[t] = (dark ? .5 : 1) * (s.boons[t].blackout > 0 ? 1.15 : 1);
+    if (dark) s.vis && (s.vis.tick = -1);
+  }
+
+  // ---------- economy: buyback, reinforcements, fund the city, surrender ----------
+  const buybackCost = (s, c) => Math.round(160 + s.t * .55 + (c.stats.kills || 0) * 22);
+  const reinforceCost = (s, c) => Math.round(280 + s.t * .22);
+  const fundCost = (s, team) => 220 + 80 * s.fund[team];
+  const FUND_HOPE = 4, REINFORCE_CD = 45, BUYBACK_CD = 150, VOTE_T = 30, VOTE_CD = 90, SURRENDER_AT = 600;
+  function buyback(s, c) {
+    if (c.alive || c.buybackCd > 0 || s.practice) return false;
+    const cost = buybackCost(s, c); if (c.gold < cost) return false;
+    c.gold -= cost; c.buybackCd = BUYBACK_CD; c.respawn = 0; c.bought = true;
+    s.ev.push({ e: 'buyback', u: c.id }); return true;
+  }
+  function reinforce(s, c, lane) {
+    lane = lane ? 1 : 0;
+    if (s.t < s.reinforceAt[c.team]) return false;
+    const cost = reinforceCost(s, c); if (c.gold < cost) return false;
+    c.gold -= cost; s.reinforceAt[c.team] = s.t + REINFORCE_CD; s.reinforceQ[c.team][lane]++;
+    s.ev.push({ e: 'reinforce', u: c.id, team: c.team, lane }); return true;
+  }
+  function fund(s, c) {
+    if (c.fundCd > 0) return false;
+    const cost = fundCost(s, c.team); if (c.gold < cost) return false;
+    c.gold -= cost; c.fundCd = 15; s.fund[c.team]++; setHope(s, s.hope + (c.team ? -FUND_HOPE : FUND_HOPE));
+    s.ev.push({ e: 'fund', u: c.id, team: c.team, a: FUND_HOPE }); return true;
+  }
+  // Surrender is decided by the people on a team: a majority of its humans. Bots neither vote nor count.
+  const voters = (s, team) => s.champs.filter(o => o.team === team && o.human);
+  const votesNeeded = n => Math.floor(n / 2) + 1;
+  function surrenderVote(s, c, vote) {
+    const team = c.team;
+    if (!c.human || s.t < SURRENDER_AT || s.over || s.t < s.voteCd[team]) return false;
+    let V = s.votes[team];
+    if (!V) { if (!vote) return false; V = s.votes[team] = { yes: [], no: [], t: VOTE_T }; s.ev.push({ e: 'surrender', team, phase: 'open', yes: 0, no: 0, need: votesNeeded(voters(s, team).length) }); }
+    if (V.yes.includes(c.id) || V.no.includes(c.id)) return false;
+    (vote ? V.yes : V.no).push(c.id);
+    checkVote(s, team); return true;
+  }
+  function checkVote(s, team) {
+    const V = s.votes[team]; if (!V) return;
+    // Recounted every time, so a player who drops (their seat becomes a bot) stops counting.
+    const list = voters(s, team), ids = list.map(o => o.id), n = list.length, need = votesNeeded(n);
+    V.yes = V.yes.filter(id => ids.includes(id)); V.no = V.no.filter(id => ids.includes(id));
+    if (n && V.yes.length >= need) { s.ev.push({ e: 'surrender', team, phase: 'pass', yes: V.yes.length, no: V.no.length, need }); s.votes[team] = null; s.over = { winner: 1 - team, t: s.t, surrender: true }; }
+    else if (!n || V.no.length > n - need || V.t <= 0) { s.ev.push({ e: 'surrender', team, phase: 'fail', yes: V.yes.length, no: V.no.length, need }); s.votes[team] = null; s.voteCd[team] = s.t + VOTE_CD; }
+  }
+  function stepVotes(s) { for (const team of [0, 1]) { const V = s.votes[team]; if (V) { V.t -= DT; checkVote(s, team); } } }
+
   // ---------- the people ----------
-  const HOPE_DRIFT = .012;
+  const HOPE_DRIFT = .012, SITE_R = 130, SITE_GOLD = 45, SITE_RESPAWN = 60;
   function setHope(s, v) {
     s.hope = clamp(v, 0, 100);
     // A little hysteresis, so slow drift can't flap the bonus on and off around the line.
@@ -1027,13 +1316,14 @@ const Sim = (() => {
   function captureSite(s, z, team) {
     let cap = null, top = -1;
     for (const c of s.champs) if (c.team === team && (z.con[c.id] || 0) > top) { top = z.con[c.id] || 0; cap = c; }
-    z.alive = false; z.at = s.t + 60; z.prog[0] = z.prog[1] = 0; z.con = {};
-    s.ev.push({ e: 'civ', team, x: z.x, y: z.y, id: z.id });
+    z.alive = false; z.at = s.t + SITE_RESPAWN; z.prog[0] = z.prog[1] = 0; z.con = {};
+    const inside = s.champs.filter(c => c.team === team && c.alive && Math.hypot(c.x - z.x, c.y - z.y) < SITE_R);
+    s.ev.push({ e: 'civ', team, x: z.x, y: z.y, id: z.id, n: inside.length });
     setHope(s, s.hope + (team ? -6 : 6));
     for (const c of s.champs) {
       if (c.team !== team || !c.alive) continue;
-      if (c === cap) { c.gold += 45; giveXp(s, c, 60); s.ev.push({ e: 'gold', u: c.id, a: 45 }); }
-      else if (Math.hypot(c.x - z.x, c.y - z.y) < 850) { c.gold += 20; giveXp(s, c, 30); }
+      if (inside.includes(c)) { pay(s, c, SITE_GOLD); giveXp(s, c, 60); c.stats.rescues++; s.ev.push({ e: 'gold', u: c.id, a: SITE_GOLD }); }
+      else if (Math.hypot(c.x - z.x, c.y - z.y) < 850) { pay(s, c, 15); giveXp(s, c, 20); }
     }
   }
   // Standing in a ring with no enemy in it builds progress. Stepping out drains it,
@@ -1042,10 +1332,10 @@ const Sim = (() => {
     for (const z of s.sites) {
       if (!z.alive) { if (s.t >= z.at) { z.alive = true; z.prog[0] = z.prog[1] = 0; z.con = {}; } continue; }
       let n0 = 0, n1 = 0;
-      for (const c of s.champs) if (c.alive && !c.air && Math.hypot(c.x - z.x, c.y - z.y) < 130) { if (c.team) n1++; else n0++; }
+      for (const c of s.champs) if (c.alive && !c.air && Math.hypot(c.x - z.x, c.y - z.y) < SITE_R) { if (c.team) n1++; else n0++; }
       z.prog[0] = z.prog[1] = 0;
       for (const c of s.champs) {
-        const here = c.alive && !c.air && Math.hypot(c.x - z.x, c.y - z.y) < 130, foes = c.team ? n0 : n1;
+        const here = c.alive && !c.air && Math.hypot(c.x - z.x, c.y - z.y) < SITE_R, foes = c.team ? n0 : n1;
         let v = z.con[c.id] || 0;
         if (here && !foes) v += DT; else if (!here) v = Math.max(0, v - DT);
         if (v > 0) z.con[c.id] = v; else delete z.con[c.id];
@@ -1106,10 +1396,14 @@ const Sim = (() => {
     if (a.shape === 'circle' && !a.over && aim.d > 0) { aim.d = rayWall(c.x, c.y, dx, dy, aim.d); aim.tx = c.x + dx * aim.d; aim.ty = c.y + dy * aim.d; }
     // Press time feedback: the cast event always fires on the press, before any wind-up or travel.
     const says = extra => { s.ev.push(Object.assign({ e: 'cast', u: c.id, fx: a.fx, dx, dy, slot: q.slot }, extra)); };
-    if (c.recast[q.slot] > 0 && a.recast) { c.recast[q.slot] = 0; a.recast(s, c, aim, a); if (!a.keepStealth) breakStealth(s, c); c.fx = dx; c.fy = dy; says(); return; }
+    curAbil = a.name;
+    if (c.recast[q.slot] > 0 && a.recast) { c.recast[q.slot] = 0; a.recast(s, c, aim, a); curAbil = null; if (!a.keepStealth) breakStealth(s, c); c.fx = dx; c.fy = dy; says(); return; }
     // A remote player's press can land a hair before the host's cooldown ends. Hold it for that moment rather than drop it.
-    if (c.cd[q.slot] > 0) { if (c.cd[q.slot] < .18 && c.remote && !c.bot) c.qHold = { q, until: s.t + .3 }; return; }
-    if (a.cast(s, c, aim, a) === false) return;
+    if (c.cd[q.slot] > 0) { curAbil = null; if (c.cd[q.slot] < .18 && c.remote && !c.bot) c.qHold = { q, until: s.t + .3 }; return; }
+    if (a.cast(s, c, aim, a) === false) { curAbil = null; return; }
+    if (c.leap && !c.leap.abil) c.leap.abil = a.name;
+    if (c.cuts && !c.cuts.abil) c.cuts.abil = a.name;
+    curAbil = null;
     if (!a.keepStealth) breakStealth(s, c);
     c.cd[q.slot] = Math.max(c.cd[q.slot], cdOf(c, q.slot));
     c.stats.casts++; c.fx = dx; c.fy = dy; c.spin = 1;
@@ -1123,7 +1417,7 @@ const Sim = (() => {
     const m = Math.min(1, Math.hypot(c.mv.x, c.mv.y));
     if (m > .05) {
       const n = norm(c.mv.x, c.mv.y); let sp = c.msBase * (c.slowT > 0 ? 1 - c.slowA : 1) * (c.hasteT > 0 ? 1 + c.hasteA : 1);
-      if (c.charge) sp *= .6; if (c.buffT > 0) sp *= 1.05;
+      if (c.charge) sp *= .6; if (c.buffT > 0) sp *= 1.05; if (s.boons[c.team].convoy > 0) sp *= 1.1;
       c.x += n.x * sp * m * DT; c.y += n.y * sp * m * DT;
       if (!c.charge) { c.fx = n.x; c.fy = n.y; }
     }
@@ -1136,15 +1430,20 @@ const Sim = (() => {
     if (!c.alive) {
       // A dead champion can still shop, evolve, ping and practise.
       while (c.q.length) { const q = c.q.shift(); runShared(s, c, q); }
-      c.respawn -= DT;
+      c.respawn -= DT; if (c.buybackCd > 0) c.buybackCd -= DT; if (c.fundCd > 0) c.fundCd -= DT;
       if (c.respawn <= 0) {
-        c.alive = true; c.hp = c.maxHp; c.spawnT = s.t; const f = s.fountains[c.team]; c.x = c.px = f.x + (c.team ? -50 : 50); c.y = c.py = f.y + (c.slot - 1.5) * 40; c.q.length = 0; c.stunT = c.slowT = c.markT = c.rootT = c.polyT = c.curseT = c.curseN = c.poisonT = c.bleedT = 0;
+        c.alive = true; c.hp = c.maxHp; c.spawnT = s.t; const f = s.fountains[c.team]; c.x = c.px = f.x + (c.team ? -50 : 50); c.y = c.py = f.y + (c.slot - 1.5) * 40; c.q.length = 0; c.stunT = c.slowT = c.markT = c.rootT = c.polyT = c.curseT = c.curseN = c.poisonT = c.bleedT = 0; c.potT = 0; c.cd[0] = c.cd[1] = c.cd[2] = 0; c.recast[0] = c.recast[1] = c.recast[2] = 0; c.echo = null;
         if (c.dummy) { c.x = c.px = c.hx; c.y = c.py = c.hy; }
         s.ev.push({ e: 'spawn', u: c.id });
       }
       return;
     }
     for (const k of STATUS_T) if (c[k] > 0) c[k] -= DT;
+    if (c.buybackCd > 0) c.buybackCd -= DT; if (c.fundCd > 0) c.fundCd -= DT; if (c.cleanseCd > 0) c.cleanseCd -= DT;
+    if (c.potT > 0) { c.potT -= DT; if (!(c.noHealT > 0)) c.hp = Math.min(c.maxHp, c.hp + c.potHps * DT); }
+    if (c.elixT > 0) { c.elixT -= DT; if (c.elixT <= 0) applyStats(c, true); }
+    if (c.tonicT > 0) { c.tonicT -= DT; haste(c, .2, .1); }
+    if (c.sentT > 0) { c.sentT -= DT; if (c.sentT <= 0) applyStats(c, true); }
     if (c.shieldT <= 0) c.shieldHp = 0;
     if (c.curseT <= 0) c.curseN = 0;
     for (let i = 0; i < 3; i++) { if (c.cd[i] > 0) c.cd[i] -= DT; if (c.recast[i] > 0) c.recast[i] -= DT; }
@@ -1171,24 +1470,25 @@ const Sim = (() => {
     if (c.cuts) {
       const C = c.cuts; c.air = 1; C.next -= DT;
       if (C.next <= 0) {
-        const t = s.champs.find(e => e.id === C.id);
+        const t = s.champs.find(e => e.id === C.id); curAbil = C.abil;
         if (!t || !t.alive || C.n <= 0) { c.cuts = null; c.air = 0; pushOut(s.map, c); }
         else {
           const an = s.rand() * 6.28, f = nearestFree(s.map, t.x + Math.cos(an) * 70, t.y + Math.sin(an) * 70);
           s.ev.push({ e: 'blink', x: c.x, y: c.y }); c.x = f.x; c.y = f.y; C.n--; C.next = .15;
           const last = C.n === 0; let d = C.A.dmg * pow(c); if (last && c.f.finishing) d += (t.maxHp - t.hp) * .15;
           const nf = norm(t.x - c.x, t.y - c.y); c.fx = nf.x; c.fy = nf.y;
-          const air = c.air; c.air = 0; hurt(s, c, t, d, { skill: 1, crit: last ? 1 : 0 }); if (c.f.butcher) for (const o of enemiesIn(s, c, t.x, t.y, 200)) if (o !== t) hurt(s, c, o, d * .55, { skill: 1 }); c.air = air;
+          const air = c.air; c.air = 0; hurt(s, c, t, d, { skill: 1, crit: last ? 1 : 0 }); if (c.f.butcher) for (const o of enemiesIn(s, c, t.x, t.y, 170)) if (o !== t) hurt(s, c, o, d * .55, { skill: 1 }); c.air = air;
         }
+        curAbil = null;
       }
     } else if (c.leap) {
       const L = c.leap; L.t += DT; const f = Math.min(1, L.t / L.total);
       c.x = L.sx + (L.tx - L.sx) * f; c.y = L.sy + (L.ty - L.sy) * f; c.z = Math.sin(f * Math.PI) * 150; c.air = Math.max(0, L.total - L.t + .001);
-      if (f >= 1) { c.leap = null; c.air = 0; c.z = 0; pushOut(s.map, c); L.fn(s, c); }
+      if (f >= 1) { c.leap = null; c.air = 0; c.z = 0; pushOut(s.map, c); curAbil = L.abil; L.fn(s, c); curAbil = null; }
     } else if (c.dash) {
       const D = c.dash; const step = Math.min(DT, D.t); c.x += D.vx * step; c.y += D.vy * step; D.t -= DT;
       if (D.onHit) {
-        const test = t => { if (!c.dash || !t.alive || t.air || t.team === c.team || D.hits.has(t.id)) return; if (Math.hypot(t.x - c.x, t.y - c.y) < c.r + t.r + 22) { D.hits.add(t.id); D.onHit(s, c, t); } };
+        const test = t => { if (!c.dash || !t.alive || t.air || t.team === c.team || D.hits.has(t.id)) return; if (Math.hypot(t.x - c.x, t.y - c.y) < c.r + t.r + 22) { D.hits.add(t.id); curAbil = D.abil; D.onHit(s, c, t); curAbil = null; } };
         s.champs.forEach(test); if (!D.champOnly) { s.minions.forEach(test); s.monsters.forEach(test); }
       }
       if (D.t <= 0) c.dash = null;
@@ -1197,14 +1497,14 @@ const Sim = (() => {
       c.chan.t -= DT;
       if (c.stunT > 0) c.chan = null;
       else if (c.chan.recall && (c.mv.x || c.mv.y)) c.chan = null;
-      else if (c.chan.t <= 0) { const ch = c.chan; c.chan = null; ch.fn(s, c); }
+      else if (c.chan.t <= 0) { const ch = c.chan; c.chan = null; curAbil = ch.slot !== undefined ? c.kit[ch.slot].name : null; ch.fn(s, c); curAbil = null; }
     } else if (c.stunT <= 0 && c.lock <= 0 && c.rootT <= 0) walk(s, c);
     towerPush(s, c);
     // A duel ring holds both fighters in.
     if (c.duelZ) { const z = c.duelZ; if (z.dead || z.t <= 0) c.duelZ = null; else { const n = norm(c.x - z.x, c.y - z.y); if (n.l > z.r - c.r) { c.x = z.x + n.x * (z.r - c.r); c.y = z.y + n.y * (z.r - c.r); pushOut(s.map, c); } } }
 
     // basic attack
-    if (c.atk && c.stunT <= 0 && !c.air && !c.dash && !c.chan && !c.charge && c.atkCd <= 0) {
+    if (c.atk && !(c.polyT > 0) && c.stunT <= 0 && !c.air && !c.dash && !c.chan && !c.charge && c.atkCd <= 0) {
       const t = autoTarget(s, c);
       if (t) {
         c.atkCd = 1 / (c.as * (1 + (c.asBonus || 0))); c.lock = .13; const n = norm(t.x - c.x, t.y - c.y); c.fx = n.x; c.fy = n.y; c.revealT = 1;
@@ -1234,7 +1534,7 @@ const Sim = (() => {
 
   // Commands available alive or dead. Bots use exactly the same ones.
   const STATUS_T = ['stunT', 'slowT', 'markT', 'parryT', 'drT', 'buffT', 'empowerT', 'revealT', 'lock', 'rootT', 'polyT', 'knockT', 'stealthT', 'noHealT', 'hasteT', 'shieldT', 'vulnT', 'dmarkT', 'opener', 'ripT', 'curseT', 'poisonT', 'bleedT', 'pingT'];
-  const BEACON_CD = 50, BEACON_RANGE = 460, BEACON_SIGHT = 560, BEACON_LIFE = 60;
+  const BEACON_CD = 50, BEACON_RANGE = 350, BEACON_SIGHT = 560, BEACON_LIFE = 60;
   function runShared(s, c, q) {
     if (q.t === 'buy') buyItem(s, c, q.id);
     else if (q.t === 'sell') sellItem(s, c, q.slot);
@@ -1242,9 +1542,15 @@ const Sim = (() => {
     else if (q.t === 'beacon') placeBeacon(s, c, q.tx, q.ty);
     else if (q.t === 'ping') pingAt(s, c, q.kind, q.x, q.y);
     else if (q.t === 'practice') practiceOp(s, c, q.op);
+    else if (q.t === 'buyback') buyback(s, c);
+    else if (q.t === 'reinforce') reinforce(s, c, q.lane);
+    else if (q.t === 'fund') fund(s, c);
+    else if (q.t === 'surrender') surrenderVote(s, c, q.vote !== false);
   }
   function buyItem(s, c, id) {
-    const it = ITEM_BY[id]; if (!it) return false; const price = itemPrice(c, id); if (price === null || c.gold < price) return false;
+    const it = ITEM_BY[id]; if (!it) return false;
+    if (it.consumable) return useConsumable(s, c, it);
+    const price = itemPrice(c, id); if (price === null || c.gold < price) return false;
     const path = itemPath(id); let slot = -1;
     for (let i = path.length - 2; i >= 0 && slot < 0; i--) { const k = c.items.indexOf(path[i]); if (k >= 0) slot = k; }
     if (slot < 0) slot = c.items.findIndex(x => !x);
@@ -1255,9 +1561,20 @@ const Sim = (() => {
   }
   function sellItem(s, c, slot) {
     const id = c.items[slot]; if (!id) return false;
-    let v = 0; for (const p of itemPath(id)) v += ITEM_BY[p].cost;
-    c.gold += v * .65; c.items[slot] = null; applyStats(c, true); if (!c.alive) c.hp = 0;
+    c.gold += sellValue(id); c.items[slot] = null; applyStats(c, true); if (!c.alive) c.hp = 0;
     s.ev.push({ e: 'sell', u: c.id, id }); return true;
+  }
+  const SELL_RATE = .7, sellValue = id => { let v = 0; for (const p of itemPath(id)) v += ITEM_BY[p].cost; return Math.floor(v * SELL_RATE); };
+  // Consumables apply on the spot and need no slot.
+  function useConsumable(s, c, it) {
+    if (!c.alive || c.gold < it.cost) return false;
+    if (it.id === 'cleanse') { if (c.cleanseCd > 0) return false; c.stunT = c.rootT = c.slowT = c.polyT = c.knockT = c.poisonT = c.bleedT = c.curseT = 0; c.curseN = 0; c.cleanseCd = 25; haste(c, .2, 1.5); }
+    else if (it.id === 'potion') { c.potT = 8; c.potHps = c.maxHp * .4 / 8; }
+    else if (it.id === 'elixir') { c.elixT = 90; applyStats(c, true); }
+    else if (it.id === 'tonic') { c.tonicT = 8; }
+    else if (it.id === 'beaconkit') { if (c.beacons >= 2) return false; c.beacons++; }
+    else return false;
+    c.gold -= it.cost; s.ev.push({ e: 'consume', u: c.id, id: it.id }); return true;
   }
   function chooseEvolve(s, c, tier, choice) {
     if ((tier !== 0 && tier !== 1) || (choice !== 0 && choice !== 1) || c.evolved[tier] !== -1 || c.lvl < (tier ? 8 : 4)) return false;
@@ -1304,8 +1621,8 @@ const Sim = (() => {
       if (!u.alive) continue;
       if (u.kind !== 'champ') { if (u.curseT > 0) { u.curseT -= DT; if (u.curseT <= 0) u.curseN = 0; } if (u.poisonT > 0) u.poisonT -= DT; if (u.bleedT > 0) u.bleedT -= DT; }
       if (s.tick % 15 === 0) {
-        if (u.poisonT > 0 && u.poisonBy) hurt(s, u.poisonBy, u, u.poisonDps * .5, { skill: 1, dot: 1 });
-        if (u.alive && u.bleedT > 0 && u.bleedBy) hurt(s, u.bleedBy, u, u.bleedDps * .5, { skill: 1, dot: 1 });
+        if (u.poisonT > 0 && u.poisonBy) { curAbil = u.poisonAbil; hurt(s, u.poisonBy, u, u.poisonDps * .5, { skill: 1, dot: 1 }); }
+        if (u.alive && u.bleedT > 0 && u.bleedBy) { curAbil = u.bleedAbil; hurt(s, u.bleedBy, u, u.bleedDps * .5, { skill: 1, dot: 1 }); } curAbil = null;
       }
     }
   }
@@ -1315,7 +1632,7 @@ const Sim = (() => {
     if (m.stunT > 0) m.stunT -= DT; if (m.slowT > 0) m.slowT -= DT; if (m.markT > 0) m.markT -= DT; if (m.cd > 0) m.cd -= DT; if (m.knockT > 0) m.knockT -= DT; if (m.polyT > 0) m.polyT -= DT;
     if (m.dash) { const D = m.dash; const st = Math.min(DT, D.t); m.x += D.vx * st; m.y += D.vy * st; D.t -= DT; if (D.t <= 0) m.dash = null; pushOut(s.map, m); return; }
     if (m.stunT > 0) return;
-    let t = null, bd = 340;
+    let t = null, bd = 300;
     // protect allied champions that are being hit by enemy champions
     if (!s.practice) for (const e of s.champs) if (e.alive && !e.air && e.team !== m.team && e.recentHit && s.t - e.recentHit < 1.5 && canSee(s, m.team, e)) { const d = dist(m, e); if (d < 420 && hasLOS(m.x, m.y, e.x, e.y)) { t = e; break; } }
     if (!t) for (const e of s.minions) if (e.alive && e.team !== m.team && e.delay <= 0) { const d = dist(m, e) - e.r; if (d < bd && hasLOS(m.x, m.y, e.x, e.y)) { bd = d; t = e; } }
@@ -1325,7 +1642,7 @@ const Sim = (() => {
     if (t) {
       const d = dist(m, t) - t.r;
       if (d > m.range - 6) { const n = norm(t.x - m.x, t.y - m.y); m.x += n.x * sp * DT; m.y += n.y * sp * DT; m.fx = n.x; m.fy = n.y; }
-      else if (m.cd <= 0) { m.cd = 1 / m.as; const dmg = t.kind === 'tower' ? m.dmg * 1.1 : m.dmg; s.ev.push({ e: 'matk', u: m.id }); if (m.ranged) homing(s, m, t, dmg, 800, 'mbolt'); else hurt(s, m, t, dmg); }
+      else if (m.cd <= 0) { m.cd = 1 / m.as; s.ev.push({ e: 'matk', u: m.id }); if (m.ranged) homing(s, m, t, m.dmg, 800, 'mbolt'); else hurt(s, m, t, m.dmg); }
     } else if (m.wp < m.path.length) {
       const [wx, wy] = m.path[m.wp]; const n = norm(wx - m.x, wy - m.y);
       if (n.l < 40) m.wp++; else { m.x += n.x * sp * DT; m.y += n.y * sp * DT; m.fx = n.x; m.fy = n.y; }
@@ -1345,10 +1662,8 @@ const Sim = (() => {
       const last = s.champs.filter(c => c.alive && dist(c, m) < 300 && homeD(c) <= leash && s.t - (m.hitAt || -9) < 2)[0];
       if (last) t = m.tgt = last;
     }
-    if (m.boss && t) {
-      m.slam -= DT;
-      if (m.slam <= 0) { m.slam = 4; const tx = t.x, ty = t.y; s.zones.push({ id: s.nid++, kind: 'blast', x: tx, y: ty, r: 170, t: 1, total: 1, team: 2, owner: m, fx: 'crash', fn(s, z) { for (const e of s.champs) if (e.alive && !e.air && Math.hypot(e.x - z.x, e.y - z.y) < 170 + e.r) { hurt(s, m, e, 200); slow(e, .35, 1); } s.ev.push({ e: 'boom', x: z.x, y: z.y, r: 170, fx: 'crash' }); } }); }
-    }
+    if (m.boss && t) { m.slam -= DT; if (m.slam <= 0) bossSlam(s, m, t); }
+    if (m.shellT > 0) m.shellT -= DT;
     if (t) {
       const d = dist(m, t) - t.r;
       if (d > m.range - 8 || !hasLOS(m.x, m.y, t.x, t.y)) {
@@ -1362,9 +1677,20 @@ const Sim = (() => {
     m.vx = (m.x - m.px) / DT; m.vy = (m.y - m.py) / DT;
   }
 
+  // Every boss has its own attack: a single-target cleave, a big ring around itself, and a shell.
+  function bossSlam(s, m, t) {
+    const B = BOSS_STATS[m.bossKind]; m.slam = B.slamEvery;
+    const atSelf = m.bossKind === 'foreman' || m.bossKind === 'sentinel', x = atSelf ? m.x : t.x, y = atSelf ? m.y : t.y;
+    if (m.bossKind === 'sentinel') { m.shellT = 3.5; s.ev.push({ e: 'boom', x: m.x, y: m.y, r: 140, fx: 'dome' }); }
+    s.zones.push({ id: s.nid++, kind: 'blast', x, y, r: B.slamR, t: B.slamDelay, total: B.slamDelay, team: 2, owner: m, fx: B.fxSlam, fn(s, z) {
+      for (const e of s.champs) if (e.alive && !e.air && Math.hypot(e.x - z.x, e.y - z.y) < B.slamR + e.r) { hurt(s, m, e, B.slamDmg); if (m.bossKind === 'colossus' || m.bossKind === 'foreman') slow(e, .35, 1); if (m.bossKind === 'sentinel') e.vulnT = Math.max(e.vulnT || 0, 2); }
+      s.ev.push({ e: 'boom', x: z.x, y: z.y, r: B.slamR, fx: B.fxSlam });
+    } });
+  }
+
   const TOWER_BASE = 160, TOWER_RAMP = .24;
   // Structures: very resistant early so the base can't fall in a blink, then steadily softer so a match ends by about 18 minutes.
-  const structureK = s => s.t < 560 ? .5 : s.t < 760 ? .5 + (s.t - 560) / 200 * .7 : Math.min(14, 1.2 + (s.t - 760) / 58);
+  const structureK = s => s.t < 640 ? .5 : s.t < 860 ? .5 + (s.t - 640) / 220 * .7 : Math.min(14, 1.2 + (s.t - 860) / 58);
   function stepTower(s, t) {
     if (s.practice) return;
     if (t.cd > 0) t.cd -= DT; if (t.cd > 0) return;
@@ -1376,7 +1702,7 @@ const Sim = (() => {
     t.stack = t.last === target.id ? t.stack + 1 : 0; t.last = target.id; t.cd = 1.1;
     // Each consecutive shot on the same target hits 45% harder, compounding, capped at 4x.
     const ramp = Math.min(4, Math.pow(1.45, t.stack));
-    const base = target.kind === 'champ' ? (TOWER_BASE + s.t * TOWER_RAMP) * ramp : target.maxHp * (s.t > 1020 ? .16 : s.t > 900 ? .24 : .42) * (1 + (target.armor || 0) / 100);
+    const base = target.kind === 'champ' ? (TOWER_BASE + s.t * TOWER_RAMP) * ramp : target.maxHp * (target.heavy ? .16 : s.t > 1020 ? .16 : s.t > 900 ? .24 : .42) * (1 + (target.armor || 0) / 100);
     homing(s, t, target, base, 1000, 'tower');
     s.ev.push({ e: 'tshot', u: t.id, t: target.id, n: t.stack });
   }
@@ -1402,7 +1728,7 @@ const Sim = (() => {
           if (p.dead || !t.alive || t.air || t === p.owner || p.hits.has(t.id)) return;
           if (t.team === p.team && !(p.filter.startsWith('all') && t.kind === 'champ')) return;
           if (segDist(t.x, t.y, p.px, p.py, p.x, p.y) <= t.r + p.w / 2) {
-            p.hits.add(t.id); p.hit(s, p.owner, t, p);
+            p.hits.add(t.id); curAbil = p.abil; p.hit(s, p.owner, t, p); curAbil = null;
             s.ev.push({ e: 'phit', x: t.x, y: t.y, fx: p.fx });
             if (p.pass) p.pass = 0; else if (!p.pierce) p.dead = true;
           }
@@ -1420,6 +1746,7 @@ const Sim = (() => {
     for (const z of s.zones) {
       if (z.dead) continue;
       z.t -= DT;
+      curAbil = z.abil;
       if (z.step && z.t > 0) z.step(s, z);
       if (z.t <= 0) {
         z.dead = true;
@@ -1427,6 +1754,7 @@ const Sim = (() => {
         else if (z.fn) z.fn(s, z);
         if (z.end) z.end(s, z);
       }
+      curAbil = null;
     }
     s.zones = s.zones.filter(z => !z.dead);
   }
@@ -1504,8 +1832,8 @@ const Sim = (() => {
         if (d < t.r + 50) b |= NAV_TOWER;
         if (d < t.range + 20) b |= t.team ? NAV_T1 : NAV_T0;
       }
-      if (Math.hypot(x - f1.x, y - f1.y) < 380) b |= NAV_NO0;
-      if (Math.hypot(x - f0.x, y - f0.y) < 380) b |= NAV_NO1;
+      if (Math.hypot(x - f1.x, y - f1.y) < 456) b |= NAV_NO0;
+      if (Math.hypot(x - f0.x, y - f0.y) < 456) b |= NAV_NO1;
       nav[k] = b; clr[k] = b & (NAV_WALL | NAV_TOWER) ? 0 : 9;
     }
     // Distance in cells to the nearest obstacle, capped at 3. Paths pay to hug walls.
@@ -1805,14 +2133,24 @@ const Sim = (() => {
 
   // Next purchase: walk the recommended chains, finishing one before starting the next.
   function nextBuy(s, c) {
-    for (const id of recommended(c.champ, c.build)) {
-      if (c.items.includes(id)) continue;
-      const path = itemPath(id); let step = null;
-      for (let i = path.length - 1; i >= 0; i--) if (c.items.includes(path[i])) { step = path[i + 1]; break; }
-      if (!step) step = path[0];
+    const rec = recommended(c.champ, c.build);
+    for (const id of rec) {
+      const path = itemPath(id); let step = null, top = -1;
+      for (let i = path.length - 1; i >= 0; i--) if (c.items.includes(path[i])) { top = i; break; }
+      if (top === path.length - 1) continue;
+      step = path[top + 1];
       const price = itemPrice(c, step);
       if (price === null) continue;
       return { id: step, cost: price };
+    }
+    // Then upgrade to legendaries, in the same order.
+    for (const id of rec) {
+      const up = LEGEND[id]; if (!up) continue;
+      if (c.items.includes(up)) continue;
+      if (!c.items.includes(id)) continue;
+      const price = itemPrice(c, up);
+      if (price === null) continue;
+      return { id: up, cost: price };
     }
     return null;
   }
@@ -1838,7 +2176,7 @@ const Sim = (() => {
       let held = false;
       for (const o of seats) {
         if (o.bot) { held = held || o.alive; continue; }
-        const here = !o.alive || (dist(o, s.fountains[team]) > 520 && laneDist(s, lane, o.x, o.y) < 400);
+        const here = !o.alive || (dist(o, s.fountains[team]) > 620 && laneDist(s, lane, o.x, o.y) < 400);
         if (here) ai.hum[o.id] = s.t;
         if (ai.hum[o.id] === undefined) ai.hum[o.id] = 0;
         if (s.t < 45 || s.t - ai.hum[o.id] < 24) held = true;
@@ -1872,20 +2210,32 @@ const Sim = (() => {
       if (ids.length) ai.defend = { id: call.id, x: call.x + n.x * 110, y: call.y + n.y * 110, ids, wave: callWave, lane: call.lane };
     }
 
-    // The Colossus: never during laning. Gather a little before it is due, take it when the side is able.
-    const boss = s.monsters.find(m => m.boss && m.alive), bossSoon = !boss && s.bossAt - s.t < 16;
-    if (laning || (!boss && !bossSoon)) { ai.hoard = null; ai.hoardGo = false; }
-    else {
-      const center = mapCenter(s), home = s.fountains[team], n = norm(home.x - center.x, home.y - center.y);
-      let minePow = 0, foePow = 0, close = 0;
-      const bossAt = boss || center;
-      for (const c of mine) { minePow += power(c); if (dist(c, bossAt) < 780) close++; }
-      for (const e of foes) if (dist(e, bossAt) < 1150) foePow += power(e, true);
-      const enough = mine.length >= Math.min(3, s.champs.filter(c => c.team === team).length) || foesAlive <= 1;
-      if (enough && foePow < minePow * .95 && !(call && call.sub === 'core')) {
-        ai.hoard = { x: center.x + n.x * 520, y: center.y + n.y * 120 + (team ? 40 : -40) };
-        if (boss && close >= Math.min(3, mine.length)) ai.hoardGo = true;
-      } else { ai.hoard = null; ai.hoardGo = false; }
+    // Bosses: never during laning. Take the one that is up or nearly due, most valuable first.
+    {
+      const prevHoard = ai.hoard;
+      let pick = null, bv = 0;
+      if (!laning) for (const B of s.bosses) {
+        const due = B.up ? 1 : B.at - s.t < 14 ? .7 : 0; if (!due) continue;
+        let d = 0; for (const c of mine) d += dist(c, B); d = mine.length ? d / mine.length : 1e9;
+        const v = due * (B.kind === 'colossus' ? 2.5 : 1) * (prevHoard && prevHoard.kind === B.kind ? 1.35 : 1) / (1 + d / 2000);
+        if (v > bv) { bv = v; pick = B; }
+      }
+      if (!pick) { ai.hoard = null; ai.hoardGo = false; }
+      else {
+        const B = pick, boss = B.up ? s.monsters.find(m => m.id === B.id && m.alive) : null, home = s.fountains[team], n = norm(home.x - B.x, home.y - B.y);
+        let minePow = 0, foePow = 0, close = 0;
+        for (const c of mine) minePow += power(c);
+        for (const e of foes) if (dist(e, B) < 1380) foePow += power(e, true);
+        const size = B.kind === 'colossus' ? 4 : 3, needAlive = B.kind === 'colossus' ? Math.min(3, s.champs.filter(c => c.team === team).length) : 2;
+        const enough = mine.length >= needAlive || foesAlive <= 1;
+        if (enough && foePow < minePow * .95 && !(call && call.sub === 'core')) {
+          const pool = mine.filter(c => c.bot && frac(c) > .4 && !(ai.defend && ai.defend.ids.includes(c.id))).sort((a, z) => dist(a, B) - dist(z, B)).slice(0, size), ids = pool.map(c => c.id);
+          for (const c of pool) if (dist(c, B) < 940) close++;
+          ai.hoard = { kind: B.kind, x: B.x + n.x * Math.min(560, B.r + 300), y: B.y + n.y * Math.min(560, B.r + 300) + (team ? 40 : -40), ids };
+          if (prevHoard && prevHoard.kind === B.kind && ai.hoardGo) ai.hoardGo = true;
+          else ai.hoardGo = !!boss && close >= Math.min(needAlive, ids.length) && ids.length > 0;
+        } else { ai.hoard = null; ai.hoardGo = false; }
+      }
     }
 
     // Pick one enemy for the side to pile on: close to several allies, hurt, or already stunned.
@@ -1935,6 +2285,14 @@ const Sim = (() => {
       for (const z of open) if (!taken.has(z.id) && dist(c, z) < bd && count(foes, z) <= count(mine, z)) { bd = dist(c, z); best = z; }
       if (best) { ai.sites[c.id] = best; taken.add(best.id); }
     }
+    // Map events: a squad contests the spot; laning sends only the roamers.
+    ai.ev = {};
+    const E = s.event;
+    if (E && (E.phase === 'live' || E.t < 8)) {
+      const want = laning ? 1 : ai.phase === 'late' ? 3 : 2;
+      const pool = mine.filter(c => c.bot && !c.bot.low && frac(c) > .4 && !(ai.defend && ai.defend.ids.includes(c.id)) && !(ai.hoard && ai.hoard.ids.includes(c.id)) && (!laning || c.role === 'jungle' || c.role === 'support')).sort((a, z) => dist(a, E) - dist(z, E));
+      for (const c of pool.slice(0, want)) ai.ev[c.id] = E;
+    }
     // Later the side groups and pushes one lane, leaving a strong top laner to split the other.
     ai.split = 0;
     const late = ai.phase === 'late', ahead = s.t >= 500 && (s.kills[team] - s.kills[1 - team] >= 6 || foesAlive <= mine.length - 3 || s.champs.some(c => c.team === team && c.buffT > 0));
@@ -1969,10 +2327,10 @@ const Sim = (() => {
   };
   function threatenedAlly(s, c, b) {
     for (const a of s.champs) {
-      if (!a.alive || a.team !== c.team || dist(a, c) > 560) continue;
+      if (!a.alive || a.team !== c.team || dist(a, c) > 460) continue;
       for (const p of s.proj) if (!p.homing && p.team !== c.team && shotAt(a, p)) return a;
       for (const e of b.foes) if (e.chan && e.chan.kind === 'line' && segDist(a.x, a.y, e.x, e.y, e.x + e.chan.dx * e.chan.len, e.y + e.chan.dy * e.chan.len) < e.chan.w / 2 + a.r + 10) return a;
-      if (b.sk.iq > .5 && frac(a) < .5) for (const e of b.foes) if (dist(e, a) < 480) return a;
+      if (b.sk.iq > .5 && frac(a) < .5) for (const e of b.foes) if (dist(e, a) < 380) return a;
     }
     return null;
   }
@@ -1980,14 +2338,14 @@ const Sim = (() => {
   function ultWorth(s, c, b, t) {
     if (!t) return false;
     if (b.sk.iq < .3) return s.rand() < .5;
-    let near = 0; for (const e of b.foes) if (dist(e, t) < 360) near++;
+    let near = 0; for (const e of b.foes) if (dist(e, t) < 290) near++;
     return t.hp <= burstOn(c, t) || near >= 2 || (b.ratio > .9 && frac(t) < .7 && (b.sk.iq > .5 || s.rand() < .6));
   }
 
   const COMBO = {
     vesper(s, c, b, t, d, mode) {
       if (!t) return false;
-      if (rdy(c, 1) && (mode === 'retreat' || d < 260)) { const a = awayPoint(s, c, t, 270); cast(c, 1, a.x, a.y); return true; }
+      if (rdy(c, 1) && (mode === 'retreat' || d < 210)) { const a = awayPoint(s, c, t, c.kit[1].range); cast(c, 1, a.x, a.y); return true; }
       if (mode === 'fight' && rdy(c, 2) && d < c.kit[2].range - 30 && losClear(s, c.x, c.y, t.x, t.y)) {
         // Deadeye is the longest, slowest wind-up. Save it for a stunned, slowed or dying target.
         const pinned = t.stunT > 0 || t.slowT > 0 || Math.hypot(t.vx, t.vy) < 200 || t.chan || t.charge;
@@ -2007,64 +2365,64 @@ const Sim = (() => {
       if (rdy(c, 1) && b.parry) { cast(c, 1, c.x, c.y); return true; }
       if (!t) return false;
       if (c.recast[0] > 0) {
-        if (mode === 'retreat') { const a = awayPoint(s, c, t, 260); cast(c, 0, a.x, a.y); return true; }
-        if (mode === 'fight' && d < 290) { cast(c, 0, t.x, t.y); return true; }
+        if (mode === 'retreat') { const a = awayPoint(s, c, t, 195); cast(c, 0, a.x, a.y); return true; }
+        if (mode === 'fight' && d < c.kit[0].range) { cast(c, 0, t.x, t.y); return true; }
         return false;
       }
-      if (mode === 'retreat') { if (rdy(c, 0) && d < 400) { const a = awayPoint(s, c, t, 290); cast(c, 0, a.x, a.y); return true; } return false; }
+      if (mode === 'retreat') { if (rdy(c, 0) && d < 310) { const a = awayPoint(s, c, t, c.kit[0].range); cast(c, 0, a.x, a.y); return true; } return false; }
       if (mode !== 'fight') return false;
-      if (rdy(c, 2) && d > 200 && d < 520 && b.ratio >= .9 && ultWorth(s, c, b, t)) { const p = lead(s, c, b, t, 1100); cast(c, 2, p.tx, p.ty); return true; }
-      if (rdy(c, 0) && d < 300 && losClear(s, c.x, c.y, t.x, t.y)) { cast(c, 0, t.x, t.y); return true; }
+      if (rdy(c, 2) && d > 150 && d < c.kit[2].range && b.ratio >= .9 && ultWorth(s, c, b, t)) { const p = lead(s, c, b, t, 1100); cast(c, 2, p.tx, p.ty); return true; }
+      if (rdy(c, 0) && d < c.kit[0].range + 10 && losClear(s, c.x, c.y, t.x, t.y)) { cast(c, 0, t.x, t.y); return true; }
       return false;
     },
     ione(s, c, b, t, d, mode) {
       if (!t || mode === 'retreat') return false;
       const A1 = c.kit[1], A0 = c.kit[0];
-      if (mode === 'fight' && rdy(c, 2) && d < 620 && losClear(s, c.x, c.y, t.x, t.y) && (ultWorth(s, c, b, t) || t.stunT > 0)) { cast(c, 2, t.x, t.y); return true; }
+      if (mode === 'fight' && rdy(c, 2) && d < c.kit[2].range - 20 && losClear(s, c.x, c.y, t.x, t.y) && (ultWorth(s, c, b, t) || t.stunT > 0)) { cast(c, 2, t.x, t.y); return true; }
       if (t.markT > 0 && rdy(c, 1) && d < A1.range - 20 && losClear(s, c.x, c.y, t.x, t.y)) { const p = lead(s, c, b, t, 0, A1.delay); cast(c, 1, p.tx, p.ty); return true; }
       if (rdy(c, 0) && d < A0.range - 30 && (A0.passThrough || !lineBlocked(s, c, b, t.x, t.y, 42))) { const p = lead(s, c, b, t, A0.speed); cast(c, 0, p.tx, p.ty); return true; }
       // Without a mark coming, Rupture is only worth it on a stunned or careless target.
-      if (rdy(c, 1) && d < 520 && losClear(s, c.x, c.y, t.x, t.y) && (b.sk.iq < .5 ? s.rand() < .5 : c.cd[0] > 1.5 && (mode === 'fight' || t.stunT > 0 || c.f.meteor))) { const p = lead(s, c, b, t, 0, A1.delay); cast(c, 1, p.tx, p.ty); return true; }
+      if (rdy(c, 1) && d < A1.range - 20 && losClear(s, c.x, c.y, t.x, t.y) && (b.sk.iq < .5 ? s.rand() < .5 : c.cd[0] > 1.5 && (mode === 'fight' || t.stunT > 0 || c.f.meteor))) { const p = lead(s, c, b, t, 0, A1.delay); cast(c, 1, p.tx, p.ty); return true; }
       return false;
     },
     solenne(s, c, b, t, d, mode) {
       if (rdy(c, 1)) { const a = threatenedAlly(s, c, b); if (a && (b.sk.iq > .4 || s.rand() < .3)) { cast(c, 1, a.x, a.y); return true; } }
       if (rdy(c, 2)) {
-        let n = 0; for (const a of s.champs) if (a.alive && a.team === c.team && dist(a, c) < 320 && (frac(a) < .55 || a.stunT > 0)) n++;
+        let n = 0; for (const a of s.champs) if (a.alive && a.team === c.team && dist(a, c) < c.kit[2].r - 20 && (frac(a) < .55 || a.stunT > 0)) n++;
         if (n >= 1 && b.closest < 700 && (b.sk.iq > .3 || s.rand() < .5)) { cast(c, 2, c.x, c.y); return true; }
       }
       if (rdy(c, 0)) {
         let ally = null, low = .82;
-        for (const a of s.champs) if (a !== c && a.alive && a.team === c.team && dist(a, c) < 650 && frac(a) < low && losClear(s, c.x, c.y, a.x, a.y)) { low = frac(a); ally = a; }
+        for (const a of s.champs) if (a !== c && a.alive && a.team === c.team && dist(a, c) < c.kit[0].range - 20 && frac(a) < low && losClear(s, c.x, c.y, a.x, a.y)) { low = frac(a); ally = a; }
         if (ally && !b.foes.some(e => segDist(e.x, e.y, c.x, c.y, ally.x, ally.y) < e.r + 30)) { const p = lead(s, c, b, ally, 1150); cast(c, 0, p.tx, p.ty); return true; }
-        if (t && mode !== 'retreat' && d < 650 && !lineBlocked(s, c, b, t.x, t.y, 46)) { const p = lead(s, c, b, t, 1150); cast(c, 0, p.tx, p.ty); return true; }
+        if (t && mode !== 'retreat' && d < c.kit[0].range - 20 && !lineBlocked(s, c, b, t.x, t.y, 46)) { const p = lead(s, c, b, t, 1150); cast(c, 0, p.tx, p.ty); return true; }
       }
       return false;
     },
     sable(s, c, b, t, d, mode) {
       if (!t) return false;
-      if (rdy(c, 2) && d < 470) {
+      if (rdy(c, 2) && d < c.kit[2].range - 10) {
         const exec = (125 * pow(c) + (t.maxHp - t.hp) * .35) * 100 / (100 + t.armor);
         if (b.sk.iq < .5 ? frac(t) < .45 : t.hp <= exec) { cast(c, 2, t.x, t.y); return true; }
       }
-      if (c.recast[1] > 0) { if (mode === 'retreat' || frac(c) < .45 || d > 500) { cast(c, 1, c.x, c.y); return true; } }
+      if (c.recast[1] > 0) { if (mode === 'retreat' || frac(c) < .45 || d > 400) { cast(c, 1, c.x, c.y); return true; } }
       else if (rdy(c, 1)) {
-        if (mode === 'retreat') { const a = awayPoint(s, c, t, 320); cast(c, 1, a.x, a.y); return true; }
+        if (mode === 'retreat') { const a = awayPoint(s, c, t, c.kit[1].range); cast(c, 1, a.x, a.y); return true; }
         // Blink always travels full range, so this lands behind the target.
-        if (mode === 'fight' && d > 170 && d < 300) { cast(c, 1, t.x, t.y); return true; }
+        if (mode === 'fight' && d > 130 && d < c.kit[1].range - 15) { cast(c, 1, t.x, t.y); return true; }
       }
-      if (mode !== 'retreat' && rdy(c, 0) && d < 225 && losClear(s, c.x, c.y, t.x, t.y)) { cast(c, 0, t.x, t.y); return true; }
+      if (mode !== 'retreat' && rdy(c, 0) && d < c.kit[0].range - 15 && losClear(s, c.x, c.y, t.x, t.y)) { cast(c, 0, t.x, t.y); return true; }
       return false;
     },
     deadbolt(s, c, b, t, d, mode) {
       if (!t) return false;
       if (mode === 'fight' && rdy(c, 2) && d < c.kit[2].range - 40 && (ultWorth(s, c, b, t) || t.slowT > 0 || t.rootT > 0)) { cast(c, 2, t.x + t.vx * .4, t.y + t.vy * .4); return true; }
-      if (mode === 'retreat') { if (rdy(c, 0) && d < 620) { const n = norm(t.x - c.x, t.y - c.y); cast(c, 0, c.x + n.x * 140, c.y + n.y * 140); return true; } return false; }
+      if (mode === 'retreat') { if (rdy(c, 0) && d < c.kit[0].range) { const n = norm(t.x - c.x, t.y - c.y); cast(c, 0, c.x + n.x * 110, c.y + n.y * 110); return true; } return false; }
       if (rdy(c, 0) && d < c.kit[0].range - 10 && losClear(s, c.x, c.y, t.x, t.y) && (c.f.trapper || mode === 'fight' || b.ratio >= 1)) {
         // Lay it across their path, ahead of where they are walking.
         const sp = Math.hypot(t.vx, t.vy), n = norm(t.x - c.x, t.y - c.y), ahead = sp > 80 ? .55 : .25;
         const x = t.x + t.vx * ahead - n.x * 50, y = t.y + t.vy * ahead - n.y * 50;
-        if (sp > 30 || d < 480) { cast(c, 0, x, y); return true; }
+        if (sp > 30 || d < c.kit[0].range * .8) { cast(c, 0, x, y); return true; }
       }
       if (rdy(c, 1) && d < c.kit[1].range - 20) {
         const clear = !lineBlocked(s, c, b, t.x, t.y, 36), bounceOff = c.kit[1].bounces > 0 && s.minions.some(m => m.alive && m.team !== c.team && dist(m, t) < 340 && segDist(m.x, m.y, c.x, c.y, t.x, t.y) < 60);
@@ -2075,12 +2433,12 @@ const Sim = (() => {
     duelist(s, c, b, t, d, mode) {
       if (c.recast[0] > 0 && t && d < c.kit[0].reach1 + 30) { cast(c, 0, c.x, c.y); return true; }
       if (!t) return false;
-      if (rdy(c, 1) && (mode === 'retreat' && d < 460 || (b.parry && frac(c) < .6))) { const a = awayPoint(s, c, t, 320); cast(c, 1, a.x, a.y); return true; }
+      if (rdy(c, 1) && (mode === 'retreat' && d < 350 || (b.parry && frac(c) < .6))) { const a = awayPoint(s, c, t, c.kit[1].range); cast(c, 1, a.x, a.y); return true; }
       if (mode !== 'fight') return false;
       if (rdy(c, 2) && d < c.kit[2].range + 20 && losClear(s, c.x, c.y, t.x, t.y) && (b.ratio >= 1 || (c.f.honorbound && b.ratio >= .9)) && ultWorth(s, c, b, t)) { cast(c, 2, t.x, t.y); return true; }
       // A decoy away, and strike from the dark.
-      if (rdy(c, 1) && (c.f.masquerade || b.sk.iq > .5) && d > 180 && d < 340 && (s.t < (b.feintUntil || 0) || b.ratio >= 1.2)) { b.feintUntil = s.t + 6; const a = awayPoint(s, c, t, 280); cast(c, 1, a.x, a.y); return true; }
-      if (c.stealthT > 0 && d < 150 && rdy(c, 0)) { cast(c, 0, c.x, c.y); return true; }
+      if (rdy(c, 1) && (c.f.masquerade || b.sk.iq > .5) && d > 140 && d < c.kit[1].range && (s.t < (b.feintUntil || 0) || b.ratio >= 1.2)) { b.feintUntil = s.t + 6; const a = awayPoint(s, c, t, c.kit[1].range * .85); cast(c, 1, a.x, a.y); return true; }
+      if (c.stealthT > 0 && d < 130 && rdy(c, 0)) { cast(c, 0, c.x, c.y); return true; }
       if (rdy(c, 0) && d < c.kit[0].reach0 && losClear(s, c.x, c.y, t.x, t.y)) { cast(c, 0, c.x, c.y); return true; }
       return false;
     },
@@ -2089,7 +2447,7 @@ const Sim = (() => {
       const A2 = c.kit[2], A1 = c.kit[1];
       if (rdy(c, 1) && d < A1.range - 30 && !lineBlocked(s, c, b, t.x, t.y, A1.w)) {
         // Polymorph first on whoever is diving, casting or fleeing; a sharper bot waits for it to matter.
-        const rushing = d < 340 && b.ratio < 1.3, caster = t.chan || t.charge || t.dash;
+        const rushing = d < 260 && b.ratio < 1.3, caster = t.chan || t.charge || t.dash;
         if (rushing || caster || (mode === 'fight' && (c.f.transmuter || frac(t) < .55) && b.sk.iq >= .3)) { const p = lead(s, c, b, t, 1250); cast(c, 1, p.tx, p.ty); return true; }
       }
       if (mode === 'fight' && rdy(c, 2) && d < A2.range + 80 && losClear(s, c.x, c.y, t.x, t.y)) {
@@ -2111,7 +2469,7 @@ const Sim = (() => {
         const al = c.f.bloodletter ? (frac(c) < .85 ? c : null) : lowestAlly(s, c, 640, true), needs = al ? frac(al) < .8 : false, offensive = mode === 'fight' || (mode === 'poke' && b.ratio >= 1);
         if (needs ? offensive || mode === 'poke' : (offensive && (b.sk.iq < .5 || frac(t) < .75))) { cast(c, 1, t.x, t.y); return true; }
       }
-      if (rdy(c, 0) && d < A0.range + 30 && losClear(s, c.x, c.y, t.x, t.y) && (mode !== 'retreat' || d < 330)) {
+      if (rdy(c, 0) && d < A0.range + 30 && losClear(s, c.x, c.y, t.x, t.y) && (mode !== 'retreat' || d < 260)) {
         if (mode === 'retreat') { cast(c, 0, c.x, c.y); return true; }
         const p = lead(s, c, b, t, 0, .6); cast(c, 0, p.tx, p.ty); return true;
       }
@@ -2122,7 +2480,7 @@ const Sim = (() => {
       const A0 = c.kit[0];
       if (mode === 'retreat') {
         if (rdy(c, 1)) { cast(c, 1, c.x, c.y); return true; }
-        if (rdy(c, 0) && d < 480 && c.rootT <= 0) { const a = awayPoint(s, c, t, A0.range); cast(c, 0, a.x, a.y); return true; }
+        if (rdy(c, 0) && d < 360 && c.rootT <= 0) { const a = awayPoint(s, c, t, A0.range); cast(c, 0, a.x, a.y); return true; }
         return false;
       }
       if (rdy(c, 2) && d < c.kit[2].range + 30) {
@@ -2131,16 +2489,16 @@ const Sim = (() => {
       }
       // In the dark: walk in and let the basic attack do the crit. A sharper bot holds its Shank for after.
       if (c.stealthT > 0) return false;
-      if (mode === 'fight' && rdy(c, 1) && d > 320 && d < 900 && b.sk.iq > .3 && (b.ratio >= 1 || c.f.nightblade)) { cast(c, 1, c.x, c.y); return true; }
-      if (rdy(c, 0) && d < A0.range + 40 && c.rootT <= 0 && losClear(s, c.x, c.y, t.x, t.y) && (mode === 'fight' || (mode === 'poke' && d < 240 && b.ratio >= 1))) { const n = norm(t.x - c.x, t.y - c.y); cast(c, 0, t.x + n.x * 80, t.y + n.y * 80); return true; }
+      if (mode === 'fight' && rdy(c, 1) && d > 240 && d < 700 && b.sk.iq > .3 && (b.ratio >= 1 || c.f.nightblade)) { cast(c, 1, c.x, c.y); return true; }
+      if (rdy(c, 0) && d < A0.range + 40 && c.rootT <= 0 && losClear(s, c.x, c.y, t.x, t.y) && (mode === 'fight' || (mode === 'poke' && d < 190 && b.ratio >= 1))) { const n = norm(t.x - c.x, t.y - c.y); cast(c, 0, t.x + n.x * 60, t.y + n.y * 60); return true; }
       return false;
     },
     ironjaw(s, c, b, t, d, mode) {
       if (!t) return false;
       const A1 = c.kit[1];
       if (rdy(c, 1) && d < A1.range + 30 && losClear(s, c.x, c.y, t.x, t.y) && (mode !== 'poke' || b.ratio >= 1)) { cast(c, 1, t.x, t.y); return true; }
-      if (mode === 'retreat') { if (rdy(c, 0) && d < 300) { cast(c, 0, c.x, c.y); return true; } return false; }
-      if (rdy(c, 0) && d < c.kit[0].orbit + 110 && (mode === 'fight' || b.ratio >= 1)) { cast(c, 0, c.x, c.y); return true; }
+      if (mode === 'retreat') { if (rdy(c, 0) && d < 230) { cast(c, 0, c.x, c.y); return true; } return false; }
+      if (rdy(c, 0) && d < c.kit[0].orbit + 80 && (mode === 'fight' || b.ratio >= 1)) { cast(c, 0, c.x, c.y); return true; }
       if (mode === 'fight' && rdy(c, 2) && d < c.kit[2].range - 40 && b.ratio >= .9 && losClear(s, c.x, c.y, t.x, t.y)) {
         const n = norm(t.x - c.x, t.y - c.y); let line = 0;
         for (const e of b.foes) if (segDist(e.x, e.y, c.x, c.y, c.x + n.x * c.kit[2].range, c.y + n.y * c.kit[2].range) < 90) line++;
@@ -2150,11 +2508,11 @@ const Sim = (() => {
     },
     gravel(s, c, b, t, d, mode) {
       if (!t) return false;
-      if (rdy(c, 1) && d < 225) { cast(c, 1, c.x, c.y); return true; }
+      if (rdy(c, 1) && d < c.kit[1].r + 5) { cast(c, 1, c.x, c.y); return true; }
       if (mode === 'retreat') return false;
-      if (c.f.warden && rdy(c, 0)) { for (const a of s.champs) if (a !== c && a.alive && a.team === c.team && frac(a) < .4 && dist(a, c) > 220 && dist(a, c) < c.kit[0].range - 40 && losClear(s, c.x, c.y, a.x, a.y) && b.foes.some(e => dist(e, a) < 360) && (b.sk.iq > .35 || s.rand() < .3)) { cast(c, 0, a.x, a.y); return true; } }
-      if (rdy(c, 0) && d > 170 && d < c.kit[0].range - 30 && !lineBlocked(s, c, b, t.x, t.y, 50) && (mode === 'fight' || b.ratio >= 1)) { const p = lead(s, c, b, t, 1050); cast(c, 0, p.tx, p.ty); return true; }
-      if (mode === 'fight' && rdy(c, 2) && d < 580 && b.ratio >= .9 && losClear(s, c.x, c.y, t.x, t.y) && ultWorth(s, c, b, t)) { const p = lead(s, c, b, t, 1000); cast(c, 2, p.tx, p.ty); return true; }
+      if (c.f.warden && rdy(c, 0)) { for (const a of s.champs) if (a !== c && a.alive && a.team === c.team && frac(a) < .4 && dist(a, c) > 170 && dist(a, c) < c.kit[0].range - 40 && losClear(s, c.x, c.y, a.x, a.y) && b.foes.some(e => dist(e, a) < 360) && (b.sk.iq > .35 || s.rand() < .3)) { cast(c, 0, a.x, a.y); return true; } }
+      if (rdy(c, 0) && d > 130 && d < c.kit[0].range - 30 && !lineBlocked(s, c, b, t.x, t.y, 50) && (mode === 'fight' || b.ratio >= 1)) { const p = lead(s, c, b, t, 1050); cast(c, 0, p.tx, p.ty); return true; }
+      if (mode === 'fight' && rdy(c, 2) && d < c.kit[2].range - 40 && b.ratio >= .9 && losClear(s, c.x, c.y, t.x, t.y) && ultWorth(s, c, b, t)) { const p = lead(s, c, b, t, 1000); cast(c, 2, p.tx, p.ty); return true; }
       return false;
     },
   };
@@ -2192,7 +2550,7 @@ const Sim = (() => {
       if (p.homing) { if (p.target === c && p.owner.kind === 'champ') note(dist(p, c) / p.speed, 0, 0, 0); continue; }
       if (p.age < sk.react * .5) continue;
       const sp = Math.hypot(p.vx, p.vy) || 1, nx = p.vx / sp, ny = p.vy / sp, rx = c.x - p.x, ry = c.y - p.y, along = rx * nx + ry * ny;
-      if (along < -30 || along > 640) continue;
+      if (along < -30 || along > 520) continue;
       const side = rx * -ny + ry * nx;
       if (Math.abs(side) < p.w / 2 + c.r + 18) { const sg = side >= 0 ? 1 : -1; note(along / sp, -ny * sg, nx * sg, p.id); }
     }
@@ -2210,8 +2568,8 @@ const Sim = (() => {
         const sd = segDist(c.x, c.y, e.x, e.y, e.x + ch.dx * ch.len, e.y + ch.dy * ch.len);
         if (sd < ch.w / 2 + c.r + 16) { let x = -ch.dy, y = ch.dx; if (x * (c.x - e.x) + y * (c.y - e.y) < 0) { x = -x; y = -y; } note(ch.t, x, y, e.id * 7 + (s.t | 0)); }
       }
-      if (e.charge && e.charge.t > .7 && sk.iq > .6 && dist(c, e) < 820) {
-        const sd = segDist(c.x, c.y, e.x, e.y, e.x + e.charge.dx * 820, e.y + e.charge.dy * 820);
+      if (e.charge && e.charge.t > .7 && sk.iq > .6 && dist(c, e) < 640) {
+        const sd = segDist(c.x, c.y, e.x, e.y, e.x + e.charge.dx * 640, e.y + e.charge.dy * 640);
         if (sd < 34 + c.r) { let x = -e.charge.dy, y = e.charge.dx; if (x * (c.x - e.x) + y * (c.y - e.y) < 0) { x = -x; y = -y; } note(.4, x, y, e.id * 11 + (s.t | 0)); }
       }
       if (KITS[e.champ].melee && e.atkCd < .15 && dist(e, c) < e.range + c.r + 6 && sk.iq > .5) note(.15, 0, 0, 0);
@@ -2236,6 +2594,7 @@ const Sim = (() => {
       const kill = e.hp <= burstOn(c, e);
       let v = (front ? 1.8 : 1.4) * (1 - d / 1000) + sk.iq * ((1 - frac(e)) * 1.1 + CARRY[e.champ] * (b.cls === 'flank' ? 1.2 : .5) + (kill ? 1.2 : 0));
       if (e.id === b.tid) v += .35;
+      if (e.bounty > 0) v += sk.iq * Math.min(.5, e.bounty / 1200); // a shutdown pays
       if (e.id === ai.focus) v += .3 + sk.iq * .3;
       if (carry && sk.iq > .4 && dist(e, carry) < 380) v += .8;
       if (sk.iq > .4 && !kill) { const tw = towerOver(s, c.team, e.x, e.y); if (tw && alliesTanking(s, c.team, tw) < 2) v -= 1.2; }
@@ -2367,7 +2726,7 @@ const Sim = (() => {
     if (!b.gankReady || s.t < b.gankCd || frac(c) < .6 || c.lvl < 2) return null;
     let best = null, bv = .72;
     for (const e of b.foes) {
-      if (dist(e, c) > 1800 || towerOver(s, c.team, e.x, e.y)) continue;
+      if (dist(e, c) > 2100 || towerOver(s, c.team, e.x, e.y)) continue;
       const deep = c.team ? e.x > W * .52 : e.x < W * .48, hurt = frac(e), mate = s.champs.some(a => a !== c && a.alive && a.team === c.team && dist(a, e) < 700);
       let v = (deep ? .9 : 0) + (hurt < .7 ? .5 : 0) + (hurt < .4 ? .6 : 0) + (mate ? .55 : 0);
       if (!deep && hurt > .55 && !mate) v -= .8;
@@ -2403,7 +2762,7 @@ const Sim = (() => {
     }
     if (!camp) {
       // Everything of ours is down. Stand at the camp due back soonest, unless an enemy-side camp is free after laning.
-      let soon = null, st = 1e9;
+      let soon = b.route[0], st = soon.at;
       for (const k of b.route) if (k.at < st) { st = k.at; soon = k; }
       let enemy = null, bc = 1e9;
       if (ai.phase !== 'lane') for (const k of s.camps) {
@@ -2424,10 +2783,10 @@ const Sim = (() => {
   }
 
   function hoardTask(s, c, b, ai) {
-    const boss = s.monsters.find(m => m.boss && m.alive);
+    const boss = s.monsters.find(m => m.bossKind === ai.hoard.kind && m.alive);
     if (!boss) { moveTo(b, ai.hoard.x, ai.hoard.y, 90); return true; } // gather a little before it spawns
     const d = dist(c, boss);
-    if (!ai.hoardGo && d > 760) { moveTo(b, ai.hoard.x, ai.hoard.y, 90); return true; }
+    if (!ai.hoardGo && d > 900) { moveTo(b, ai.hoard.x, ai.hoard.y, 90); return true; }
     const want = Math.max(KITS[c.champ].pref + boss.r * .3, boss.r + c.r + 10);
     if (d > want) moveTo(b, boss.x, boss.y, want); else noMove(b);
     if (d - boss.r <= c.range) { c.atk = true; c.atkPref = boss.id; }
@@ -2448,11 +2807,13 @@ const Sim = (() => {
     senseThreats(s, c, b);
     const t = pickTarget(s, c, b, ai), d = t ? dist(c, t) : 1e9; b.tid = t ? t.id : 0;
     if (c.charge) handleCharge(s, c, b, t, d);
+    botConsumables(s, c, b, ai, t, d);
     if (c.stunT > 0) { noMove(b); return; }
 
-    if (homeD < 300) { b.lastHome = s.t; if (f > .92) b.low = false; }
+    if (homeD < 360) { b.lastHome = s.t; if (f > .92) b.low = false; }
     // Forge the moment it's affordable: anyone can press the button from anywhere.
     const nb = nextBuy(s, c); if (nb && c.gold >= nb.cost) c.q.push({ t: 'buy', id: nb.id });
+    botSpend(s, c, b, ai, nb);
     if (c.lvl >= 4 && c.evolved[0] < 0) c.q.push({ t: 'evolve', tier: 0, choice: botEvolve(c, 0) });
     if (c.lvl >= 8 && c.evolved[1] < 0) c.q.push({ t: 'evolve', tier: 1, choice: botEvolve(c, 1) });
     botBeacon(s, c, b, ai);
@@ -2475,9 +2836,9 @@ const Sim = (() => {
     if (f < sk.low || (f < sk.low + .15 && b.closest < 600 && b.ratio < .9)) b.low = true;
     if (b.low) {
       b.task = 'low';
-      if (homeD < 300) { c.atk = !towerOver(s, c.team, c.x, c.y, 0); noMove(b); return; }
+      if (homeD < 360) { c.atk = !towerOver(s, c.team, c.x, c.y, 0); noMove(b); return; }
       const hitLately = s.t - (b.hurtAt || -9) < 2.2 || s.monsters.some(m => m.alive && m.tgt === c);
-      const quiet = b.closest >= 700 && homeD > 900 && !hitLately && memThreat(s, c, b, ai, c.x, c.y, 650) < .5 + (1 - sk.iq);
+      const quiet = b.closest >= 700 && homeD > 1050 && !hitLately && memThreat(s, c, b, ai, c.x, c.y, 650) < .5 + (1 - sk.iq);
       if (quiet) { if (!c.chan) c.q.push({ t: 'recall' }); b.still = true; noMove(b); return; }
       moveTo(b, home.x, home.y, 40); c.atk = !towerOver(s, c.team, c.x, c.y, 0); if (t) useCombo(s, c, b, t, 'retreat');
       return;
@@ -2491,7 +2852,7 @@ const Sim = (() => {
       const shots = 1 + Math.ceil((d / c.msBase + 1) / 1.1); let shotsSum = 0; for (let i = 0; i < shots; i++) shotsSum += towerShot(s, i);
       const sureKill = kill && c.hp > shotsSum;
       const pokeFromOut = tw && d - t.r <= c.range && !towerOver(s, c.team, c.x, c.y, 0);
-      const group = ai.push !== null || ai.hoard;
+      const group = ai.push !== null || (ai.hoard && ai.hoard.ids.includes(c.id));
       let want = (kill && b.ratio > .7) || (b.ratio > 1.4 && (frac(t) < .7 || d < 620)) || (b.ratio > 1.15 && d < c.range + 70)
         || (b.fighting && b.ratio > .78 && d < 900) || (group && b.ratio > .95 && d < 850);
       if (tw && !sureKill && !pokeFromOut) want = false;
@@ -2543,7 +2904,8 @@ const Sim = (() => {
     if (called) { b.task = 'defend'; moveTo(b, ai.defend.x, ai.defend.y, 60); c.atk = true; }
     else if (ai.help[c.id] && ai.help[c.id].alive && heeds(ai.help[c.id].id + (s.t / 12 | 0))) { b.task = 'help'; const a = ai.help[c.id]; moveTo(b, a.x, a.y, 130); c.atk = true; }
     else if (ai.cover[c.id] !== undefined) { b.task = 'cover'; laneTask(s, c, b, ai.cover[c.id], ai, false); }
-    else if (ai.hoard && (hash01(1 + (s.t / 25 | 0), c.id + 7) < .65 + .35 * sk.macro) && hoardTask(s, c, b, ai)) { b.task = 'boss'; }
+    else if (ai.ev && ai.ev[c.id] && s.event && heeds(99 + (s.t / 12 | 0))) { b.task = 'event'; const E = s.event; moveTo(b, E.x, E.y, E.r * .55); c.atk = true; }
+    else if (ai.hoard && ai.hoard.ids.includes(c.id) && (hash01(1 + (s.t / 25 | 0), c.id + 7) < .65 + .35 * sk.macro) && hoardTask(s, c, b, ai)) { b.task = 'boss'; }
     else if (ai.sites[c.id] && ai.sites[c.id].alive && heeds(ai.sites[c.id].id + 41 + (s.t / 25 | 0))) { b.task = 'site'; const z = ai.sites[c.id]; moveTo(b, z.x, z.y, 70); c.atk = true; }
     else if (ai.split === c.id && ai.push !== null) { b.task = 'split'; laneTask(s, c, b, ai.push === 0 ? 1 : 0, ai, true); }
     else if (ai.push !== null) { b.task = 'push'; laneTask(s, c, b, ai.push, ai, true); }
@@ -2572,6 +2934,39 @@ const Sim = (() => {
   };
   const botEvolve = (c, tier) => { const v = BOT_EVOLVE[c.build]; return v ? v[tier] : 0; };
 
+  // Consumables as reactions: heal in a fight, shrug off a disable, spare gold becomes a war elixir.
+  function botConsumables(s, c, b, ai, t, d) {
+    const iq = b.sk.iq, f = frac(c), gold = c.gold, buy = id => c.q.push({ t: 'buy', id });
+    if (iq > .35 && !(c.potT > 0) && f < .5 && gold >= 110 && (b.fighting || b.closest < 600 || s.t - (b.hurtAt || -9) < 2.5 || b.low) && dist(c, s.fountains[c.team]) > 700 && hash01(c.id, s.t | 0) < .35 + .6 * iq) { buy('potion'); return; }
+    if (iq > .5 && (c.stunT > .5 || c.rootT > .5 || c.polyT > .4) && !(c.cleanseCd > 0) && gold >= 170 && b.closest < 700) { buy('cleanse'); return; }
+    if (iq > .55 && !(c.elixT > 0) && !(c.tonicT > 0) && b.low && gold >= 120 && dist(c, s.fountains[c.team]) > 1300 && b.closest < 500) { buy('tonic'); return; }
+  }
+  // When the items are done or gold piles up: elixir before fights, then reinforcements and the city.
+  function botSpend(s, c, b, ai, nb) {
+    if ((s.tick + c.id * 3) % 30 !== 0) return;
+    const late = s.t > 600, reserve = (late ? buybackCost(s, c) : 0) + (nb ? nb.cost : 0), spare = c.gold - reserve - 80;
+    if (spare < 100) return;
+    if (late && !(c.elixT > 0) && spare > 280 && (ai.hoard || ai.push !== null || b.fighting)) { c.q.push({ t: 'buy', id: 'elixir' }); return; }
+    if (s.t > 400 && spare > reinforceCost(s, c) + 120 && s.t >= s.reinforceAt[c.team]) {
+      const lane = ai.push !== null ? ai.push : ([0, 1].map(l => s.towers.filter(t => t.alive && t.team !== c.team && t.lane === l).length).reduce((a, x, i, arr) => x < arr[a] ? i : a, 0));
+      c.q.push({ t: 'reinforce', lane }); return;
+    }
+    const noBonus = c.team ? s.hope > 30 : s.hope < 70;
+    if (s.t > 360 && noBonus && spare > fundCost(s, c.team) + 200 && !(c.fundCd > 0) && hash01(c.id, s.t / 6 | 0) < .5) { c.q.push({ t: 'fund' }); return; }
+    if (c.beacons === 0 && spare > 150 && (c.role === 'support' || c.role === 'jungle')) c.q.push({ t: 'buy', id: 'beaconkit' });
+  }
+  // Dead bots still shop and decide on buyback.
+  function botDead(s, c, b) {
+    if ((s.tick + c.id * 7) % 20 !== 0) return;
+    const nb = nextBuy(s, c); if (nb && c.gold >= nb.cost) c.q.push({ t: 'buy', id: nb.id });
+    if (s.practice || c.buybackCd > 0 || c.respawn < 12) return;
+    const cost = buybackCost(s, c); if (c.gold < cost) return;
+    const core = s.towers.find(t => t.team === c.team && t.sub === 'core'), coreOpen = !core.alive ? false : towerOpen(s, core);
+    let danger = 0; if (coreOpen) { for (const e of s.champs) if (e.team !== c.team && e.alive && dist(e, core) < 900) danger++; for (const m of s.minions) if (m.team !== c.team && m.alive && dist(m, core) < 500) danger += .35; }
+    const late = s.t > 780, rich = c.gold > cost * 2.2;
+    if ((danger >= 1.5 && hash01(c.id, s.t / 5 | 0) < .35 + .6 * b.sk.macro) || (late && rich && hash01(c.id, s.t / 8 | 0) < .3 + .3 * b.sk.iq)) c.q.push({ t: 'buyback' });
+  }
+
   // Beacons, by role: supports and junglers light the map; laners watch their own brush.
   function botBeacon(s, c, b, ai) {
     if (c.beacons <= 0 || s.t < 45 || b.closest < 500 || (s.tick + c.id) % 20 !== 0 || hash01(c.id, s.t / 25 | 0) > .25 + .7 * b.sk.macro) return;
@@ -2581,7 +2976,8 @@ const Sim = (() => {
     let best = null, bv = 0;
     const consider = (x, y, v) => { const d = Math.hypot(x - c.x, y - c.y); if (d > 460 || has(x, y)) return; if (v / (1 + d / 900) > bv) { bv = v / (1 + d / 900); best = { x, y }; } };
     for (const br of s.map.brush) consider(br.x, br.y, c.role === 'support' || c.role === 'jungle' ? 3 : (Math.abs(br.y - (b.lane ? H - 330 : 330)) < 500 ? 2 : .6));
-    if (s.bossAt - s.t < 40) { const ct = mapCenter(s), n = norm(ct.x - c.x, ct.y - c.y); consider(ct.x - n.x * 300, ct.y - n.y * 300, 4); }
+    for (const B of s.bosses) if (!B.up && B.at - s.t < 40) { const n = norm(B.x - c.x, B.y - c.y); consider(B.x - n.x * 280, B.y - n.y * 280, B.kind === 'colossus' ? 4 : 2.5); }
+    if (s.event && (s.event.phase === 'warn' || s.event.t > 8)) consider(s.event.x, s.event.y, 3);
     for (const z of s.sites) if (z.alive) consider(z.x, z.y, c.role === 'support' ? 2 : 1);
     if (best) c.q.push({ t: 'beacon', tx: best.x, ty: best.y });
   }
@@ -2634,13 +3030,14 @@ const Sim = (() => {
     return out;
   }
 
+  // Compact network state. Concatenated into the Sim closure by build.py.
   // ---------- networking: compact state for host-authoritative play ----------
   // Fast state is binary and goes out unreliably about 20 times a second. Slow state is a
   // sparse delta of whole numbers on the reliable channel, so a lost packet can't desync it.
   const FX_CODE = ['snipe', 'snipeFull', 'deadeye', 'orb', 'ray', 'chain', 'bolt', 'mbolt', 'tower', 'rupture', 'crash', 'heal', 'stomp', 'dome', 'break', 'dash', 'parry', 'slash', 'tripwire', 'ricochet', 'lockdown', 'flourish', 'feint', 'salute', 'hexbolt', 'polymorph', 'coven', 'miasma', 'leech', 'quarantine', 'shank', 'vanish', 'cuts', 'wrecking', 'grab', 'demolish', 'smoke', 'blink', 'tether', 'orbit', 'decoy', 'ring', 'fissure', 'tripline'];
   const ZONE_KINDS = ['blast', 'dome', 'tripline', 'lockdown', 'coven', 'miasma', 'quarantine', 'ring', 'tether', 'orbit', 'fissure', 'decoy'];
   const FX_NUM = {}; FX_CODE.forEach((f, i) => { FX_NUM[f] = i; });
-  const POS = 14, SNAP_MAGIC = 0xF3;
+  const POS = 12, SNAP_MAGIC = 0xF3, INTEREST = 280; // POS: 16 bits must span the 5184-wide map
   const wb = new DataView(new ArrayBuffer(32768)); let wp = 0;
   const w8 = v => { wb.setUint8(wp, v); wp += 1; };
   const wi8 = v => { wb.setInt8(wp, clamp(Math.round(v), -127, 127)); wp += 1; };
@@ -2656,8 +3053,29 @@ const Sim = (() => {
   }
 
   // Everything that moves or flickers. `seat` indexes the guest's champion in s.champs.
-  function snapshot(s, seat = -1, ack = 0) {
+  // Layout: header, the seat's own timers, then a body that depends only on the seat's team, so a host with 7 guests
+  // encodes it twice a tick at most (pass the same `cache` object for all guests of a tick).
+  function snapshot(s, seat = -1, ack = 0, cache) {
     wp = 0; w8(SNAP_MAGIC); w8((s.seed || 0) & 255); wb.setUint32(wp, s.tick, true); wp += 4; w16(ack); w8(seat + 1);
+    let team = -1;
+    if (seat >= 0) {
+      const c = s.champs[seat]; team = c.team;
+      for (let i = 0; i < 3; i++) w16(Math.max(0, c.cd[i]) * 100);
+      for (let i = 0; i < 3; i++) w16(Math.max(0, c.recast[i]) * 100);
+      w16(Math.max(0, c.atkCd) * 100); wByte((c.slowT > 0 ? c.slowA : 0) * 100); wByte((c.hasteT > 0 ? c.hasteA : 0) * 100);
+    }
+    const start = wp;
+    if (cache && cache[team + 1]) { new Uint8Array(wb.buffer).set(cache[team + 1], wp); wp += cache[team + 1].length; }
+    else { snapBody(s, team); if (cache) cache[team + 1] = new Uint8Array(wb.buffer.slice(start, wp)); }
+    return wb.buffer.slice(0, wp);
+  }
+  // Units far outside a team's sight can't be drawn by that team's guests, so they aren't sent. The margin keeps edges from popping.
+  function inInterest(s, team, u) {
+    if (team < 0 || u.team === team || u.revealT > 0 || u.markT > 0) return true;
+    for (const v of visionSources(s, team)) { const r = v.r + INTEREST, dx = v.x - u.x, dy = v.y - u.y; if (dx * dx + dy * dy < r * r) return true; }
+    return false;
+  }
+  function snapBody(s, team) {
     w8(s.champs.length);
     for (const c of s.champs) {
       const chan = c.chan, ch = c.charge, brush = c.inBrush >= 0, curse = c.curseT > 0 ? c.curseN || 0 : 0, pstack = c.pstack || 0, up = c.air > 0 || c.knockT > 0;
@@ -2672,16 +3090,11 @@ const Sim = (() => {
       if (ch) { w8(ch.slot); wByte(ch.t * 50); wi8(ch.dx * 127); wi8(ch.dy * 127); }
       if (c.echo) { wPos(c.echo.x); wPos(c.echo.y); }
     }
-    if (seat >= 0) {
-      const c = s.champs[seat];
-      for (let i = 0; i < 3; i++) w16(Math.max(0, c.cd[i]) * 100);
-      for (let i = 0; i < 3; i++) w16(Math.max(0, c.recast[i]) * 100);
-      w16(Math.max(0, c.atkCd) * 100); wByte((c.slowT > 0 ? c.slowA : 0) * 100); wByte((c.hasteT > 0 ? c.hasteA : 0) * 100);
-    }
-    const extraOf = m => (m.curseT > 0 ? Math.min(7, m.curseN || 0) : 0) | (m.poisonT > 0 ? 8 : 0) | (m.bleedT > 0 ? 16 : 0) | (m.polyT > 0 ? 32 : 0) | (m.knockT > 0 ? 64 : 0);
-    wList(s.monsters, 60, m => { const ex = extraOf(m); wPos(m.x); wPos(m.y); w8(hp8(m)); w8((m.big ? 1 : 0) | (m.boss ? 2 : 0) | (m.stunT > 0 ? 4 : 0) | (m.slowT > 0 ? 8 : 0) | (m.markT > 0 ? 16 : 0) | (ex ? 128 : 0)); if (ex) w8(ex); });
-    wList(s.minions, 240, m => { wPos(m.x); wPos(m.y); w8(hp8(m)); w8((m.team ? 1 : 0) | (m.ranged ? 2 : 0) | (m.stunT > 0 ? 4 : 0) | (m.slowT > 0 ? 8 : 0) | (m.markT > 0 ? 16 : 0) | (m.delay > 0 ? 32 : 0) | (m.lane ? 64 : 0) | (extraOf(m) ? 128 : 0)); if (extraOf(m)) w8(extraOf(m)); });
-    wList(s.proj, 160, p => {
+    const extraOf = m => (m.curseT > 0 ? Math.min(7, m.curseN || 0) : 0) | (m.poisonT > 0 ? 8 : 0) | (m.bleedT > 0 ? 16 : 0) | (m.polyT > 0 ? 32 : 0) | (m.knockT > 0 ? 64 : 0) | (m.heavy ? 128 : 0);
+    const near = list => team < 0 ? list : list.filter(u => inInterest(s, team, u));
+    wList(near(s.monsters), 60, m => { const ex = extraOf(m); wPos(m.x); wPos(m.y); w8(hp8(m)); w8((m.big ? 1 : 0) | (m.boss ? 2 : 0) | (m.stunT > 0 ? 4 : 0) | (m.slowT > 0 ? 8 : 0) | (m.markT > 0 ? 16 : 0) | (m.shellT > 0 ? 32 : 0) | (ex ? 128 : 0)); if (ex) w8(ex); });
+    wList(near(s.minions), 240, m => { const ex = extraOf(m); wPos(m.x); wPos(m.y); w8(hp8(m)); w8((m.team ? 1 : 0) | (m.ranged ? 2 : 0) | (m.stunT > 0 ? 4 : 0) | (m.slowT > 0 ? 8 : 0) | (m.markT > 0 ? 16 : 0) | (m.delay > 0 ? 32 : 0) | (m.lane ? 64 : 0) | (ex ? 128 : 0)); if (ex) w8(ex); });
+    wList(near(s.proj), 160, p => {
       wPos(p.x); wPos(p.y); w8(p.team | (p.homing ? 4 : 0) | (p.pierce ? 8 : 0)); w8(FX_NUM[p.fx] === undefined ? 255 : FX_NUM[p.fx]); wByte(p.w); wVar(p.owner.id);
       if (p.homing) wVar(p.target.id); else { wi16(p.vx / 8); wi16(p.vy / 8); }
     });
@@ -2689,7 +3102,6 @@ const Sim = (() => {
     wList(s.beacons, 40, b => { wPos(b.x); wPos(b.y); w8(b.team | (b.hp << 2) | ((b.inBrush + 1) << 4)); wByte(b.t); });
     let mask = 0; s.sites.forEach((z, i) => { if (z.prog[0] > 0 || z.prog[1] > 0) mask |= 1 << i; });
     w8(mask); s.sites.forEach((z, i) => { if (mask & 1 << i) { wByte(z.prog[0] * 40); wByte(z.prog[1] * 40); } });
-    return wb.buffer.slice(0, wp);
   }
 
   function decodeSnapshot(buf) {
@@ -2698,7 +3110,10 @@ const Sim = (() => {
     const rPos = () => r16() / POS, rVar = () => { let v = 0, sh = 0, b; do { b = r8(); v |= (b & 127) << sh; sh += 7; } while (b & 128); return v >>> 0; };
     if (r8() !== SNAP_MAGIC) return null;
     const mid = r8(), tick = d.getUint32(p, true); p += 4;
-    const ack = r16(), seat = r8() - 1, n = r8(), champs = [];
+    const ack = r16(), seat = r8() - 1;
+    let own = null;
+    if (seat >= 0) own = { cd: [r16() / 100, r16() / 100, r16() / 100], recast: [r16() / 100, r16() / 100, r16() / 100], atkCd: r16() / 100, slowA: r8() / 100, hasteA: r8() / 100 };
+    const n = r8(), champs = [];
     for (let i = 0; i < n; i++) {
       const c = { x: rPos(), y: rPos(), hp: r16(), fx: ri8() / 127, fy: ri8() / 127, fl: r16(), fl2: r16(), z: 0, br: -1, chan: null, charge: null, echo: null, ps: 0 };
       if (c.fl & 2 || c.fl2 & 4) c.z = r8() * 2;
@@ -2709,8 +3124,6 @@ const Sim = (() => {
       if (c.fl & 16384) c.echo = { x: rPos(), y: rPos() };
       champs.push(c);
     }
-    let own = null;
-    if (seat >= 0) own = { cd: [r16() / 100, r16() / 100, r16() / 100], recast: [r16() / 100, r16() / 100, r16() / 100], atkCd: r16() / 100, slowA: r8() / 100, hasteA: r8() / 100 };
     const list = fn => { const k = rVar(), out = new Array(k); let id = 0; for (let i = 0; i < k; i++) { id += rVar(); out[i] = fn(id); } return out; };
     const unitRow = id => { const o = { id, x: rPos(), y: rPos(), hp: r8(), fl: r8(), ex: 0 }; if (o.fl & 128) o.ex = r8(); return o; };
     const mon = list(unitRow);
@@ -2759,14 +3172,15 @@ const Sim = (() => {
       if (map.size > arr.length * 2 + 40) { const live = new Set(frameA.map(a => a.id)); for (const k of map.keys()) if (!live.has(k)) map.delete(k); }
     };
     sync(s.monsters, A.mon, B && B.mon, rx.m, a => ({ id: a.id, kind: 'monster', team: 2, alive: true, maxHp: 255, big: !!(a.fl & 1), boss: !!(a.fl & 2), r: a.fl & 2 ? 58 : a.fl & 1 ? 32 : 19, ms: a.fl & 2 ? 170 : 260, fx: 1, fy: 0 }),
-      (u, a) => { u.hp = a.hp; u.stunT = a.fl & 4 ? 1 : 0; u.slowT = a.fl & 8 ? 1 : 0; u.markT = a.fl & 16 ? 1 : 0; unitExtra(u, a.ex); });
+      (u, a) => { u.hp = a.hp; u.stunT = a.fl & 4 ? 1 : 0; u.slowT = a.fl & 8 ? 1 : 0; u.markT = a.fl & 16 ? 1 : 0; u.shellT = a.fl & 32 ? 1 : 0; unitExtra(u, a.ex); if (u.boss && !u.bossKind && s.bosses) { const b = s.bosses.find(x => x.id === u.id); if (b) u.bossKind = b.kind; } });
     sync(s.minions, A.min, B && B.min, rx.n, a => ({ id: a.id, kind: 'minion', team: a.fl & 1, ranged: !!(a.fl & 2), lane: a.fl & 64 ? 1 : 0, alive: true, maxHp: 255, r: a.fl & 2 ? 14 : 17, sight: 500, ms: 215, range: a.fl & 2 ? 300 : 95, fx: a.fl & 1 ? -1 : 1, fy: 0 }),
-      (u, a) => { u.hp = a.hp; u.stunT = a.fl & 4 ? 1 : 0; u.slowT = a.fl & 8 ? 1 : 0; u.markT = a.fl & 16 ? 1 : 0; u.delay = a.fl & 32 ? 1 : 0; unitExtra(u, a.ex); });
+      (u, a) => { u.hp = a.hp; u.stunT = a.fl & 4 ? 1 : 0; u.slowT = a.fl & 8 ? 1 : 0; u.markT = a.fl & 16 ? 1 : 0; u.delay = a.fl & 32 ? 1 : 0; unitExtra(u, a.ex); u.heavy = !!(a.ex & 128); u.type = u.heavy ? 'heavy' : u.ranged ? 'ranged' : 'melee'; });
     sync(s.proj, A.proj, B && B.proj, rx.p, a => ({ id: a.id, team: a.fl & 3, homing: !!(a.fl & 4), pierce: !!(a.fl & 8), fx: FX_CODE[a.fx], w: a.w, age: 0, vx: a.vx, vy: a.vy, seen: s.t }),
       (u, a) => { u.age = s.t - u.seen; u.vx = a.vx; u.vy = a.vy; u.w = a.w; if (!u.owner || u.owner.id !== a.owner) u.owner = unitOf(s, a.owner) || ghostUnit(a.owner, a.x, a.y, a.fl & 3); if (u.homing && (!u.target || u.target.id !== a.target)) u.target = unitOf(s, a.target) || ghostUnit(a.target, a.x, a.y, 2); });
     sync(s.zones, A.zones, B && B.zones, rx.z, a => ({ id: a.id, x: a.x, y: a.y, kind: ZONE_KINDS[a.fl >> 2], fx: FX_CODE[a.fx], r: a.r, team: a.fl & 3, total: a.total, t: a.t, line: !!(a.ext & 1), tgt: a.tgt }),
       (u, a) => { u.t = Math.max(0, a.t - span * f * DT); u.total = a.total; u.r = a.r; if (a.ext & 1) { u.x1 = a.x1; u.y1 = a.y1; u.x2 = a.x2; u.y2 = a.y2; } if (!u.owner) u.owner = unitOf(s, a.owner) || ghostUnit(a.owner, a.x, a.y, a.fl & 3); });
     sync(s.beacons, A.beacons, null, rx.b, a => ({ id: a.id, kind: 'beacon', team: a.fl & 3, x: a.x, y: a.y, px: a.x, py: a.y, r: 16, maxHp: 3, alive: true, sight: 560, inBrush: (a.fl >> 4) - 1 }), (u, a) => { u.hp = (a.fl >> 2) & 3; u.t = a.t; });
+    const ev = s.event; if (ev && ev.tx !== undefined) { ev.x += (ev.tx - ev.x) * .12; ev.y += (ev.ty - ev.y) * .12; }
     for (const z of s.sites) { const p = A.prog && A.prog[z.id]; z.prog[0] = p ? p[0] : 0; z.prog[1] = p ? p[1] : 0; }
   }
   const unitOf = (s, id) => s.champs.find(c => c.id === id) || s.towers.find(c => c.id === id) || (s.rx && (s.rx.n.get(id) || s.rx.m.get(id)));
@@ -2788,13 +3202,27 @@ const Sim = (() => {
   function applySnapshot(s, data, seat = -1) { const fr = typeof data.byteLength === 'number' ? decodeSnapshot(data) : data; if (fr) applyFrame(s, fr, null, 0, seat); return fr; }
 
   function unitExtra(u, ex) { u.curseN = ex & 7; u.curseT = u.curseN ? 1 : 0; u.poisonT = ex & 8 ? 1 : 0; u.bleedT = ex & 16 ? 1 : 0; u.polyT = ex & 32 ? 1 : 0; u.knockT = ex & 64 ? 1 : 0; }
-  // Slow fields as flat whole numbers; a diff of two of these is the delta.
+  // Slow fields as flat values; a diff of two of these is the delta.
+  // Numbers default to 0 so a field gameplay hasn't added yet stays harmless. Section 4 is JSON text per key, for the structured HUD state.
+  const num = v => (typeof v === 'number' && isFinite(v) ? v : 0), ceil = v => Math.ceil(num(v)), round = v => Math.round(num(v));
+  const JSON_KEYS = ['bosses', 'boons', 'event', 'votes'];
+  const r2 = v => Math.round(num(v) * 100) / 100, r1 = v => Math.round(num(v) * 10) / 10;
+  function jsonPart(s, key) {
+    const v = s[key];
+    if (key === 'bosses') return JSON.stringify((v || []).map(b => ({ kind: b.kind, name: b.name, x: round(b.x), y: round(b.y), r: b.r, at: r1(b.at), up: !!b.up, id: b.id || 0 })));
+    if (key === 'boons') return JSON.stringify((v || []).map(o => { const out = {}; for (const k in o) if (o[k] > 0) out[k] = Math.ceil(o[k]); return out; }));
+    if (key === 'event') return v ? JSON.stringify({ kind: v.kind, phase: v.phase, t: r1(v.t), total: r1(v.total), x: round(v.x), y: round(v.y), r: v.r, prog: (v.prog || [0, 0]).map(r2), hp: round(v.hp), i: v.i || 0, winner: v.winner === undefined ? -1 : v.winner }) : 'null';
+    if (key === 'votes') return JSON.stringify((v || []).map(o => o ? { yes: o.yes, no: o.no, t: r1(o.t) } : null));
+    return JSON.stringify(v === undefined ? null : v);
+  }
   function slowFlat(s) {
+    const fund = s.fund || [0, 0], rein = s.reinforceAt || [0, 0], fog = s.fog || [1, 1];
     return [
-      [[Math.round(s.hope * 10), s.hopeTeam, s.kills[0], s.kills[1], Math.round(s.bossAt), s.bossUp ? 1 : 0, s.buff[0], s.buff[1], s.wave, s.over ? s.over.winner + 1 : 0, s.over ? Math.round(s.over.t * 10) : 0]],
-      s.champs.map(c => [c.lvl, Math.round(c.xp), Math.floor(c.gold), Math.round(c.maxHp), Math.round(c.msBase), Math.ceil(c.respawn), itemCode(c.items[0]), itemCode(c.items[1]), itemCode(c.items[2]), c.evolved[0] + 1, c.evolved[1] + 1, c.beacons, Math.ceil(c.beaconT), c.streak, Math.round(c.armor), c.stats.kills, c.stats.deaths, c.stats.assists, c.stats.casts, c.stats.skillHits, c.stats.parries, Math.round(c.stats.dmg), c.as * 1000 | 0]),
+      [[Math.round(s.hope * 10), s.hopeTeam, s.kills[0], s.kills[1], Math.round(s.bossAt), s.bossUp ? 1 : 0, s.buff[0], s.buff[1], s.wave, s.over ? s.over.winner + 1 : 0, s.over ? Math.round(s.over.t * 10) : 0, s.over && s.over.surrender ? 1 : 0, round(s.eventAt), num(fund[0]), num(fund[1]), Math.ceil(num(rein[0])), Math.ceil(num(rein[1])), Math.round(num(fog[0]) * 100), Math.round(num(fog[1]) * 100)]],
+      s.champs.map(c => [c.lvl, Math.round(c.xp), Math.floor(c.gold), Math.round(c.maxHp), Math.round(c.msBase), Math.ceil(c.respawn), itemCode(c.items[0]), itemCode(c.items[1]), itemCode(c.items[2]), itemCode(c.items[3]), itemCode(c.items[4]), c.evolved[0] + 1, c.evolved[1] + 1, c.beacons, Math.ceil(c.beaconT), c.streak, Math.round(c.armor), c.stats.kills, c.stats.deaths, c.stats.assists, c.stats.casts, c.stats.skillHits, c.stats.parries, Math.round(c.stats.dmg), c.as * 1000 | 0, round(c.bounty), ceil(c.buybackCd), ceil(c.potT), ceil(c.elixT), ceil(c.tonicT), ceil(c.sentT), ceil(c.wlT), round(c.stats.dealt), round(c.stats.taken), round(c.stats.healing), round(c.stats.gold), num(c.stats.towers), num(c.stats.objectives), num(c.stats.rescues)]),
       s.towers.map(t => [Math.ceil(t.hp), t.alive ? 1 : 0]),
       s.sites.map(z => [z.alive ? 1 : 0]),
+      [JSON_KEYS.map(k => jsonPart(s, k))],
     ];
   }
   function slowDiff(prev, cur) {
@@ -2802,22 +3230,35 @@ const Sim = (() => {
     cur.forEach((sec, a) => sec.forEach((row, b) => row.forEach((v, c) => { if (!prev || prev[a][b][c] !== v) out.push(a, b, c, v); })));
     return out;
   }
-  const itemCode = id => id ? ITEM_BY[id].i + 1 : 0, setItem = i => (c, v) => { c.items[i] = v ? ITEMS[v - 1].id : null; c.dirtyKit = 1; };
-  const G_FIELDS = [(s, v) => { s.hope = v / 10; }, (s, v) => { s.hopeTeam = v; }, (s, v) => { s.kills[0] = v; }, (s, v) => { s.kills[1] = v; }, (s, v) => { s.bossAt = v; }, (s, v) => { s.bossUp = !!v; }, (s, v) => { s.buff[0] = v; }, (s, v) => { s.buff[1] = v; }, (s, v) => { s.wave = v; }, (s, v) => { s.over = v ? Object.assign(s.over || { t: 0 }, { winner: v - 1 }) : null; }, (s, v) => { if (s.over) s.over.t = v / 10; }];
-  const C_FIELDS = [(c, v) => { c.lvl = v; }, (c, v) => { c.xp = v; }, (c, v) => { c.gold = v; }, (c, v) => { c.maxHp = v; }, (c, v) => { c.msBase = v; }, (c, v) => { c.respawn = v; }, setItem(0), setItem(1), setItem(2), (c, v) => { c.evolved[0] = v - 1; c.dirtyKit = 1; }, (c, v) => { c.evolved[1] = v - 1; c.dirtyKit = 1; }, (c, v) => { c.beacons = v; }, (c, v) => { c.beaconT = v; }, (c, v) => { c.streak = v; }, (c, v) => { c.armor = v; }, (c, v) => { c.stats.kills = v; }, (c, v) => { c.stats.deaths = v; }, (c, v) => { c.stats.assists = v; }, (c, v) => { c.stats.casts = v; }, (c, v) => { c.stats.skillHits = v; }, (c, v) => { c.stats.parries = v; }, (c, v) => { c.stats.dmg = v; }, (c, v) => { c.as = v / 1000; }];
+  const itemCode = id => (id && ITEM_BY[id] ? ITEM_BY[id].i + 1 : 0), setItem = i => (c, v) => { c.items[i] = v ? ITEMS[v - 1].id : null; c.dirtyKit = 1; };
+  const G_FIELDS = [(s, v) => { s.hope = v / 10; }, (s, v) => { s.hopeTeam = v; }, (s, v) => { s.kills[0] = v; }, (s, v) => { s.kills[1] = v; }, (s, v) => { s.bossAt = v; }, (s, v) => { s.bossUp = !!v; }, (s, v) => { s.buff[0] = v; }, (s, v) => { s.buff[1] = v; }, (s, v) => { s.wave = v; }, (s, v) => { s.over = v ? Object.assign(s.over || { t: 0 }, { winner: v - 1 }) : null; }, (s, v) => { if (s.over) s.over.t = v / 10; }, (s, v) => { if (s.over) s.over.surrender = !!v; }, (s, v) => { s.eventAt = v; }, (s, v) => { (s.fund || (s.fund = [0, 0]))[0] = v; }, (s, v) => { (s.fund || (s.fund = [0, 0]))[1] = v; }, (s, v) => { (s.reinforceAt || (s.reinforceAt = [0, 0]))[0] = v; }, (s, v) => { (s.reinforceAt || (s.reinforceAt = [0, 0]))[1] = v; }, (s, v) => { (s.fog || (s.fog = [1, 1]))[0] = v / 100; }, (s, v) => { (s.fog || (s.fog = [1, 1]))[1] = v / 100; }];
+  const stat = k => (c, v) => { c.stats[k] = v; }, plain = k => (c, v) => { c[k] = v; };
+  const C_FIELDS = [plain('lvl'), plain('xp'), plain('gold'), plain('maxHp'), plain('msBase'), plain('respawn'), setItem(0), setItem(1), setItem(2), setItem(3), setItem(4), (c, v) => { c.evolved[0] = v - 1; c.dirtyKit = 1; }, (c, v) => { c.evolved[1] = v - 1; c.dirtyKit = 1; }, plain('beacons'), plain('beaconT'), plain('streak'), plain('armor'), stat('kills'), stat('deaths'), stat('assists'), stat('casts'), stat('skillHits'), stat('parries'), stat('dmg'), (c, v) => { c.as = v / 1000; }, plain('bounty'), plain('buybackCd'), plain('potT'), plain('elixT'), plain('tonicT'), plain('sentT'), plain('wlT'), stat('dealt'), stat('taken'), stat('healing'), stat('gold'), stat('towers'), stat('objectives'), stat('rescues')];
   function applySlow(s, d) {
     for (let i = 0; i < d.length; i += 4) {
       const a = d[i], b = d[i + 1], c = d[i + 2], v = d[i + 3];
-      if (a === 0) G_FIELDS[c](s, v);
-      else if (a === 1) C_FIELDS[c](s.champs[b], v);
-      else if (a === 2) { if (c === 0) s.towers[b].hp = v; else s.towers[b].alive = !!v; }
-      else if (a === 3) s.sites[b].alive = !!v;
+      try {
+        if (a === 0) G_FIELDS[c](s, v);
+        else if (a === 1) C_FIELDS[c](s.champs[b], v);
+        else if (a === 2) { if (c === 0) s.towers[b].hp = v; else s.towers[b].alive = !!v; }
+        else if (a === 3) s.sites[b].alive = !!v;
+        else if (a === 4) {
+          const key = JSON_KEYS[c], val = JSON.parse(v);
+          if (key === 'event') {
+            // Keep a moving event's drawn position smooth between these 5 Hz updates.
+            const old = s.event;
+            if (val && old && old.kind === val.kind) { val.tx = val.x; val.ty = val.y; val.x = old.x; val.y = old.y; }
+            else if (val) { val.tx = val.x; val.ty = val.y; }
+          }
+          s[key] = val;
+        }
+      } catch (e) { if (typeof console !== 'undefined') console.error('slow', a, b, c, e); }
     }
     for (const c of s.champs) if (c.dirtyKit) { c.dirtyKit = 0; refreshChamp(c); }
   }
 
   // Events, as short arrays. Position fields are rounded; everything else is passed as is.
-  const EV_KEYS = { hit: ['u', 'a', 'sk', 'crit', 'by'], heal: ['u', 'a'], die: ['u', 'kind', 'x', 'y', 'by'], gold: ['u', 'a'], boom: ['x', 'y', 'r', 'fx', 'x2', 'y2'], phit: ['x', 'y', 'fx'], blink: ['x', 'y'], parry: ['u'], cast: ['u', 'fx', 'dx', 'dy', 'slot', 'charge'], fire: ['u', 'fx', 'dx', 'dy'], root: ['u'], knock: ['u'], poly: ['u'], curse: ['u', 'n'], shield: ['u', 'a'], stealth: ['u', 'on'], ping: ['u', 'kind', 'x', 'y', 'team'], evolve: ['u', 'tier', 'choice'], buy: ['u', 'id'], sell: ['u', 'id'], beacon: ['u', 'x', 'y', 'team'], bhit: ['x', 'y', 'team'], level: ['u'], tower: ['team', 'sub'], bossup: [], boss: ['team'], feed: ['a', 'b', 'multi', 'first', 'bounty'], spawn: ['u'], tshot: ['u', 't', 'n'], cancelled: ['u'], stun: ['u'], mark: ['u'], forge: ['u', 'track'], atk: ['u', 't'], matk: ['u'], civ: ['team', 'x', 'y', 'id'], hope: ['team', 'on'] };
+  const EV_KEYS = { hit: ['u', 'a', 'sk', 'crit', 'by'], heal: ['u', 'a'], die: ['u', 'kind', 'x', 'y', 'by'], gold: ['u', 'a'], boom: ['x', 'y', 'r', 'fx', 'x2', 'y2'], phit: ['x', 'y', 'fx'], blink: ['x', 'y'], parry: ['u'], cast: ['u', 'fx', 'dx', 'dy', 'slot', 'charge'], fire: ['u', 'fx', 'dx', 'dy'], root: ['u'], knock: ['u'], poly: ['u'], curse: ['u', 'n'], shield: ['u', 'a'], stealth: ['u', 'on'], ping: ['u', 'kind', 'x', 'y', 'team'], evolve: ['u', 'tier', 'choice'], buy: ['u', 'id'], sell: ['u', 'id'], beacon: ['u', 'x', 'y', 'team'], bhit: ['x', 'y', 'team'], level: ['u'], tower: ['team', 'sub'], bossup: ['kind'], boss: ['team', 'kind'], feed: ['a', 'b', 'multi', 'first', 'bounty'], spawn: ['u'], tshot: ['u', 't', 'n'], cancelled: ['u'], stun: ['u'], mark: ['u'], forge: ['u', 'track'], atk: ['u', 't'], matk: ['u'], civ: ['team', 'x', 'y', 'id', 'n'], hope: ['team', 'on'], recap: ['u', 'list', 'total'], mapevent: ['kind', 'phase', 'team', 'x', 'y'], fund: ['u', 'team', 'a'], reinforce: ['u', 'team', 'lane'], buyback: ['u'], surrender: ['team', 'phase', 'yes', 'no', 'need'], consume: ['u', 'id'], boon: ['team', 'kind', 'on'] };
   const EV_NAMES = Object.keys(EV_KEYS), EV_IDX = {}; EV_NAMES.forEach((n, i) => { EV_IDX[n] = i; });
   const EV_ROUND = { x: 1, y: 1, x2: 1, y2: 1, dx: 100, dy: 100 };
   function packEvent(e) {
@@ -2853,30 +3294,33 @@ const Sim = (() => {
     c.vx = (c.x - c.px) / DT; c.vy = (c.y - c.py) / DT;
   }
 
+
   // ---------- step ----------
   function step(s) {
     if (s.over) return;
+    if (s.practice) { s.eventAt = 1e9; s.bossAt = 1e9; for (const B of s.bosses) if (!B.up) B.at = 1e9; }
     s.t += DT; s.tick++;
     s.navLeft = 2;
     if (s.hope !== 50) setHope(s, s.hope + (50 - s.hope) * HOPE_DRIFT * DT); // public mood settles back toward even
     refreshLanes(s);
     if (s.tick % 15 === 0) teamThink(s, 0); else if (s.tick % 15 === 7) teamThink(s, 1);
     if (s.tick % 15 === 3) for (const c of s.champs) updateSolo(s, c);
-    for (const c of s.champs) if (c.bot && c.alive) {
+    for (const c of s.champs) if (c.bot) {
+      if (!c.alive) { botDead(s, c, c.bot); continue; }
       const b = c.bot; b.next -= DT;
       if (b.next <= 0) { b.next = b.sk.think; botThink(s, c, b); }
       botSteer(s, c, b);
     }
     if (s.t >= s.nextWave) { spawnWave(s); s.nextWave += s.t > 900 ? 17 : 26; }
     for (const camp of s.camps) if (!camp.alive && s.t >= camp.at) spawnCamp(s, camp);
-    if (s.t >= s.bossAt && !s.monsters.some(m => m.boss && m.alive)) { spawnBoss(s); s.bossAt = s.t; }
-    if (s.bossUp && !s.monsters.some(m => m.boss && m.alive)) s.bossUp = false;
+    for (const B of s.bosses) if (!B.up && s.t >= B.at) spawnBoss(s, B);
     for (const c of s.champs) stepChamp(s, c);
     for (const m of s.minions) if (m.alive) stepMinion(s, m);
-    for (let i = 0; i < s.minions.length; i++) { const a = s.minions[i]; if (!a.alive || a.delay > 0) continue; for (let j = i + 1; j < s.minions.length; j++) { const b = s.minions[j]; if (!b.alive || b.delay > 0 || a.team !== b.team) continue; const dx = a.x - b.x, dy = a.y - b.y, d = Math.hypot(dx, dy), mn = a.r + b.r; if (d < mn && d > .01) { const p = (mn - d) * .25 / d; a.x += dx * p; a.y += dy * p; b.x -= dx * p; b.y -= dy * p; } } }
+    { const groups = [[], [], [], []]; for (const m of s.minions) if (m.alive && !(m.delay > 0)) groups[m.team * 2 + m.lane].push(m); for (const g of groups) for (let i = 0; i < g.length; i++) { const a = g[i]; for (let j = i + 1; j < g.length; j++) { const b = g[j], dx = a.x - b.x; if (dx > 60 || dx < -60) continue; const dy = a.y - b.y, d = Math.hypot(dx, dy), mn = a.r + b.r; if (d < mn && d > .01) { const p = (mn - d) * .25 / d; a.x += dx * p; a.y += dy * p; b.x -= dx * p; b.y -= dy * p; } } } }
     for (const m of s.monsters) if (m.alive) stepMonster(s, m);
     for (const t of s.towers) if (t.alive) stepTower(s, t);
     stepProj(s); stepZones(s); stepSites(s); stepDots(s); stepBeacons(s);
+    stepBoons(s); stepEvent(s); stepFog(s); stepVotes(s);
     if (s.tick % 60 === 0) updateCatchup(s);
     s.minions = s.minions.filter(m => m.alive); s.monsters = s.monsters.filter(m => m.alive);
   }
@@ -2890,7 +3334,7 @@ const Sim = (() => {
   }
   function tierOf(p) { let t = 0; TIERS.forEach((x, i) => { if (p >= x.at) t = i; }); return t; }
 
-  return { BEACON_RANGE, ROSTER, ITEMS, ITEM_BY, itemPath, itemPrice, recommended, marksEarned, cdOf, defaultBuild, TOWER_RANGE, MAX_ATTACK_RANGE, refreshChamp, W, H, TICK, DT, KITS, buildMap, rayWall, visionSources, hasLOS, TIERS, TEAM_NAMES, FORGE_COST, createMatch, step, canSee, autoTarget, masteryGain, tierOf, towerOpen, xpNeed, ROLES, ROLE_INFO, autoRoles, CHARS, charOf,
+  return { ITEM_SLOTS, CONSUMABLES, buybackCost, reinforceCost, fundCost, sellValue, BOSS_INFO, EVENT_INFO, BOON_INFO, SURRENDER_AT, BEACON_RANGE, ROSTER, ITEMS, ITEM_BY, itemPath, itemPrice, recommended, marksEarned, cdOf, defaultBuild, TOWER_RANGE, MAX_ATTACK_RANGE, refreshChamp, W, H, TICK, DT, KITS, buildMap, rayWall, visionSources, hasLOS, TIERS, TEAM_NAMES, FORGE_COST, createMatch, step, canSee, autoTarget, masteryGain, tierOf, towerOpen, xpNeed, ROLES, ROLE_INFO, autoRoles, CHARS, charOf,
     RANKS, rankOf, rankDelta, botSkills, skillProfile, setBot, snapshot, decodeSnapshot, applySnapshot, applyFrame, applyChampState, slowFlat, slowDiff, applySlow, packEvent, unpackEvent, predict };
 })();
 if (typeof module !== 'undefined') module.exports = Sim;

@@ -19,7 +19,10 @@ const Terrain = (() => {
   const octa = (R, n = 8, rot = TAU / 16) => { const o = []; for (let i = 0; i < n; i++) { const a = rot + i / n * TAU; o.push([Math.cos(a) * R, Math.sin(a) * R]); } return o; };
 
   function paint(map, towers, GS, sites = [], mood = 0) {
-    const W = map.W, Ht = Math.ceil(map.H * TILT), c = cv(W * GS, Ht * GS), g = c.getContext('2d'), r = seeded(90210), Y = y => y * TILT;
+    // iOS refuses any canvas over 16.7 million pixels, and the paint happens on one before it's cut into tiles.
+    const W = map.W, Ht = Math.ceil(map.H * TILT);
+    GS = Math.min(GS, Math.sqrt(16e6 / (W * Ht)));
+    const c = cv(Math.floor(W * GS), Math.floor(Ht * GS)), g = c.getContext('2d'), r = seeded(90210), Y = y => y * TILT;
     g.scale(GS, GS); g.imageSmoothingQuality = 'high'; g.lineCap = 'butt'; g.lineJoin = 'miter';
     const center = map.center || { x: W / 2, y: map.H / 2 }, plazas = map.plazas || [], fountains = map.fountains || [];
 
@@ -93,6 +96,11 @@ const Terrain = (() => {
     // Tower plinths ringed in the owner's colour.
     for (const t of towers) { const R = t.sub === 'core' ? 96 : 66, col = t.team ? VIL.crim : HERO.gold; at(t.x, t.y, () => { disc(R + 8, '#06070c', 8); disc(R, t.team ? '#18161c' : '#16233c', 8); ring(R - 8, col, 3, 8); disc(R - 18, t.team ? '#101014' : '#0f1a2e', 8); }); }
 
+    // Boss arenas: each kind gets its own floor, so a jungle clearing is recognisable before anything steps into it.
+    for (const a of map.arenas || []) at(a.x, a.y, () => arenaFloor(g, a));
+    // Event locations: quiet ground marks that stay after the event moves on.
+    for (const e of map.eventSpots || []) at(e.x, e.y, () => { ring(112, 'rgba(230,209,156,.16)', 2, 8); disc(5, 'rgba(230,209,156,.3)'); });
+    if (map.convoyPath && map.convoyPath.length > 1) { const pts = spline(map.convoyPath, 12); g.save(); g.setLineDash([16, 30]); g.lineCap = 'butt'; g.lineJoin = 'round'; g.strokeStyle = 'rgba(230,209,156,.13)'; g.lineWidth = 3; g.beginPath(); pts.forEach(([x, y], i) => g[i ? 'lineTo' : 'moveTo'](x, Y(y))); g.stroke(); g.setLineDash([]); g.restore(); }
     // Brush: angular thickets, a shade greener and lighter than the ground around them.
     map.brush.forEach((b, i) => brushBed(g, b, i % 3 + 1, Y));
     // Hard cast shadows from the cliffs, all falling the same way as the shafts of light.
@@ -178,6 +186,18 @@ const Terrain = (() => {
       return { c, w: W0, h: H0, ax: cx, ay: base };
     });
   }
+  // Arena floors. Drawn in the flat ground plane by paint(), one per boss kind, in that boss's colour.
+  const ARENA = { warlord: { deep: '#160b08', mid: '#22100b', line: '#a83c1c', hot: '#ff7a40' }, foreman: { deep: '#14110a', mid: '#1f1a0e', line: '#8a6420', hot: '#ffc24a' }, sentinel: { deep: '#07131a', mid: '#0c1d27', line: '#2c7288', hot: '#7ae8ff' }, colossus: { deep: '#151210', mid: '#201a16', line: '#7a6248', hot: '#ffb04a' } };
+  function arenaFloor(g, a) {
+    const P = ARENA[a.kind] || ARENA.colossus, R = a.r || 240, flat = (r0, n, col) => { g.fillStyle = col; g.beginPath(); octa(r0, n).forEach(([x, y], i) => g[i ? 'lineTo' : 'moveTo'](x, y)); g.closePath(); g.fill(); }, line = (r0, n, col, lw) => { g.strokeStyle = col; g.lineWidth = lw; g.beginPath(); octa(r0, n).forEach(([x, y], i) => g[i ? 'lineTo' : 'moveTo'](x, y)); g.closePath(); g.stroke(); };
+    flat(R + 12, 12, '#05060a'); flat(R, 12, P.deep); line(R - 6, 12, P.line, 2.5); flat(R * .68, 12, P.mid); line(R * .68, 12, P.line, 1.8);
+    g.strokeStyle = P.line; g.globalAlpha = .7; g.lineWidth = 2.4;
+    if (a.kind === 'warlord') { for (let i = 0; i < 8; i++) { const an = i / 8 * TAU + TAU / 16; g.save(); g.rotate(an); g.fillStyle = P.line; g.beginPath(); g.moveTo(R * .72, -13); g.lineTo(R * .95, 0); g.lineTo(R * .72, 13); g.closePath(); g.fill(); g.restore(); } g.beginPath(); g.moveTo(-R * .4, -R * .4); g.lineTo(R * .4, R * .4); g.moveTo(R * .4, -R * .4); g.lineTo(-R * .4, R * .4); g.stroke(); }
+    else if (a.kind === 'foreman') { g.fillStyle = P.line; for (let i = 0; i < 12; i++) { const an = i / 12 * TAU; g.save(); g.rotate(an); g.fillRect(R * .76, -11, R * .17, 22); g.restore(); } g.setLineDash([20, 18]); g.beginPath(); g.arc(0, 0, R * .42, 0, TAU); g.stroke(); g.setLineDash([]); }
+    else if (a.kind === 'sentinel') { g.beginPath(); g.moveTo(-R * .52, 0); g.quadraticCurveTo(0, -R * .48, R * .52, 0); g.quadraticCurveTo(0, R * .48, -R * .52, 0); g.closePath(); g.stroke(); g.beginPath(); g.arc(0, 0, R * .14, 0, TAU); g.stroke(); g.lineWidth = 1.6; g.beginPath(); for (let i = 0; i < 24; i++) { const an = i / 24 * TAU; g.moveTo(Math.cos(an) * R * .74, Math.sin(an) * R * .74); g.lineTo(Math.cos(an) * R * .92, Math.sin(an) * R * .92); } g.stroke(); }
+    else { for (let i = 0; i < 6; i++) { const an = i / 6 * TAU; g.beginPath(); g.moveTo(Math.cos(an) * R * .2, Math.sin(an) * R * .2); g.lineTo(Math.cos(an + .2) * R * .55, Math.sin(an + .2) * R * .55); g.lineTo(Math.cos(an) * R * .88, Math.sin(an) * R * .88); g.stroke(); } }
+    g.globalAlpha = 1;
+  }
   // A brush zone lies flat: an angular edge, two deep greens and a fringe of blades along the back.
   function brushBed(g, b, seed, Y) {
     const r = seeded(seed * 31 + 3), cy = Y(b.y), k = TILT, n = Math.max(12, Math.round(b.r / 9));
@@ -224,7 +244,8 @@ const Terrain = (() => {
       // up to three setbacks, each one narrower, each split into a lit and a shaded half
       const stages = type === 3 ? [[46, 96], [34, 180], [20, 234]] : type === 1 ? [[44, 112], [30, 196]] : type === 2 ? [[50, 70], [34, 124]] : [[46, 90], [30, 146]];
       let y = base, chimX = 0, chimZ = 0;
-      const win = (x, yy, w, h) => { g.fillStyle = pane; g.fillRect(x, yy, w, h); l.fillStyle = glass; if (r() > .22) l.fillRect(x + .6, yy + .6, w - 1.2, h - 1.2); };
+      // Two layers of lit glass: every window, and a sparse few for a street that is starting to go dark.
+      const L2 = mk(W0, H0), l2 = L2.g, win = (x, yy, w, h) => { g.fillStyle = pane; g.fillRect(x, yy, w, h); l.fillStyle = glass; l2.fillStyle = glass; const q = r(); if (q > .22) l.fillRect(x + .6, yy + .6, w - 1.2, h - 1.2); if (q > .72) l2.fillRect(x + .6, yy + .6, w - 1.2, h - 1.2); };
       stages.forEach(([hw, top], i) => {
         const yt = base - top; fillP(g, [[cx - hw, y], [cx + hw, y], [cx + hw, yt], [cx - hw, yt]], body);
         fillP(g, [[cx - hw, y], [cx - hw * .25, y], [cx - hw * .25, yt], [cx - hw, yt]], lit);
@@ -238,7 +259,7 @@ const Terrain = (() => {
       const last = stages[stages.length - 1], sw = last[0] * .5;
       fillP(g, [[cx - sw, y], [cx + sw, y], [cx + 2, y - 44], [cx - 2, y - 44]], type === 3 ? '#1f2a3a' : (side ? '#1a1b22' : '#1c2c48')); fillP(g, [[cx - sw, y], [cx - 1, y], [cx - 1, y - 44], [cx - 2, y - 44]], lit);
       if (type !== 2) { g.fillStyle = side ? VIL.crim : HERO.gold; g.fillRect(cx - 1, y - 62, 2, 20); }
-      return { c, L: L.c, w: W0, h: H0, ax: cx, ay: base, chimX: chimX, chimZ: chimZ, tall: H0, glass };
+      return { c, L: L.c, L2: L2.c, w: W0, h: H0, ax: cx, ay: base, chimX: chimX, chimZ: chimZ, tall: H0, glass };
     });
   }
   function hq(team) {
@@ -279,14 +300,15 @@ const Terrain = (() => {
       return { c, L: L.c, w: W0, h: H0, ax, ay };
     });
   }
-  // The rear silhouette of a sprite, for extruding buildings into depth. Cached on the sprite.
-  function backOf(spr, shade = '#05070c', lit = '#1a2230') {
+  // The rear of a building, for extruding it into depth: its silhouette swept straight up by `deep` world units, so one
+  // image does the work of a stack of slices. The renderer shears it to follow the screen, which is the parallax.
+  function backOf(spr, shade = '#05070c', lit = '#1a2230', deep = 16) {
     if (spr.back) return spr.back;
-    const w = spr.c.width, h = spr.c.height, c = cv(w, h), g = c.getContext('2d');
-    g.drawImage(spr.c, 0, 0);
-    g.globalCompositeOperation = 'source-in'; g.fillStyle = shade; g.fillRect(0, 0, w, h);
-    g.globalCompositeOperation = 'source-atop'; g.fillStyle = lit; g.fillRect(0, 0, w * .32, h);
-    return spr.back = c;
+    const w = spr.c.width, h = spr.c.height, up = Math.ceil(deep * SS), c = cv(w, h + up), g = c.getContext('2d');
+    for (let i = 0; i <= up; i += 2) g.drawImage(spr.c, 0, up - i);
+    g.globalCompositeOperation = 'source-in'; g.fillStyle = shade; g.fillRect(0, 0, w, h + up);
+    g.globalCompositeOperation = 'source-atop'; g.fillStyle = lit; g.fillRect(0, 0, w * .32, h + up);
+    return spr.back = { c, w: spr.w, h: spr.h + up / SS, up: up / SS };
   }
   function banner(team) {
     return once('ban' + team, () => {
@@ -379,5 +401,197 @@ const Terrain = (() => {
       return c;
     });
   }
-  return { paint, bake, cliff, tree, lantern, pillar, banner, house, hq, towerCoin, towerCrown, backOf, wave, spark, smoke, bubble, pool, nearRoad, spline, HALF, INK };
+  // ---------- what a fallen tower leaves ----------
+  // Flat in the ground plane, scorched and low: nothing here stands up, so nothing reads as cover.
+  function rubble(team, core) {
+    return once(`rb${team}${core ? 'c' : 't'}`, () => {
+      const R = core ? 112 : 82, W0 = Math.ceil(R * 2.9), H0 = Math.ceil(W0 * TILT + 8), { c, g } = mk(W0, H0), cx = W0 / 2, cy = H0 / 2, r = seeded(team * 7 + (core ? 3 : 1) + 11), rim = team ? ['#8a2838', '#3a1016'] : ['#b8a070', '#5a4a26'], top = team ? '#1c1a22' : '#16243c';
+      g.save(); g.translate(cx, cy); g.scale(1, TILT);
+      // A jagged scorch, hard-edged, and blast lines thrown outward from it.
+      const burst = (R0, spread, col) => { g.fillStyle = col; g.beginPath(); const n = 28; for (let i = 0; i < n; i++) { const a = i / n * TAU, d = R0 * (i % 2 ? 1 - spread * r() : 1 + spread * r()); g[i ? 'lineTo' : 'moveTo'](Math.cos(a) * d, Math.sin(a) * d); } g.closePath(); g.fill(); };
+      burst(R * 1.04, .2, 'rgba(4,5,8,.7)'); burst(R * .78, .14, '#0b0d13');
+      g.strokeStyle = '#05060a'; g.lineWidth = 2.2; g.beginPath(); for (let i = 0; i < 9; i++) { const a = r() * TAU, d0 = R * (.7 + r() * .2), d1 = R * (1.05 + r() * .2); g.moveTo(Math.cos(a) * d0, Math.sin(a) * d0); g.lineTo(Math.cos(a + .05) * d1, Math.sin(a + .05) * d1); } g.stroke();
+      // Half the plinth's edge survives as a broken arc.
+      g.strokeStyle = rim[1]; g.lineWidth = 5; g.beginPath(); for (let i = 0; i < 5; i++) { const a0 = i / 5 * TAU + r(), a1 = a0 + .3 + r() * .5; g.moveTo(Math.cos(a0) * R * .66, Math.sin(a0) * R * .66); g.arc(0, 0, R * .66, a0, a1); } g.stroke();
+      // Flattened coins: little more than discs on the floor, the brightest thing here at low contrast.
+      const coin = (x, y, Rc, an) => { g.save(); g.translate(x, y); g.rotate(an); g.scale(1, .62); g.fillStyle = '#05060a'; g.beginPath(); g.ellipse(1.5, 3, Rc + 2, Rc + 2, 0, 0, TAU); g.fill(); g.fillStyle = top; g.beginPath(); g.arc(0, 0, Rc, 0, TAU); g.fill(); g.strokeStyle = rim[0]; g.lineWidth = 1.8; g.beginPath(); g.arc(0, 0, Rc * .82, 0, TAU); g.stroke(); g.fillStyle = 'rgba(255,255,255,.08)'; g.beginPath(); g.moveTo(-Rc, 0); g.arc(0, 0, Rc, Math.PI, 0); g.closePath(); g.fill(); g.restore(); };
+      const n = core ? 17 : 12; for (let i = 0; i < n; i++) { const a = r() * TAU, d = Math.sqrt(r()) * R * .8; coin(Math.cos(a) * d, Math.sin(a) * d, (core ? 18 : 14) + r() * 9, r() * TAU); }
+      g.restore();
+      // A few embers still bright, so the eye knows this just happened.
+      for (let i = 0; i < 9; i++) { const a = r() * TAU, d = Math.sqrt(r()) * R * .68; g.fillStyle = r() > .5 ? '#ffb05a' : '#ff7038'; g.fillRect(cx + Math.cos(a) * d, cy + Math.sin(a) * d * TILT, 2, 2); }
+      return { c, w: W0, h: H0, cx, cy };
+    });
+  }
+
+  // ---------- the city's people and machines ----------
+  // A row of bystanders behind a low rail. Two frames: arms down and arms up.
+  function crowd(v) {
+    return once('cw' + v % 3, () => {
+      const k = v % 3, W0 = 136, H0 = 42, frames = [], tones = [['#b98a5a', '#6c8a8a', '#a86a78', '#6a80ac', '#d0b070', '#8a7aa8'], ['#7a93ae', '#cfa56a', '#a78a60', '#7aa088', '#b0707a', '#9490a8'], ['#a8785a', '#7c98b0', '#c0a278', '#88a07a', '#a07090', '#7a88b0']][k];
+      for (let f = 0; f < 2; f++) {
+        const { c, g } = mk(W0, H0), r = seeded(k * 31 + 17), n = 9;
+        for (let i = 0; i < n; i++) {
+          const x = 10 + i * ((W0 - 20) / (n - 1)) + (r() - .5) * 5, base = 34 - r() * 5, up = (i + f) % 2 === 0, col = tones[i % tones.length], h = 13 + r() * 3;
+          g.fillStyle = INK; g.fillRect(x - 5, base - h, 10, h + 2);
+          g.fillStyle = col; g.fillRect(x - 3.8, base - h + 1, 7.6, h);
+          // arms: raised and waving, or at their sides
+          g.strokeStyle = col; g.lineWidth = 1.8; g.beginPath(); if (up) { g.moveTo(x - 4, base - h + 3); g.lineTo(x - 7.5, base - h - 6); g.moveTo(x + 4, base - h + 3); g.lineTo(x + 7, base - h - 6); } else { g.moveTo(x - 4.2, base - h + 3); g.lineTo(x - 6.5, base - h + 9); g.moveTo(x + 4.2, base - h + 3); g.lineTo(x + 6.5, base - h + 9); } g.stroke();
+          g.fillStyle = INK; g.beginPath(); g.arc(x, base - h - 4, 5, 0, TAU); g.fill(); g.fillStyle = '#d6c0a4'; if (i % 3 === 1) g.fillStyle = '#a07c58'; g.beginPath(); g.arc(x, base - h - 4, 3.7, 0, TAU); g.fill();
+        }
+        // the rail
+        g.fillStyle = '#0a0d13'; g.fillRect(2, 31, W0 - 4, 7); g.fillStyle = '#6a768a'; g.fillRect(2, 31, W0 - 4, 1.6); g.fillStyle = '#3a4556'; for (let x = 6; x < W0; x += 25) g.fillRect(x, 31, 3, 9);
+        frames.push(c);
+      }
+      return { c: frames[0], frames, w: W0, h: H0, ax: W0 / 2, ay: 38 };
+    });
+  }
+
+  // The bank: a deco temple of a building. The doorway is left open and dark; a separate door sits in it.
+  function bank() {
+    return once('bank', () => {
+      const W0 = 300, H0 = 270, { c, g } = mk(W0, H0), L = mk(W0, H0), l = L.g, cx = W0 / 2, base = H0 - 12, gold = HERO.gold, dk = HERO.goldDk;
+      g.fillStyle = 'rgba(0,0,0,.65)'; g.beginPath(); g.ellipse(cx - 18, base + 3, 138, 18, 0, 0, TAU); g.fill();
+      // steps
+      for (let i = 0; i < 3; i++) { const hw = 142 - i * 9, y = base - i * 7; fillP(g, [[cx - hw, y], [cx + hw, y], [cx + hw - 4, y - 7], [cx - hw + 4, y - 7]], i % 2 ? '#2f3848' : '#262e3c'); g.fillStyle = '#5a6678'; g.fillRect(cx - hw + 4, y - 7, (hw - 4) * 2, 1.4); }
+      const top = base - 21, floor = base - 158;
+      // the body behind the columns
+      fillP(g, [[cx - 122, top], [cx + 122, top], [cx + 122, floor], [cx - 122, floor]], '#141b28');
+      fillP(g, [[cx - 122, top], [cx - 58, top], [cx - 58, floor], [cx - 122, floor]], '#1c2636');
+      // columns
+      for (let i = -3; i <= 3; i++) { if (i === 0) continue; const x = cx + i * 36; fillP(g, [[x - 11, top], [x + 11, top], [x + 8, floor + 8], [x - 8, floor + 8]], '#2e394b'); fillP(g, [[x - 11, top], [x - 2, top], [x - 2, floor + 8], [x - 8, floor + 8]], '#46546a'); fillP(g, [[x + 4, top], [x + 11, top], [x + 8, floor + 8], [x + 4, floor + 8]], '#1a212d'); g.fillStyle = dk; g.fillRect(x - 12, floor + 6, 24, 3); g.fillRect(x - 13, top - 3, 26, 3); }
+      // windows between columns glow
+      for (const x of [cx - 90, cx - 54, cx + 54, cx + 90]) { g.fillStyle = '#05070b'; g.fillRect(x - 8, floor + 34, 16, 50); l.fillStyle = '#ffd98a'; l.fillRect(x - 7, floor + 35, 14, 48); }
+      // the doorway: a round vault frame set in a dark arch
+      g.fillStyle = '#06080d'; g.beginPath(); g.moveTo(cx - 34, top); g.lineTo(cx - 34, top - 68); g.arc(cx, top - 68, 34, Math.PI, 0); g.lineTo(cx + 34, top); g.closePath(); g.fill();
+      g.strokeStyle = gold; g.lineWidth = 2.6; g.beginPath(); g.moveTo(cx - 36, top); g.lineTo(cx - 36, top - 68); g.arc(cx, top - 68, 36, Math.PI, 0); g.lineTo(cx + 36, top); g.stroke();
+      // entablature and stepped pediment
+      fillP(g, [[cx - 130, floor + 8], [cx + 130, floor + 8], [cx + 130, floor - 18], [cx - 130, floor - 18]], '#1f2838'); g.fillStyle = gold; g.fillRect(cx - 132, floor - 20, 264, 3); g.fillStyle = dk; g.fillRect(cx - 130, floor + 6, 260, 2);
+      fillP(g, [[cx - 100, floor - 20], [cx + 100, floor - 20], [cx + 72, floor - 44], [cx - 72, floor - 44]], '#18202d');
+      fillP(g, [[cx - 100, floor - 20], [cx - 30, floor - 20], [cx - 20, floor - 44], [cx - 72, floor - 44]], '#28344a');
+      fillP(g, [[cx - 62, floor - 44], [cx + 62, floor - 44], [cx + 34, floor - 66], [cx - 34, floor - 66]], '#222c3e');
+      // a big coin set in the pediment, the only sign the building needs
+      const Cy = floor - 34; g.fillStyle = INK; g.beginPath(); g.arc(cx, Cy, 24, 0, TAU); g.fill(); g.fillStyle = gold; g.beginPath(); g.arc(cx, Cy, 21, 0, TAU); g.fill(); g.fillStyle = '#b89a58'; g.beginPath(); g.arc(cx + 2, Cy + 2, 18, 0, TAU); g.fill(); g.fillStyle = '#2a1f0c'; g.beginPath(); g.arc(cx, Cy - 5, 6.5, 0, TAU); g.fill(); g.beginPath(); g.moveTo(cx - 4, Cy - 2); g.lineTo(cx + 4, Cy - 2); g.lineTo(cx + 6.5, Cy + 12); g.lineTo(cx - 6.5, Cy + 12); g.closePath(); g.fill();
+      // roof beacons, the siren lights' sockets
+      for (const s of [-1, 1]) { g.fillStyle = '#2a303c'; g.fillRect(cx + s * 112 - 3, floor - 34, 6, 15); }
+      return { c, L: L.c, w: W0, h: H0, ax: cx, ay: base, doorY: top, sirens: [[-112, 195], [112, 195]] };
+    });
+  }
+  // The vault door that seals the arch: a coin of steel with a wheel.
+  function vaultDoor() {
+    return once('vault', () => {
+      const W0 = 74, H0 = 74, { c, g } = mk(W0, H0), cx = 37, cy = 37;
+      g.fillStyle = INK; g.beginPath(); g.arc(cx, cy, 35, 0, TAU); g.fill();
+      g.fillStyle = '#7f8a9c'; g.beginPath(); g.arc(cx, cy, 32, 0, TAU); g.fill(); g.fillStyle = '#4a5364'; g.beginPath(); g.arc(cx, cy, 32, -.3, Math.PI - .3); g.fill(); g.fillStyle = '#5e697c'; g.beginPath(); g.arc(cx, cy, 26, 0, TAU); g.fill();
+      g.strokeStyle = HERO.gold; g.lineWidth = 2; g.beginPath(); g.arc(cx, cy, 28, 0, TAU); g.stroke();
+      g.strokeStyle = '#d8dfea'; g.lineWidth = 3.4; g.lineCap = 'round'; for (let i = 0; i < 3; i++) { const a = i / 3 * Math.PI + .3; g.beginPath(); g.moveTo(cx - Math.cos(a) * 15, cy - Math.sin(a) * 15); g.lineTo(cx + Math.cos(a) * 15, cy + Math.sin(a) * 15); g.stroke(); } g.lineCap = 'butt';
+      g.fillStyle = HERO.gold; g.beginPath(); g.arc(cx, cy, 5.5, 0, TAU); g.fill();
+      return { c, w: W0, h: H0, ax: cx, ay: cy };
+    });
+  }
+  // The armoured convoy, drawn from the side. Two frames for the wheels; flipped to travel left.
+  function convoy() {
+    return once('convoy', () => {
+      const W0 = 172, H0 = 88, frames = [], base = 76, cx = W0 / 2;
+      for (let f = 0; f < 2; f++) {
+        const { c, g } = mk(W0, H0);
+        g.fillStyle = 'rgba(0,0,0,.6)'; g.beginPath(); g.ellipse(cx - 2, base + 3, 78, 8, 0, 0, TAU); g.fill();
+        // body: a stepped deco van, nose to the right
+        const P = [[14, base - 12], [14, base - 54], [26, base - 62], [112, base - 62], [136, base - 44], [158, base - 36], [160, base - 12]];
+        g.strokeStyle = INK; g.lineWidth = 4.5; g.lineJoin = 'miter'; g.fillStyle = '#1e3050'; poly(g, P); g.stroke(); g.fill();
+        fillP(g, [[14, base - 40], [14, base - 54], [26, base - 62], [112, base - 62], [122, base - 54], [122, base - 40]], '#34507e');
+        fillP(g, [[14, base - 16], [160, base - 16], [160, base - 12], [14, base - 12]], '#101827');
+        g.fillStyle = HERO.gold; g.fillRect(14, base - 28, 146, 3); g.fillStyle = HERO.goldDk; g.fillRect(14, base - 25, 146, 1.5);
+        // windows with people looking out
+        const heads = ['#d6c0a4', '#a07c58', '#d0a97a', '#b58a64'];
+        for (let i = 0; i < 4; i++) { const x = 28 + i * 24; g.fillStyle = '#05070b'; g.fillRect(x - 8, base - 56, 18, 15); g.fillStyle = '#ffd98a'; g.globalAlpha = .55; g.fillRect(x - 7, base - 55, 16, 13); g.globalAlpha = 1; g.fillStyle = heads[i]; g.beginPath(); g.arc(x + 1 + (f ? .7 : -.7) * (i % 2 ? 1 : -1), base - 46, 4, 0, TAU); g.fill(); g.fillRect(x - 4, base - 42, 10, 3); }
+        // windscreen and headlamp
+        fillP(g, [[124, base - 54], [137, base - 44], [125, base - 44]], '#c8e4f4'); g.fillStyle = '#fff3cf'; g.fillRect(154, base - 32, 6, 7);
+        // a badge on the door
+        g.fillStyle = INK; g.beginPath(); g.arc(68, base - 34, 9, 0, TAU); g.fill(); g.fillStyle = HERO.gold; g.beginPath(); g.moveTo(68, base - 41); g.lineTo(74, base - 34); g.lineTo(68, base - 27); g.lineTo(62, base - 34); g.closePath(); g.fill();
+        // wheels with a turning spoke
+        for (const x of [40, 130]) { g.fillStyle = INK; g.beginPath(); g.arc(x, base - 9, 13, 0, TAU); g.fill(); g.fillStyle = '#4a5364'; g.beginPath(); g.arc(x, base - 9, 7.5, 0, TAU); g.fill(); g.strokeStyle = '#c0c8d4'; g.lineWidth = 2; g.beginPath(); const a = f * Math.PI / 4; g.moveTo(x + Math.cos(a) * 6, base - 9 + Math.sin(a) * 6); g.lineTo(x - Math.cos(a) * 6, base - 9 - Math.sin(a) * 6); g.moveTo(x - Math.sin(a) * 6, base - 9 + Math.cos(a) * 6); g.lineTo(x + Math.sin(a) * 6, base - 9 - Math.cos(a) * 6); g.stroke(); }
+        // a lightbar on the roof; the world flashes it
+        g.fillStyle = INK; g.fillRect(60, base - 69, 34, 8); g.fillStyle = '#8a2830'; g.fillRect(62, base - 67, 14, 4); g.fillStyle = '#2a4a9a'; g.fillRect(78, base - 67, 14, 4);
+        frames.push(c);
+      }
+      return { c: frames[0], frames, w: W0, h: H0, ax: cx, ay: base, siren: [77, base - 66] };
+    });
+  }
+  // A supply crate in three-quarter view: top, front and side, banded with brass.
+  function crate(open) {
+    return once('crate' + (open ? 1 : 0), () => {
+      const W0 = 92, H0 = 92, { c, g } = mk(W0, H0), cx = 46, cy = 58;
+      g.fillStyle = 'rgba(0,0,0,.6)'; g.beginPath(); g.ellipse(cx, cy + 22, 38, 10, 0, 0, TAU); g.fill();
+      const lid = [[cx, cy - 40], [cx + 40, cy - 22], [cx, cy - 4], [cx - 40, cy - 22]], left = [[cx - 40, cy - 22], [cx, cy - 4], [cx, cy + 28], [cx - 40, cy + 10]], right = [[cx + 40, cy - 22], [cx, cy - 4], [cx, cy + 28], [cx + 40, cy + 10]];
+      poly(g, [[cx, cy - 42], [cx + 42, cy - 22], [cx + 42, cy + 12], [cx, cy + 32], [cx - 42, cy + 12], [cx - 42, cy - 22]]); g.fillStyle = INK; g.fill();
+      fillP(g, left, '#2a3a58'); fillP(g, right, '#182440');
+      if (open) { fillP(g, lid, '#05070b'); g.fillStyle = '#ffd86a'; for (const [x, y] of [[-14, -22], [8, -24], [-2, -14], [18, -20], [-22, -18]]) { g.beginPath(); g.ellipse(cx + x, cy + y, 7, 4.2, 0, 0, TAU); g.fill(); } }
+      else { fillP(g, lid, '#3f5580'); fillP(g, [[cx, cy - 40], [cx, cy - 4], [cx - 40, cy - 22]], '#546e9e'); }
+      // brass bands and corner plates
+      const band = (a, b, t) => [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t];
+      g.strokeStyle = HERO.gold; g.lineWidth = 3; g.beginPath(); for (const t of [.22, .78]) { const p = band(left[0], left[1], t), q = band(left[3], left[2], t); g.moveTo(p[0], p[1]); g.lineTo(q[0], q[1]); const p2 = band(right[0], right[1], t), q2 = band(right[3], right[2], t); g.moveTo(p2[0], p2[1]); g.lineTo(q2[0], q2[1]); } g.stroke();
+      if (!open) { g.strokeStyle = HERO.goldDk; g.lineWidth = 2.4; g.beginPath(); for (const t of [.22, .78]) { const a0 = band(lid[0], lid[1], t), b0 = band(lid[3], lid[2], t); g.moveTo(a0[0], a0[1]); g.lineTo(b0[0], b0[1]); } g.stroke(); g.fillStyle = '#ffd86a'; g.beginPath(); g.ellipse(cx, cy - 22, 12, 7, 0, 0, TAU); g.fill(); g.fillStyle = HERO.goldDk; g.beginPath(); g.ellipse(cx, cy - 22, 7, 4, 0, 0, TAU); g.fill(); }
+      return { c, w: W0, h: H0, ax: cx, ay: cy + 24 };
+    });
+  }
+  function parachute() {
+    return once('chute', () => {
+      const W0 = 124, H0 = 112, { c, g } = mk(W0, H0), cx = 62;
+      // canopy in alternating gores
+      const gore = (x0, x1, col) => { g.fillStyle = col; g.beginPath(); g.moveTo(x0, 44); g.quadraticCurveTo(x0, 12, cx, 6); g.quadraticCurveTo(x1, 12, x1, 44); g.quadraticCurveTo((x0 + x1) / 2, 34, x0, 44); g.closePath(); g.fill(); };
+      g.fillStyle = INK; g.beginPath(); g.moveTo(4, 47); g.quadraticCurveTo(4, 2, cx, 2); g.quadraticCurveTo(W0 - 4, 2, W0 - 4, 47); g.quadraticCurveTo(cx, 32, 4, 47); g.closePath(); g.fill();
+      gore(8, 40, '#d9c79a'); gore(40, 62, '#f4ead0'); gore(62, 84, '#d9c79a'); gore(84, 116, '#f4ead0');
+      g.strokeStyle = '#d9d2c0'; g.lineWidth = 1; g.beginPath(); for (const x of [10, 40, 84, 114]) { g.moveTo(x, 44); g.lineTo(cx, 108); } g.stroke();
+      return { c, w: W0, h: H0, ax: cx, ay: 108 };
+    });
+  }
+  // A helicopter in side view, with two rotor frames. Nose to the right.
+  function heli() {
+    return once('heli', () => {
+      const W0 = 150, H0 = 60, frames = [], cx = 70, cy = 34;
+      for (let f = 0; f < 2; f++) {
+        const { c, g } = mk(W0, H0);
+        g.fillStyle = INK; poly(g, [[6, cy - 8], [66, cy - 4], [66, cy + 3], [14, cy + 1]]); g.fill(); g.fillStyle = '#1b2230'; poly(g, [[10, cy - 6], [64, cy - 3], [64, cy + 1], [16, cy - 1]]); g.fill();
+        // tail fin and tail rotor
+        g.fillStyle = INK; poly(g, [[6, cy - 18], [16, cy - 18], [20, cy - 2], [8, cy - 2]]); g.fill(); g.fillStyle = '#6a768a'; g.fillRect(4, cy - 14 - (f ? 5 : -2), 3, 12);
+        // cabin
+        const body = [[58, cy - 12], [100, cy - 14], [124, cy - 2], [128, cy + 6], [112, cy + 12], [66, cy + 12], [58, cy + 4]];
+        g.strokeStyle = INK; g.lineWidth = 3; g.lineJoin = 'miter'; g.fillStyle = '#20293a'; poly(g, body); g.stroke(); g.fill();
+        fillP(g, [[58, cy - 12], [100, cy - 14], [108, cy - 8], [62, cy - 2]], '#3a485e');
+        fillP(g, [[100, cy - 13], [122, cy - 2], [104, cy - 2]], '#b8d4e4');
+        g.fillStyle = HERO.gold; g.fillRect(62, cy + 3, 48, 2);
+        // skids
+        g.strokeStyle = INK; g.lineWidth = 2.6; g.beginPath(); g.moveTo(70, cy + 12); g.lineTo(68, cy + 21); g.moveTo(104, cy + 12); g.lineTo(106, cy + 21); g.moveTo(58, cy + 21); g.lineTo(118, cy + 21); g.stroke();
+        // mast and rotor disc: a thin bright streak that flickers between two lengths
+        g.fillStyle = INK; g.fillRect(83, cy - 21, 5, 9);
+        g.fillStyle = f ? 'rgba(220,226,236,.55)' : 'rgba(220,226,236,.3)'; g.beginPath(); g.ellipse(85, cy - 21, f ? 68 : 54, 2.2, 0, 0, TAU); g.fill();
+        g.fillStyle = 'rgba(255,255,255,.75)'; g.fillRect(85 - (f ? 44 : 26), cy - 22, f ? 88 : 52, 1.2);
+        frames.push(c);
+      }
+      return { c: frames[0], frames, w: W0, h: H0, ax: cx + 16, ay: cy + 22, lampX: 118, lampY: cy + 10 };
+    });
+  }
+  // A searchlight's beam: pale at the source, gone at the far end, soft along both edges. Drawn additively.
+  function beam(col) {
+    return once('bm' + col, () => {
+      const W0 = 64, H0 = 320, c = cv(W0, H0), g = c.getContext('2d'), rgb = [1, 3, 5].map(i => parseInt(col.slice(i, i + 2), 16)).join(','), v = g.createLinearGradient(0, 0, 0, H0);
+      v.addColorStop(0, `rgba(${rgb},.75)`); v.addColorStop(.5, `rgba(${rgb},.32)`); v.addColorStop(1, `rgba(${rgb},.07)`);
+      g.fillStyle = v; g.beginPath(); g.moveTo(W0 / 2 - 3, 0); g.lineTo(W0 / 2 + 3, 0); g.lineTo(W0 - 1, H0); g.lineTo(1, H0); g.closePath(); g.fill();
+      g.globalCompositeOperation = 'destination-in'; const m = g.createLinearGradient(0, 0, W0, 0); m.addColorStop(0, 'rgba(0,0,0,0)'); m.addColorStop(.32, 'rgba(0,0,0,1)'); m.addColorStop(.68, 'rgba(0,0,0,1)'); m.addColorStop(1, 'rgba(0,0,0,0)'); g.fillStyle = m; g.fillRect(0, 0, W0, H0);
+      return c;
+    });
+  }
+  // The generator a Blackout turns on: a squat cabinet under a coil, with a bright terminal at the top.
+  function generator() {
+    return once('gen', () => {
+      const W0 = 96, H0 = 110, { c, g } = mk(W0, H0), cx = 48, base = 100;
+      g.fillStyle = 'rgba(0,0,0,.6)'; g.beginPath(); g.ellipse(cx - 5, base + 2, 38, 8, 0, 0, TAU); g.fill();
+      fillP(g, [[cx - 34, base], [cx + 34, base], [cx + 28, base - 42], [cx - 28, base - 42]], '#1b2230'); fillP(g, [[cx - 34, base], [cx - 10, base], [cx - 8, base - 42], [cx - 28, base - 42]], '#3a485e');
+      g.fillStyle = '#ffd98a'; for (let i = 0; i < 3; i++) g.fillRect(cx - 18 + i * 13, base - 32, 8, 5); g.fillStyle = '#58a6e6'; g.fillRect(cx - 18, base - 22, 34, 3);
+      g.strokeStyle = '#8a97ac'; g.lineWidth = 3; g.beginPath(); for (let i = 0; i < 5; i++) { const y = base - 46 - i * 8; g.moveTo(cx - 15 + i * 2, y); g.lineTo(cx + 15 - i * 2, y); } g.stroke();
+      fillP(g, [[cx - 10, base - 80], [cx + 10, base - 80], [cx + 4, base - 94], [cx - 4, base - 94]], '#46546a'); g.fillStyle = '#d8ecff'; g.beginPath(); g.arc(cx, base - 94, 5, 0, TAU); g.fill();
+      return { c, w: W0, h: H0, ax: cx, ay: base };
+    });
+  }
+  return { rubble, crowd, generator, bank, vaultDoor, convoy, crate, parachute, heli, beam, ARENA, paint, bake, cliff, tree, lantern, pillar, banner, house, hq, towerCoin, towerCrown, backOf, wave, spark, smoke, bubble, pool, nearRoad, spline, HALF, INK };
 })();

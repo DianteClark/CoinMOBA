@@ -41,7 +41,9 @@ const unitById = id => { const s = G.s; return s.champs.find(c => c.id === id) |
 function startMatch(cfg, net) {
   const seed = cfg.seed === undefined ? Date.now() & 0xffffff : cfg.seed;
   const s = Sim.createMatch({ seed, diff: cfg.diff, teams: cfg.teams, practice: cfg.practice });
-  const me = net && net.role === 'guest' ? s.champs.find(c => c.remote) : (s.champs.find(c => c.human && !c.remote) || s.champs.find(c => c.human));
+  // Online seats carry a player id; the guest finds its own coin by it.
+  cfg.teams.flat().forEach((p, i) => { if (p.pid !== undefined) s.champs[i].pid = p.pid; });
+  const me = net && net.role === 'guest' ? (s.champs.find(c => c.pid !== undefined && c.pid === Net.pid) || s.champs.find(c => c.remote)) : (s.champs.find(c => c.human && !c.remote) || s.champs.find(c => c.human));
   G = { s, me, cfg, cam: { x: me.x, y: me.y }, acc: 0, t: 0, frames: 0, ms: 0, ended: false, intro: 2.6, outro: null, timeScale: 1, slowT: 0, stop: 0, shake: 0, punch: 0, flash: 0, hpq: [], net: net ? { role: net.role } : null };
   initWorld(G); initHud(G); initSound(G);
   if (net) Net.attach();
@@ -73,7 +75,8 @@ function stepMatch(dt) {
     if (net) Net.hostAfter();
     for (const e of G.s.ev) { if (!hidden) { fxEvent(e); soundEvent(e); } uiEvent(e); }
     G.s.ev.length = 0;
-    if (G.s.over) { const core = G.s.towers.find(t => t.sub === 'core' && !t.alive); G.outro = { t: 0, x: core.x, y: core.y }; outroStart(); break; }
+    // A surrender ends the match with the core still standing: the camera goes to the losing team's core.
+    if (G.s.over) { const core = G.s.towers.find(t => t.sub === 'core' && !t.alive) || G.s.towers.find(t => t.sub === 'core' && t.team !== G.s.over.winner); G.outro = { t: 0, x: core.x, y: core.y }; outroStart(); break; }
   }
   if (n >= cap) G.acc = 0;
 }
@@ -99,6 +102,6 @@ function frame(now) {
     }
   }
   soundFrame(held ? 0 : dt);
-  render(held ? 0 : dt);
+  if (!window.__skipRender) render(held ? 0 : dt); // the skip flag is for many-browser network tests on one machine
   if (save.gfx === 'auto') { const f = G.frames++; G.ms += dt * 1000; if (f && f % 120 === 0) { const avg = G.ms / 120; G.ms = 0; if (avg > 26 && quality > 0) { quality--; resize(); } } }
 }

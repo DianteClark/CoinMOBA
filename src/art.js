@@ -512,10 +512,38 @@ const Art = (() => {
   const RANK = {
     melee(L) { L.a([[0, -.86], [.78, -.1], [.78, .3], [0, -.34], [-.78, .3], [-.78, -.1]], { axis: 0, chisel: .3 }); L.b([[0, .1], [.56, .56], [.56, .9], [0, .52], [-.56, .9], [-.56, .56]], { axis: 0, chisel: .3 }); },
     ranged(L) { L.a([[0, -.92], [.82, 0], [0, .92], [-.82, 0]], { axis: 0, chisel: .5 }); L.x([[0, -.36], [.32, 0], [0, .36], [-.32, 0]]); },
+    // The heavy: a maul head on a short haft, the blunt end of the column.
+    heavy(L) { L.a([[-.84, -.78], [.84, -.78], [.84, -.12], [.48, .06], [-.48, .06], [-.84, -.12]], { axis: 0, chisel: .28 }); L.b([[-.2, .06], [.2, .06], [.16, .94], [-.16, .94]], { axis: 0, chisel: .2 }); L.x([[-.5, -.5], [.5, -.5], [.5, -.36], [-.5, -.36]]); },
   };
-  const minSpec = (team, ranged) => { const hero = team === 0; return { tier: -1, villain: !hero, rIn: .84, k: .86, skin: hero ? { a: M('#f0f4fa', 1, .8), b: M('#d9c79a', 1, .8), c: SUN, f: M('#16294a', 0, .3, .24), rim: M('#8aa6cc', 1, .8) } : { a: M('#f26a78', .7, .6, .3, .25), b: M('#a0a4ae', 1, .7), c: BLOOD, f: M('#180c10', 0, .3, .26), rim: M('#a83a48', 1, .75) }, metal: M('#8aa6cc'), emblem: RANK[ranged ? 'ranged' : 'melee'], glow: hero ? '#ffe6a8' : '#ff6a58' }; };
-  function minionCoin(team, ranged, R = 18) { return faceSprite(`mn${team}${ranged ? 'r' : 'm'}|${R}`, minSpec(team, ranged), R); }
-  function minionTurn(team, ranged, R) { return turntable(`mt${team}${ranged ? 'r' : 'm'}|${R}`, minSpec(team, ranged), R, 10, R * .24); }
+  const minType = r => r === 'heavy' ? 'heavy' : (r === true || r === 'ranged') ? 'ranged' : 'melee';
+  const minSpec = (team, type) => { const hero = team === 0; return { tier: -1, villain: !hero, rIn: type === 'ranged' ? .88 : type === 'heavy' ? .78 : .84, k: .86, skin: hero ? { a: M('#f0f4fa', 1, .8), b: M('#d9c79a', 1, .8), c: SUN, f: M(type === 'heavy' ? '#1f3a66' : '#16294a', 0, .3, .24), rim: M(type === 'heavy' ? '#e6d19c' : '#8aa6cc', 1, .8) } : { a: M('#f26a78', .7, .6, .3, .25), b: M('#a0a4ae', 1, .7), c: BLOOD, f: M(type === 'heavy' ? '#2c1016' : '#180c10', 0, .3, .26), rim: M(type === 'heavy' ? '#d8a040' : '#a83a48', 1, .75) }, metal: M('#8aa6cc'), emblem: RANK[type], glow: hero ? '#ffe6a8' : '#ff6a58' }; };
+  // `ranged` may be the old boolean or a type name: 'melee', 'ranged' or 'heavy'.
+  function minionCoin(team, ranged, R = 18) { const t = minType(ranged); return faceSprite(`mn${team}${t[0]}|${R}`, minSpec(team, t), R); }
+  function minionTurn(team, ranged, R) { const t = minType(ranged); return turntable(`mt${team}${t[0]}|${R}`, minSpec(team, t), R, 10, R * (t === 'heavy' ? .46 : t === 'ranged' ? .16 : .24)); }
+  // What a footsoldier carries, in one small sprite so a type reads at a glance even when the emblem can't.
+  // Melee a kite blade drawn from the rim toward its target. Heavy a pair of shoulder plates behind the coin. Sized in world units, baked for a 2x screen.
+  function minionGear(team, type) {
+    const id = `mg${team}${type}`; if (cache.has(id)) return cache.get(id);
+    const hero = team === 0, S = 3, a = hero ? '#eef3fa' : '#ff8088', b = hero ? '#8ea6c8' : '#a83040', ink = INK;
+    let out;
+    if (type === 'heavy') {
+      const W = 64, H = 36, c = cv(W * S, H * S), g = c.getContext('2d'); g.scale(S, S); g.lineJoin = 'miter';
+      for (const s of [-1, 1]) {
+        const P = [[32 + s * 12, 8], [32 + s * 30, 4], [32 + s * 31, 22], [32 + s * 16, 32]];
+        g.fillStyle = ink; g.strokeStyle = ink; g.lineWidth = 3.4; g.beginPath(); P.forEach(([x, y], i) => g[i ? 'lineTo' : 'moveTo'](x, y)); g.closePath(); g.stroke(); g.fill();
+        g.fillStyle = s < 0 ? '#c0a264' : '#6e5228'; if (!hero) g.fillStyle = s < 0 ? '#c88a30' : '#7a4a14'; g.beginPath(); P.forEach(([x, y], i) => g[i ? 'lineTo' : 'moveTo'](x, y)); g.closePath(); g.fill();
+        g.fillStyle = 'rgba(255,255,255,.34)'; g.beginPath(); g.moveTo(P[0][0], P[0][1]); g.lineTo(P[1][0], P[1][1]); g.lineTo(P[1][0] - s * 3, P[1][1] + 6); g.lineTo(P[0][0], P[0][1] + 5); g.closePath(); g.fill();
+      }
+      out = { c, w: W, h: H, ax: 32, ay: 18 };
+    } else {
+      const W = 38, H = 16, c = cv(W * S, H * S), g = c.getContext('2d'); g.scale(S, S); g.lineJoin = 'miter';
+      g.fillStyle = ink; g.beginPath(); g.moveTo(1, 8); g.lineTo(14, 2); g.lineTo(37, 8); g.lineTo(14, 14); g.closePath(); g.fill();
+      g.fillStyle = a; g.beginPath(); g.moveTo(4, 8); g.lineTo(14, 4); g.lineTo(34, 8); g.lineTo(14, 8); g.closePath(); g.fill();
+      g.fillStyle = b; g.beginPath(); g.moveTo(4, 8); g.lineTo(14, 12); g.lineTo(34, 8); g.lineTo(14, 8); g.closePath(); g.fill();
+      out = { c, w: W, h: H, ax: 2, ay: 8 };
+    }
+    cache.set(id, out); return out;
+  }
   const CIV_COL = ['#c7884a', '#6c9a78', '#b4667a', '#5f86b4'];
   function civCoin(v, R = 20) {
     v = v % 4; const col = CIV_COL[v], key = 'civ' + v + '|' + R;
@@ -530,6 +558,24 @@ const Art = (() => {
     ? { tier: -1, villain: true, rIn: .82, k: .8, skin: { a: M('#ffb24a', .7, .6), b: M('#6a6058', 1, .7), c: M('#ffb04a', .3, .3, .3, 1.2), f: FIELD_BOSS, rim: M('#c08a4a', 1, .8) }, metal: M('#c08a4a'), emblem: BEAST.boss, glow: '#ffb04a' }
     : big ? { tier: -1, villain: true, rIn: .82, k: .8, skin: { a: M('#ffd090', 1, .75), b: M('#b6a78e', 1, .7), c: SUN, f: FIELD_BEAST, rim: M('#b08850', 1, .75) }, metal: M('#b08850'), emblem: BEAST.big, glow: '#ffd090' }
       : { tier: -1, villain: true, rIn: .82, k: .86, skin: { a: M('#d8c090', 1, .7), b: M('#b6a78e', 1, .7), c: SUN, f: FIELD_BEAST, rim: M('#9a8c68', 1, .7) }, metal: M('#9a8c68'), emblem: BEAST.mon, glow: '#ffd090' };
+  // The named bosses. Each mark is drawn like a logo: one silhouette, one accent. Colossus keeps the old crowned bolt.
+  const BOSS_EMB = {
+    // Crossed sabres under a spiked helm.
+    warlord(L) { for (const s of [-1, 1]) L.a([[s * -.9, .94], [s * -.72, 1], [s * .84, -.1], [s * .94, -.52], [s * .6, -.34]], { chisel: .4 }); L.b([[-.58, -.3], [-.62, -.82], [-.28, -.56], [0, -1.04], [.28, -.56], [.62, -.82], [.58, -.3], [.2, -.1], [-.2, -.1]], { axis: 0, chisel: .3 }); L.c(lozenge(0, .34, .17, .22)); },
+    // A gear with a wrench through it.
+    foreman(L) { const o = [], n = 10; for (let i = 0; i < n; i++) { const a = i / n * TAU - HALF / 2, w = .17; o.push([Math.cos(a - w) * 1, Math.sin(a - w) * 1], [Math.cos(a + w) * 1, Math.sin(a + w) * 1], [Math.cos(a + w * 1.45) * .74, Math.sin(a + w * 1.45) * .74], [Math.cos(a + TAU / n - w * 1.45) * .74, Math.sin(a + TAU / n - w * 1.45) * .74]); } L.b(o, { chisel: .3, axis: 0 }); L.x(ngon(0, 0, .5, 16)); L.a(rot([[-.17, -.96], [-.38, -.74], [-.3, -.42], [-.16, -.34], [-.16, .72], [0, .94], [.16, .72], [.16, -.34], [.3, -.42], [.38, -.74], [.17, -.96], [.13, -.64], [-.13, -.64]], .78), { chisel: .35, axis: 0 }); },
+    // An open eye set in a tall aegis.
+    sentinel(L) { L.b([[0, -1.04], [.82, -.72], [.78, .18], [.4, .68], [0, 1.02], [-.4, .68], [-.78, .18], [-.82, -.72]], { axis: 0, chisel: .3 }); L.x([[0, -.76], [.58, -.53], [.55, .1], [.28, .47], [0, .72], [-.28, .47], [-.55, .1], [-.58, -.53]]); L.a([[-.5, -.04], [-.22, -.3], [.22, -.3], [.5, -.04], [.22, .22], [-.22, .22]], { axis: 0, chisel: .4 }); L.c(lozenge(0, -.04, .15, .2)); },
+  };
+  const BOSS_SKIN = {
+    warlord: { a: M('#ff8a4a', .8, .55), b: M('#70727e', 1, .7), c: M('#ff5a3a', .3, .3, .3, 1.2), f: M('#1c0c0a', 0, .3, .24), rim: M('#b05a30', 1, .8), glow: '#ff7a40' },
+    foreman: { a: M('#dce2ea', 1, .75), b: M('#f0b23a', .9, .55), c: SUN, f: M('#17140c', 0, .3, .24), rim: M('#c0922e', 1, .8), glow: '#ffc24a' },
+    sentinel: { a: M('#d8faff', 1, .8), b: M('#9ab8c8', 1, .75), c: M('#6ae8ff', .3, .3, .3, 1.2), f: M('#08161e', 0, .3, .24), rim: M('#7ac0d8', 1, .8), glow: '#7ae8ff' },
+  };
+  const bossSpec = kind => { if (!BOSS_SKIN[kind]) return beastSpec(false, true); const k = BOSS_SKIN[kind]; return { tier: -1, villain: true, rIn: .8, k: .8, skin: k, metal: k.rim, emblem: BOSS_EMB[kind], glow: k.glow }; };
+  const bossCoin = (kind, R = 96) => faceSprite(`bossF${kind}|${R}`, bossSpec(kind), R);
+  function bossTurn(kind, R) { return turntable(`bossT${kind}|${R}`, bossSpec(kind), R, 8, R * .3); }
+  const BOSS_COL = { warlord: '#ff7a40', foreman: '#ffc24a', sentinel: '#7ae8ff', colossus: '#ffb04a' };
   const monsterCoin = (big, boss) => faceSprite(`bst${boss ? 'b' : big ? 'g' : 'm'}`, beastSpec(big, boss), boss ? 96 : big ? 44 : 28);
   function monsterTurn(big, boss, R) { return turntable(`bt${boss ? 'b' : big ? 'g' : 'm'}|${R}`, beastSpec(big, boss), R, boss ? 8 : 10, R * .24); }
 
@@ -812,5 +858,37 @@ const Art = (() => {
     return spr.ko = { c, S, R: spr.R, P: spr.P };
   }
 
-  return { TEAM, TEAM_DARK, METAL, TILT, TAU, INK, COSMETICS, champCoin, champTurn, minionCoin, minionTurn, monsterCoin, monsterTurn, civCoin, coin, glow, shadow, drawEmblemIcon, abilityCoin, iconURL, sheen, vignette, seeded, mix, mixH, cv, reed, puff, leaf, shardsOf, impact, speedLines, sparkSp, dustCel, chip, glint, pillar, hazard, koCoin, pump, defer, frameAt, ensure, sigil, spikeBall, stats, buildFace, shade, canvasFrom, reliefStack, FINISH };
+  // ---------- big-moment sprites ----------
+  // A champion's mark as one flat silhouette, for stamping huge at the kill point.
+  function seal(kit, col, S = 192) {
+    const id = `seal${kit}${col}`; if (cache.has(id)) return cache.get(id);
+    const c = cv(S, S), g = c.getContext('2d'); g.translate(S / 2, S / 2); g.scale(S / 2.3, S / 2.3); g.fillStyle = col; g.lineJoin = 'miter';
+    const put = (kind, list) => { g.globalCompositeOperation = kind === 'x' ? 'destination-out' : 'source-over'; for (const p of list) { if (!Array.isArray(p)) continue; g.beginPath(); p.forEach(([x, y], i) => g[i ? 'lineTo' : 'moveTo'](x, y)); g.closePath(); g.fill(); } g.globalCompositeOperation = 'source-over'; };
+    const L = { a: (...p) => put('a', p), b: (...p) => put('b', p), c: (...p) => put('c', p), x: (...p) => put('x', p), paint: (k, fn) => { g.save(); g.strokeStyle = g.fillStyle = col; fn(g); g.restore(); } };
+    try { const e = EMB[kit]; if (e) e(L, true); } catch (err) { }
+    cache.set(id, c); return c;
+  }
+  // A shockwave: a bright leading edge and a dust band trailing inside it. Drawn squashed on the ground.
+  function shock(col) {
+    const id = 'shock' + col; if (cache.has(id)) return cache.get(id);
+    const S = 256, c = cv(S, S), g = c.getContext('2d'), rgb = hex(col).join(',');
+    const gr = g.createRadialGradient(128, 128, 60, 128, 128, 128);
+    gr.addColorStop(0, `rgba(${rgb},0)`); gr.addColorStop(.8, `rgba(${rgb},0)`); gr.addColorStop(.93, `rgba(${rgb},.14)`); gr.addColorStop(.975, `rgba(${rgb},.8)`); gr.addColorStop(.99, 'rgba(255,250,235,.85)'); gr.addColorStop(1, `rgba(${rgb},0)`);
+    g.fillStyle = gr; g.fillRect(0, 0, S, S);
+    cache.set(id, c); return c;
+  }
+  // A bounty seal pinned to a coin. Three grades: a gold star, a star on a red ground, a crowned star.
+  function bountyMark(grade) {
+    const id = 'bty' + grade; if (cache.has(id)) return cache.get(id);
+    const S = 3, W = 26, c = cv(W * S, W * S), g = c.getContext('2d'); g.scale(S, S); g.translate(W / 2, W / 2 + (grade === 2 ? 2 : 0)); g.lineJoin = 'miter';
+    const star = (R, r) => { g.beginPath(); for (let i = 0; i < 10; i++) { const a = -HALF / 2 + i / 10 * TAU, d = i % 2 ? r : R; g[i ? 'lineTo' : 'moveTo'](Math.cos(a) * d, Math.sin(a) * d); } g.closePath(); };
+    if (grade >= 1) { g.fillStyle = INK; g.beginPath(); g.arc(0, 0, 9.5, 0, TAU); g.fill(); g.fillStyle = '#b81e2c'; g.beginPath(); g.arc(0, 0, 8, 0, TAU); g.fill(); }
+    star(8.6, 3.8); g.fillStyle = INK; g.strokeStyle = INK; g.lineWidth = 2.4; g.stroke(); g.fill();
+    star(7.2, 3.1); g.fillStyle = '#ffd86a'; g.fill();
+    g.beginPath(); g.moveTo(0, -7.2); g.lineTo(0, 0); g.lineTo(-6.8, -2.2); g.closePath(); g.fillStyle = '#fff4c8'; g.fill();
+    if (grade >= 2) { g.fillStyle = INK; g.beginPath(); g.moveTo(-6, -7); g.lineTo(-6.5, -12.5); g.lineTo(-2.8, -9.8); g.lineTo(0, -13.5); g.lineTo(2.8, -9.8); g.lineTo(6.5, -12.5); g.lineTo(6, -7); g.closePath(); g.fill(); g.fillStyle = '#ffd86a'; g.beginPath(); g.moveTo(-4.6, -8.2); g.lineTo(-5, -11); g.lineTo(-2.6, -9); g.lineTo(0, -11.8); g.lineTo(2.6, -9); g.lineTo(5, -11); g.lineTo(4.6, -8.2); g.closePath(); g.fill(); }
+    const out = { c, w: W, h: W }; cache.set(id, out); return out;
+  }
+
+  return { minionGear, bossCoin, bossTurn, BOSS_COL, seal, shock, bountyMark, TEAM, TEAM_DARK, METAL, TILT, TAU, INK, COSMETICS, champCoin, champTurn, minionCoin, minionTurn, monsterCoin, monsterTurn, civCoin, coin, glow, shadow, drawEmblemIcon, abilityCoin, iconURL, sheen, vignette, seeded, mix, mixH, cv, reed, puff, leaf, shardsOf, impact, speedLines, sparkSp, dustCel, chip, glint, pillar, hazard, koCoin, pump, defer, frameAt, ensure, sigil, spikeBall, stats, buildFace, shade, canvasFrom, reliefStack, FINISH };
 })();

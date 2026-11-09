@@ -151,10 +151,12 @@ const { Ctl, applyInput, aimDir } = (() => {
         closeRadial(false);
       }
       if (Hud.shopOpen() && me.alive && !near(U.shop, p, 8)) Hud.closeShop();
+      if (Hud.qcOpen() && !near(U.chat, p, 8)) Hud.qcClose();
       if (Ctl.aim && near(U.cancel, p, 6)) { cancelAim(); return; }
       if (near(U.pause, p, 10)) { Hud.squash('pause'); Hud.openPause(); return; }
       if (near(U.shop, p, 8)) { Hud.squash('shop'); Hud.toggleShop(); return; }
       if (near(U.recall, p, 8)) { Hud.squash('recall'); if (me.alive) { me.q.push({ t: 'recall' }); Sound.play('recall'); } return; }
+      if (near(U.chat, p, 8)) { Hud.squash('chat'); Hud.qcToggle(); return; }
       if (near(U.ping, p, 8)) { Hud.squash('ping'); openRadial(e.pointerId, p, { x: me.x, y: me.y }, false); Ctl.p.set(e.pointerId, { role: 'ping', fromBtn: true }); Sound.play('tap'); return; }
       const hit = closest(p, clusterList(U), 11);
       if (hit === 'champ' || hit === 'minion' || hit === 'tower') { setAtk(e.pointerId, hit); return; }
