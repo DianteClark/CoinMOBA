@@ -109,6 +109,8 @@ button.down{transform:translateY(1px) scale(.965);filter:brightness(1.3);transit
 .pick[aria-pressed=true]::after{opacity:1;transform:none}
 .pick[aria-pressed=true] canvas{transform:scale(1.04);filter:none}
 .pick[aria-pressed=true] span.pn{color:var(--txt)}
+.ctr{display:block;font-style:normal;font-size:10px;font-weight:700;line-height:1;letter-spacing:.06em;text-transform:uppercase;color:#ff7a6b;text-align:center}
+.pick .ctr{position:relative;z-index:1;margin-top:-10px;padding:1px 4px 0;background:rgba(7,8,13,.82)}
 .pick.taken{opacity:.38}
 .hero{grid-column:2;grid-row:2;display:flex;flex-direction:column;align-items:center;justify-content:flex-end;gap:4px;pointer-events:none}
 .hero canvas#big{position:absolute;left:50%;top:44%;width:176px;height:176px;transform:translate(-50%,-50%);display:block;z-index:0}
@@ -202,6 +204,10 @@ button.down{transform:translateY(1px) scale(.965);filter:brightness(1.3);transit
 /* Evolve: one thumb, never in the way */
 #evo{position:absolute;left:50%;bottom:6px;transform:translateX(-50%);z-index:2;display:flex;gap:6px;width:356px}
 #evo.shut{width:auto}
+#subw{position:absolute;left:50%;bottom:30px;transform:translateX(-50%);z-index:2;display:flex;gap:4px;align-items:center;max-width:44%;flex-wrap:wrap;justify-content:center}
+#subw .evpill{height:26px;padding:0 9px;font-size:14px;white-space:nowrap;gap:5px}
+#subw .evpill small{font-size:10.5px}
+#subw .evpill.off{opacity:.55;pointer-events:none}
 .ev{--cut:8px;--line:var(--acc);--fill:linear-gradient(112deg,var(--a) 0 74%,var(--a2) 74%);flex:1 1 0;min-width:0;display:flex;flex-direction:column;align-items:flex-start;padding:5px 9px 6px;text-align:left;animation:evin .28s cubic-bezier(.2,.9,.3,1.25) both;animation-delay:calc(var(--i)*50ms)}
 @keyframes evin{from{opacity:0;transform:translateY(16px) scale(.94)}}
 .ev b{font-family:var(--disp);font-size:18px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;line-height:1.05;font-synthesis:none;color:var(--acc)}
@@ -589,6 +595,8 @@ button.down{transform:translateY(1px) scale(.965);filter:brightness(1.3);transit
 @keyframes barin{from{transform:scaleX(0)}}
 .rct{flex:none;display:flex;justify-content:space-between;font-size:12.5px;font-weight:500;color:var(--mut);border-top:1px solid var(--hair);padding-top:4px;line-height:1}
 .rct b{color:var(--txt);font-weight:600;font-variant-numeric:tabular-nums}
+#recap .ghost{flex:none;height:32px;min-height:32px;font-size:15px}
+.sm #recap .ghost{height:28px;min-height:28px;font-size:13px}
 #recap .go{flex:none;height:40px;font-size:19px;padding:0 6px;display:flex;align-items:center;justify-content:center;white-space:nowrap}
 /* Quick chat */
 #qc{--cut:10px;--fill:rgba(9,11,17,.96);position:absolute;left:44px;top:96px;z-index:3;width:300px;padding:7px;display:flex;flex-direction:column;gap:5px;animation:pop .12s cubic-bezier(.2,.8,.2,1) both}
@@ -879,7 +887,6 @@ button.down{transform:translateY(1px) scale(.965);filter:brightness(1.3);transit
 #shop.dead{left:268px;right:36px;top:84px;bottom:6px}
 .lh #shop.dead{left:36px;right:268px}
 #shop.dead.solo{left:36px;right:36px}
-#shop.dead .shx{display:none}
 #shop.dead .shbody{grid-template-columns:60px minmax(0,1fr) 136px}
 #shop.dead .items{grid-template-columns:minmax(0,1fr)}
 #shop.dead.solo .items{grid-template-columns:repeat(2,minmax(0,1fr))}
@@ -1109,6 +1116,21 @@ button.down{transform:translateY(1px) scale(.955);filter:brightness(1.28);transi
 #vox span::before{content:"";width:6px;height:6px;background:var(--acc);transform:rotate(45deg)}
 .pright{display:flex;flex-direction:column;gap:6px;min-width:0;min-height:0;max-height:100%}
 .pright .board{flex:1 1 auto}
+#pause.live{z-index:6;background:none;justify-content:flex-start;align-items:stretch;padding:8px 0 8px 44px;pointer-events:none}
+#pause.live .plate{pointer-events:auto;align-self:center}
+#pause.live .pgrid{width:auto;grid-template-columns:150px auto;padding:8px 10px;gap:8px}
+#pause.live.showb .pgrid{grid-template-columns:150px 330px}
+#pause.live .pcol{gap:5px}
+#pause.live .pcol h2{font-size:26px}
+#pause.live .pcol .go,#pause.live .pcol .ghost,#pause.live .pcol .tog{height:36px;min-height:36px;font-size:14px}
+#pause.live .pcol .go{font-size:19px}
+#pause.live .pvox{max-width:130px}
+#pause.live .pright{display:none}
+#pause.live .pright:has(.pvox:not(.hide)){display:flex}
+#pause.live:not(.showb) #pBoard{display:none}
+#pBoardT{display:none}
+#pause.live #pBoardT{display:block}
+.lh #pause.live{justify-content:flex-end;padding:8px 44px 8px 0}
 .pvox{flex:none;display:flex;flex-wrap:wrap;gap:4px}
 .pvox button{min-height:36px;font-size:13px}.pvox button.off{color:var(--mut);text-decoration:line-through}
 .pvox p{margin:0;font-size:12.5px;line-height:1.15;color:var(--mut)}
@@ -1184,6 +1206,7 @@ button.down{transform:translateY(1px) scale(.955);filter:brightness(1.28);transi
   <div id="qc" class="plate hide" role="group" aria-label="Emotes and quick chat"><div class="qem" id="qcE"></div><div class="qch" id="qcC"></div></div>
   <div id="sv" class="plate hide" role="group" aria-label="Surrender vote"><span id="svT"></span><button class="tok" id="svN">Keep fighting</button><button class="tok" id="svY">Surrender</button></div>
   <div id="evo" class="hide" role="group" aria-label="Evolve"></div>
+  <div id="subw" class="hide" role="group" aria-label="Subway"></div>
   <div id="prac" class="hide" role="group" aria-label="Practice tools"><button class="tok" id="prGold" aria-label="Add gold">Gold</button><button class="tok" id="prXp" aria-label="Level up">Level</button><button class="tok" id="prCd" aria-label="Reset cooldowns">Reset</button></div>
 
   <div id="pause" class="over hide" role="dialog" aria-label="Paused">
@@ -1192,6 +1215,7 @@ button.down{transform:translateY(1px) scale(.955);filter:brightness(1.28);transi
         <h2 id="pT">Paused</h2>
         <p id="pNote" class="hide">The match keeps running</p>
         <button class="go" id="resume">Resume</button>
+        <button class="ghost" id="pBoardT">Scoreboard</button>
         <button class="ghost" id="leave">Leave match</button>
         <button class="ghost hide" id="pSur">Surrender</button>
         <button class="tog" id="pMusic">Music</button>
@@ -8964,7 +8988,8 @@ const pts = id => save.m[id] || 0;
 Sound.setOn(save.music, save.sfx);
 
 function applyQuality() { quality = save.gfx === 'low' ? 0 : save.gfx === 'high' ? 2 : quality; resize(); }
-function resize() { dpr = Math.min(devicePixelRatio || 1, quality >= 2 ? 2 : quality === 1 ? 1.5 : 1); view.width = VW * dpr; view.height = VH * dpr; }
+// Assigning canvas size reallocates and blanks it, even with the same number, so only do it when the size really changes.
+function resize() { dpr = Math.min(devicePixelRatio || 1, quality >= 2 ? 2 : quality === 1 ? 1.5 : 1); const w = Math.floor(VW * dpr), h = Math.floor(VH * dpr); if (view.width !== w) view.width = w; if (view.height !== h) view.height = h; }
 // How far the stage starts from the physical screen edge, and the physical width used for touch mapping.
 let stageX = 0, physW = 0;
 const safeProbe = (() => { const d = document.createElement('div'); d.id = 'safeProbe'; d.style.cssText = 'position:fixed;left:0;top:0;width:0;height:0;visibility:hidden;pointer-events:none;padding:env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left)'; document.documentElement.appendChild(d); return d; })();
@@ -9070,7 +9095,8 @@ function frame(now) {
   }
   soundFrame(held ? 0 : dt);
   if (!window.__skipRender) render(held ? 0 : dt); // the skip flag is for many-browser network tests on one machine
-  if (save.gfx === 'auto') { const f = G.frames++; G.ms += dt * 1000; if (f && f % 120 === 0) { const avg = G.ms / 120; G.ms = 0; if (avg > 26 && quality > 0) { quality--; resize(); } } }
+  // Auto graphics: each step down visibly changes the picture, so only sustained slowness in live play counts, not the map paint during the intro.
+  if (save.gfx === 'auto' && !held && G.intro <= 0 && !G.ended) { const f = ++G.frames; G.ms += dt * 1000; if (f % 120 === 0) { const avg = G.ms / 120; G.ms = 0; G.slow = avg > 26 ? (G.slow || 0) + 1 : 0; if (G.slow >= 2 && quality > 0) { G.slow = 0; quality--; resize(); } } }
 }
 
 // The world renderer: ground, water, weather, fog of war, scenery, units, ambient life, intro and outro.
@@ -11592,8 +11618,8 @@ const { FX, fxEvent } = (() => {
 // Touch controls. Abilities fire on release so the player always has a chance to cancel.
 const { Ctl, applyInput, aimDir } = (() => {
   const Ctl = {
-    p: new Map(), stick: null, aim: null, atk: null, atkMode: 'champ', beacon: null, ping: null, mapHold: null,
-    reset() { if (this.talking) { this.talking = false; Voice.talk(false); } this.p.clear(); this.stick = null; this.aim = null; this.atk = null; this.atkMode = 'champ'; this.beacon = null; this.ping = null; this.mapHold = null; },
+    p: new Map(), stick: null, aim: null, atk: null, atkMode: 'champ', ping: null, mapHold: null,
+    reset() { if (this.talking) { this.talking = false; Voice.talk(false); } this.p.clear(); this.stick = null; this.aim = null; this.atk = null; this.atkMode = 'champ'; this.ping = null; this.mapHold = null; },
     pt(e) { return rotated ? { x: e.clientY - stageX, y: physW - e.clientX } : { x: e.clientX - stageX, y: e.clientY }; },
   };
   const near = (b, p, pad) => Math.hypot(p.x - b.x, p.y - b.y) < b.r + pad;
@@ -11680,23 +11706,6 @@ const { Ctl, applyInput, aimDir } = (() => {
     Sound.play('tap');
   }
 
-  // Beacons aim like an ability: tap drops one at your feet, drag throws it out.
-  const beaconRange = () => Sim.BEACON_RANGE || 460;
-  function beaconPoint() {
-    const B = Ctl.beacon, me = G.me;
-    if (!B || !B.moved) return { x: me.x, y: me.y };
-    const wy = B.dy / TILT, l = Math.hypot(B.dx, wy) || 1, f = Math.min(1, Math.hypot(B.dx, B.dy) * sens() / FULL_PX) * beaconRange();
-    return { x: me.x + B.dx / l * f, y: me.y + wy / l * f };
-  }
-  function pressBeacon(id, p) {
-    const me = G.me;
-    if (!me.alive) return;
-    if (Hud.beaconLeft(me) < 1) { Hud.squash('beacon'); Hud.toast('No beacons ready'); Sound.play('cancel'); return; }
-    Ctl.beacon = { id, sx: p.x, sy: p.y, dx: 0, dy: 0, moved: false, cancelHot: false, left: false };
-    Ctl.p.set(id, { role: 'beacon' });
-    Hud.squash('beacon'); Sound.play('tap');
-  }
-
   // ---------- pings ----------
   const RADIAL = [['attack', 0, -1], ['omw', 1, 0], ['help', 0, 1], ['retreat', -1, 0]];
   function radialPick(dx, dy) {
@@ -11737,7 +11746,7 @@ const { Ctl, applyInput, aimDir } = (() => {
     return best;
   }
   const atkList = U => [['champ', U.atk], ['minion', U.atkM], ['tower', U.atkT]];
-  function clusterList(U) { return [...atkList(U), ['ab0', U.ab[0]], ['ab1', U.ab[1]], ['ab2', U.ab[2]], ['beacon', U.beacon]]; }
+  function clusterList(U) { return [...atkList(U), ['ab0', U.ab[0]], ['ab1', U.ab[1]], ['ab2', U.ab[2]]]; }
   function setAtk(id, mode) {
     Ctl.p.set(id, { role: 'atk' }); Ctl.atk = id; Ctl.atkMode = mode;
     Hud.atkPressed(mode); Sound.play(mode === 'minion' ? 'atkMinion' : mode === 'tower' ? 'atkTower' : 'atkChamp');
@@ -11767,7 +11776,6 @@ const { Ctl, applyInput, aimDir } = (() => {
       if (near(U.ping, p, 8)) { Hud.squash('ping'); openRadial(e.pointerId, p, { x: me.x, y: me.y }, false); Ctl.p.set(e.pointerId, { role: 'ping', fromBtn: true }); Sound.play('tap'); return; }
       const hit = closest(p, clusterList(U), 11);
       if (hit === 'champ' || hit === 'minion' || hit === 'tower') { setAtk(e.pointerId, hit); return; }
-      if (hit === 'beacon') { pressBeacon(e.pointerId, p); return; }
       if (hit) { pressAbility(+hit[2], e.pointerId, p); return; }
       const M = U.map;
       if (p.x > M.x - 6 && p.x < M.x + M.w + 6 && p.y > M.y - 6 && p.y < M.y + M.h + 8) {
@@ -11797,13 +11805,6 @@ const { Ctl, applyInput, aimDir } = (() => {
     if (r && r.role === 'ping' && Ctl.ping && Ctl.ping.id === e.pointerId) {
       const p = Ctl.pt(e), P = Ctl.ping, sel = radialPick(p.x - P.sx, p.y - P.sy);
       if (sel !== P.sel) { P.sel = sel; if (sel) Sound.play('tick'); }
-    }
-    if (r && r.role === 'beacon' && Ctl.beacon && Ctl.beacon.id === e.pointerId) {
-      const p = Ctl.pt(e), B = Ctl.beacon, U = Hud.ui;
-      B.dx = p.x - B.sx; B.dy = p.y - B.sy;
-      if (Math.hypot(B.dx, B.dy) > MOVE_PX / sens()) B.moved = true;
-      if (!near(U.beacon, p, 8)) B.left = true;
-      B.cancelHot = (B.left && near(U.beacon, p, 2)) || near(U.cancel, p, 10);
     }
     if (A && A.id === e.pointerId) {
       const p = Ctl.pt(e), U = Hud.ui, B = U.ab[A.slot], gate = MOVE_PX / sens();
@@ -11836,12 +11837,6 @@ const { Ctl, applyInput, aimDir } = (() => {
       if (!P.sel && r.fromBtn) { P.sticky = true; return; }
       closeRadial(true);
     }
-    else if (r.role === 'beacon' && Ctl.beacon && Ctl.beacon.id === e.pointerId) {
-      const B = Ctl.beacon, pt = beaconPoint(), bad = lost || B.cancelHot;
-      Ctl.beacon = null;
-      if (bad) { Sound.play('cancel'); return; }
-      if (G.me.alive) { G.me.q.push({ t: 'beacon', tx: pt.x, ty: pt.y }); Hud.beaconPlaced(pt); }
-    }
     else if (r.role === 'aim' && Ctl.aim && Ctl.aim.id === e.pointerId) {
       if (lost || Ctl.aim.cancelHot) { cancelAim(); return; }
       const me = G.me, A = Ctl.aim, d = aimDir();
@@ -11865,13 +11860,12 @@ const { Ctl, applyInput, aimDir } = (() => {
     me.atk = Ctl.atk !== null;
     me.atkMode = Ctl.atk !== null ? Ctl.atkMode : 'champ';
     mapHoldTick();
-    if (!me.alive) { if (Ctl.aim) Ctl.aim = null; if (Ctl.beacon) Ctl.beacon = null; }
+    if (!me.alive) { if (Ctl.aim) Ctl.aim = null; }
     if (Ctl.aim && me.charge && me.charge.slot === Ctl.aim.slot) {
       const d = aimDir(), far = me.kit[Ctl.aim.slot].range || 600;
       me.q.push({ t: 'aim', tx: me.x + d.dx * far, ty: me.y + d.dy * far });
     }
   }
-  Ctl.beaconPoint = beaconPoint;
   Ctl.radial = RADIAL;
 
   return { Ctl, applyInput, aimDir };
@@ -12403,15 +12397,29 @@ const Net = (() => {
     if (api.role !== 'host' || heroTeam === null || api.phase !== 'room') return false;
     draftTimes = { ban: o.ban === undefined ? 20 : o.ban, pick: o.pick === undefined ? 35 : o.pick };
     api.phase = 'draft'; draft = { phase: 'ban', total: draftTimes.ban, endsAt: now_() + draftTimes.ban * 1000, bans: [[], []], votes: {}, voteOrder: 0, picks: {} };
+    // A side with no players still bans. Its choice lands a moment in, so it reads as a decision on the ban screen.
+    botBans = [0, 1].filter(side => !humans().some(p => sideOf(p.team) === side)).map(side => ({ side, at: now_() + 1500 + Math.random() * 2500 }));
     pushRoom(); pushDraft();
     clearInterval(draftTimer); draftTimer = setInterval(draftTick, 250);
     return true;
   }
   function humans() { return players.filter(p => p.online); }
+  // The bot team's ban against the other side's roster. Sim.botBan weighs strength and nemeses; anything illegal falls back to a random free kit.
+  let botBans = [];
+  function applyBotBan(b) {
+    const d = draft, foe = 1 - b.side, pool = kitsOf(foe).filter(k => !d.bans[foe].includes(k));
+    if (!pool.length) return;
+    let kit = null;
+    try { if (Sim.botBan) kit = Sim.botBan(b.side, { banned: d.bans[foe].slice() }); } catch (e) { kit = null; }
+    if (!pool.includes(kit)) kit = pool[Math.floor(Math.random() * pool.length)];
+    d.bans[foe].push(kit);
+  }
   function draftTick() {
     if (!draft) return;
     const now = now_();
     if (draft.phase === 'ban') {
+      const due = botBans.filter(b => now >= b.at);
+      if (due.length) { botBans = botBans.filter(b => now < b.at); due.forEach(applyBotBan); pushDraft(); }
       const all = humans().every(p => draft.votes[p.pid]);
       if (all || now >= draft.endsAt) endBans();
       else if (now - lastDraftSync > 2000) pushDraft();
@@ -12423,6 +12431,7 @@ const Net = (() => {
   }
   function endBans() {
     const d = draft;
+    botBans.forEach(applyBotBan); botBans = [];
     [0, 1].forEach(side => {
       const tally = new Map();
       for (const p of players) if (sideOf(p.team) === side && d.votes[p.pid]) { const k = d.votes[p.pid]; tally.set(k, (tally.get(k) || 0) + 1); }
@@ -12833,7 +12842,7 @@ const Net = (() => {
   }
   const clampMv = v => Math.max(-1, Math.min(1, isFinite(v) ? v : 0));
   // Commands with no position, or only simple fields, travel as [10, t, fields...] and are whitelisted here.
-  const SIMPLE = { buyback: [], reinforce: ['lane'], fund: ['amount'], surrender: ['vote'], use: ['slot'], pref: ['v'] };
+  const SIMPLE = { buyback: [], reinforce: ['lane'], fund: ['amount'], surrender: ['vote'], use: ['slot'], pref: ['v'], subway: ['to'], blackout: [] };
   function hostBefore() {
     for (const p of players) {
       if (p.host || !p.link || p.seat < 0) continue;
@@ -12857,7 +12866,6 @@ const Net = (() => {
         else if (v === 5 && typeof m[1] === 'string') c.q.push({ t: 'buy', id: m[1] });
         else if (v === 6) c.q.push({ t: 'sell', slot: sl });
         else if (v === 7) c.q.push({ t: 'evolve', tier: sl, choice: m[2] | 0 });
-        else if (v === 8 && ok(m[1], m[2])) c.q.push({ t: 'beacon', tx: c.x + m[1], ty: c.y + m[2] });
         else if (v === 9 && ok(m[2], m[3])) c.q.push({ t: 'ping', kind: String(m[1]), x: m[2], y: m[3] });
         else if (v === 10 && SIMPLE[m[1]]) { const q = { t: m[1] }; SIMPLE[m[1]].forEach((k, i) => { const x = m[i + 2]; if (typeof x === 'number' && isFinite(x)) q[k] = x; else if (typeof x === 'boolean' || x === 'hp' || x === 'pct') q[k] = x; }); c.q.push(q); }
       }
@@ -13084,7 +13092,6 @@ const Net = (() => {
       else if (q.t === 'buy') sendCmd([5, String(q.id)]);
       else if (q.t === 'sell') sendCmd([6, q.slot | 0]);
       else if (q.t === 'evolve') sendCmd([7, q.tier | 0, q.choice | 0]);
-      else if (q.t === 'beacon') sendCmd([8, Math.round(q.tx - me.x), Math.round(q.ty - me.y)]);
       else if (q.t === 'ping') sendCmd([9, String(q.kind), Math.round(q.x), Math.round(q.y)]);
       else if (SIMPLE[q.t]) sendCmd([10, q.t, ...SIMPLE[q.t].map(k => q[k])]);
     }
@@ -13243,7 +13250,7 @@ const Replay = (() => {
       near(cx, cy, fr.min).map(u => [u.id, r1(u.x), r1(u.y), u.hp, u.fl, u.ex]),
       near(cx, cy, fr.proj).map(p => [p.id, r1(p.x), r1(p.y), p.fl, p.fx, p.w, p.owner, p.target, p.vx, p.vy]),
       near(cx, cy, fr.zones, 400).map(z => [z.id, r1(z.x), r1(z.y), z.r, z.t, z.total, z.fl, z.fx, z.owner, z.ext, z.x1, z.y1, z.x2, z.y2, z.tgt]),
-      fr.beacons.map(b => [b.id, r1(b.x), r1(b.y), b.fl, b.t]),
+      [],
       fr.prog || 0];
   }
   function unpackFrame(a) {
@@ -13253,7 +13260,7 @@ const Replay = (() => {
       mon: a[2].map(unit), min: a[3].map(unit),
       proj: a[4].map(p => ({ id: p[0], x: p[1], y: p[2], fl: p[3], fx: p[4], w: p[5], owner: p[6], target: p[7], vx: p[8], vy: p[9] })),
       zones: a[5].map(z => { const o = { id: z[0], x: z[1], y: z[2], r: z[3], t: z[4], total: z[5], fl: z[6], fx: z[7], owner: z[8], ext: z[9] }; if (o.ext & 1) { o.x1 = z[10]; o.y1 = z[11]; o.x2 = z[12]; o.y2 = z[13]; } if (o.ext & 2) o.tgt = z[14]; return o; }),
-      beacons: a[6].map(b => ({ id: b[0], x: b[1], y: b[2], fl: b[3], t: b[4] })),
+      beacons: [],
       prog: a[7] || null };
   }
   function freeze(m, c, s, got, from, to) {
@@ -13635,7 +13642,7 @@ const Hud = {
   ui: {
     atk: { x: 0, y: 0, r: 46 },
     ab: [{ x: 0, y: 0, r: 33 }, { x: 0, y: 0, r: 33 }, { x: 0, y: 0, r: 37 }],
-    atkM: { x: 0, y: 0, r: 19 }, atkT: { x: 0, y: 0, r: 19 }, beacon: { x: 0, y: 0, r: 20 },
+    atkM: { x: 0, y: 0, r: 19 }, atkT: { x: 0, y: 0, r: 19 },
     cancel: { x: 0, y: 70, r: 34 }, pause: { x: 0, y: 20, r: 14 },
     shop: { x: 63, y: 76, r: 17 }, recall: { x: 106, y: 76, r: 17 }, ping: { x: 149, y: 76, r: 17 }, chat: { x: 192, y: 76, r: 17 }, ptt: { x: 235, y: 76, r: 17 },
     map: { x: 0, y: 6, w: 140, h: 84 },
@@ -13696,9 +13703,9 @@ const { hud, initHud, hudDraw, uiEvent } = (() => {
 
   // ---------- layout ----------
   // Every movable control, with its default offset from the attack coin (or its fixed spot) at full size.
-  const CLUSTER = { atk: [0, 0, 46], atkM: [-66, -20, 19], atkT: [-26, -64, 19], ab0: [-106, 20, 33], ab1: [-82, -76, 33], ab2: [2, -114, 37], beacon: [-162, -52, 20] };
+  const CLUSTER = { atk: [0, 0, 46], atkM: [-66, -20, 19], atkT: [-26, -64, 19], ab0: [-106, 20, 33], ab1: [-82, -76, 33], ab2: [2, -114, 37] };
   const CORNER = { shop: [63, 76, 17], recall: [106, 76, 17], ping: [149, 76, 17], chat: [192, 76, 17], ptt: [235, 76, 17] };
-  const LABELS = { atk: 'Attack', atkM: 'Minion', atkT: 'Tower', ab0: 'Ability 1', ab1: 'Ability 2', ab2: 'Ultimate', beacon: 'Beacon', shop: 'Shop', recall: 'Recall', ping: 'Ping', chat: 'Chat', ptt: 'Talk' };
+  const LABELS = { atk: 'Attack', atkM: 'Minion', atkT: 'Tower', ab0: 'Ability 1', ab1: 'Ability 2', ab2: 'Ultimate', shop: 'Shop', recall: 'Recall', ping: 'Ping', chat: 'Chat', ptt: 'Talk' };
   const hudOf = () => save.hud || (save.hud = { left: false, pos: {} });
   const left = () => !!hudOf().left;
   // Default position of a control for this screen and handedness, before the player's own offset.
@@ -13720,7 +13727,7 @@ const { hud, initHud, hudDraw, uiEvent } = (() => {
     U.compact = VW < 760 || VH < 350;
     stage.classList.toggle('sm', U.compact);
     stage.classList.toggle('lh', left());
-    put2(U.atk, 'atk'); put2(U.atkM, 'atkM'); put2(U.atkT, 'atkT'); put2(U.beacon, 'beacon');
+    put2(U.atk, 'atk'); put2(U.atkM, 'atkM'); put2(U.atkT, 'atkT');
     put2(U.ab[0], 'ab0'); put2(U.ab[1], 'ab1'); put2(U.ab[2], 'ab2');
     put2(U.shop, 'shop'); put2(U.recall, 'recall'); put2(U.ping, 'ping'); put2(U.chat, 'chat'); put2(U.ptt, 'ptt');
     const cx = VW - 250; U.cancel.x = left() ? VW - cx : cx; U.cancel.y = 122;
@@ -13755,7 +13762,7 @@ const { hud, initHud, hudDraw, uiEvent } = (() => {
       hpTrail: me.hp, hpHold: 0, hurt: 0, hpPrev: me.hp, goldShow: me.gold, goldStr: String(Math.floor(me.gold)), goldGain: 0, goldGainT: 0, goldGainStr: '', lvlFx: 0, first: save.hints < 1, guide: save.hints < 2, netStr: '', netKey: -2,
       prev: [0, 0, 0], cdMax: [1, 1, 1], recPrev: [0, 0, 0], recMax: [1, 1, 1], pop: [0, 0, 0], press: [0, 0, 0], deny: [0, 0, 0], flash: [0, 0, 0], spark: [.4, 1.2, 2.0],
       atkPress: 0, atkMax: 1, atkPrev: 0, cancelIn: 0,
-      feed: [], banner: null, queue: [], pings: [], pingAt: {}, towerAt: -99, mapC: null, kills: [s.kills[0], s.kills[1]], killBump: [0, 0], lvl: me.lvl, lvlBump: 0, sq: { shop: 0, recall: 0, pause: 0, ping: 0, beacon: 0, chat: 0, ptt: 0 }, emotes: [], sayLog: [], recap: null, bountyShow: 0, objK: '', objStr: '', objSub: '', buffs: [], svKey: '',
+      feed: [], banner: null, queue: [], pings: [], pingAt: {}, towerAt: -99, mapC: null, kills: [s.kills[0], s.kills[1]], killBump: [0, 0], lvl: me.lvl, lvlBump: 0, sq: { shop: 0, recall: 0, pause: 0, ping: 0, chat: 0, ptt: 0 }, emotes: [], sayLog: [], recap: null, bountyShow: 0, objK: '', objStr: '', objSub: '', buffs: [], svKey: '',
       clockSec: -1, clockStr: '0:00', hoardKey: -2, hoardStr: '', frame: 0,
       hint: save.hints < 2 ? { i: 0, t: 0, n: 0 } : null,
     };
@@ -13802,6 +13809,10 @@ const { hud, initHud, hudDraw, uiEvent } = (() => {
   function uiEvent(e) {
     if (!H || !G) return;
     const me = G.me, k = e.e;
+    if (k === 'district' && e.phase === 'flip') { const nm = (Sim.DISTRICT_INFO[e.kind] || {}).name || 'A district'; newsPush(e.team === 1 ? `${nm} falls to the villains` : `Heroes secure the ${nm}`); return; }
+    if (k === 'city') { newsPush(e.kind === 'rally' ? 'The city rallies behind the heroes' : 'Panic spreads across the city'); return; }
+    if (k === 'blackout') { newsPush('Blackout hits the city'); return; }
+    if (k === 'rival') { if (e.u === me.id || e.v === me.id) banner('Your nemesis', { pri: 3, team: me.team, dur: 1.5 }); return; }
     if (k === 'hit') {
       const u = H.byId.get(e.u); if (!u || u.team !== me.team) return;
       const now = G.s.t;
@@ -13852,7 +13863,7 @@ const { hud, initHud, hudDraw, uiEvent } = (() => {
     }
     ctx.globalAlpha = k;
     ctx.drawImage(scrimTop, 0, 0, VW, U.compact ? 66 : 76);
-    for (const B of [U.atk, U.ab[0], U.ab[1], U.ab[2], U.beacon]) { const R = B.r * 1.62; ctx.drawImage(shade, B.x - R, B.y - R, R * 2, R * 2); }
+    for (const B of [U.atk, U.ab[0], U.ab[1], U.ab[2]]) { const R = B.r * 1.62; ctx.drawImage(shade, B.x - R, B.y - R, R * 2, R * 2); }
     ctx.globalAlpha = 1;
   }
   function skewBar(x, y, w, h, s) { if (w <= 0) return; const sl = Math.min(w, s); ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x + w, y); ctx.lineTo(x + w - sl, y + h); ctx.lineTo(x, y + h); ctx.closePath(); ctx.fill(); }
@@ -14033,6 +14044,82 @@ const { hud, initHud, hudDraw, uiEvent } = (() => {
     for (const L of s.map.lanes) { g.beginPath(); L.forEach(([x, y], i) => g[i ? 'lineTo' : 'moveTo'](x * kx, y * ky)); g.stroke(); }
     return c;
   }
+  // ---------- districts ----------
+  const DIST_ORDER = ['hospital', 'bank', 'power', 'comms', 'armory', 'subway'];
+  const distCol = (d, me) => d.owner < 0 ? '#8c98ab' : TEAM_DOT[d.owner === me.team ? 0 : 1];
+  // One simple shape per kind, shared by the minimap and the control strip, so the two read as the same thing.
+  function distShape(kind, x, y, r) {
+    ctx.beginPath();
+    if (kind === 'hospital') { const t = r * .36; ctx.rect(x - r, y - t, r * 2, t * 2); ctx.rect(x - t, y - r, t * 2, r * 2); }
+    else if (kind === 'bank') { ctx.moveTo(x, y - r); ctx.lineTo(x + r, y); ctx.lineTo(x, y + r); ctx.lineTo(x - r, y); ctx.closePath(); }
+    else if (kind === 'power') { ctx.moveTo(x, y - r); ctx.lineTo(x + r, y + r * .8); ctx.lineTo(x - r, y + r * .8); ctx.closePath(); }
+    else if (kind === 'comms') { ctx.arc(x, y, r * .95, 0, TAU); ctx.moveTo(x + r * .42, y); ctx.arc(x, y, r * .42, 0, TAU, true); }
+    else if (kind === 'armory') ctx.rect(x - r * .82, y - r * .82, r * 1.64, r * 1.64);
+    else ctx.rect(x - r, y - r * .46, r * 2, r * .92);
+  }
+  function drawMapDistricts(s, me, M, kx, ky) {
+    for (const d of s.districts || []) {
+      if (d.home) continue;
+      const X = M.x + d.x * kx, Y = M.y + d.y * ky, r = U.compact ? 3 : 3.4;
+      if (d.by >= 0 && !calm) { const p = (H.t * 1.6) % 1; disc(X, Y, r + 1 + p * 3); ctx.strokeStyle = TEAM_DOT[d.by === me.team ? 0 : 1]; ctx.lineWidth = 1; ctx.globalAlpha = .9 - p * .7; ctx.stroke(); ctx.globalAlpha = 1; }
+      ctx.strokeStyle = INK; ctx.lineWidth = 1.6; distShape(d.kind, X, Y, r); ctx.stroke();
+      ctx.fillStyle = distCol(d, me); distShape(d.kind, X, Y, r); ctx.fill('evenodd');
+    }
+  }
+  // Who holds what: a shape per kind and a pip per district, under the minimap. A district being taken has a part-filled pip.
+  function drawDistricts(s, me) {
+    if (!s.districts || !s.districts.length) return;
+    const M = U.map, cols = 3, tw = (M.w + 4) / cols, th = U.compact ? 11 : 12, y0 = M.y + M.h + (G.net ? 19 : 6), r = U.compact ? 3.4 : 3.8;
+    DIST_ORDER.forEach((kind, i) => {
+      const list = s.districts.filter(d => d.kind === kind && !d.home); if (!list.length) return;
+      const x = M.x - 2 + (i % cols) * tw, y = y0 + (i / cols | 0) * th + th / 2, lead = Math.max(...list.map(d => d.owner === me.team ? 2 : d.owner >= 0 ? 1 : 0));
+      ctx.fillStyle = 'rgba(7,8,13,.62)'; ctx.fillRect(x, y - th / 2, tw - 1, th - 1);
+      ctx.fillStyle = lead === 2 ? TEAM_DOT[0] : lead === 1 ? TEAM_DOT[1] : '#8c98ab'; distShape(kind, x + 6, y - .5, r); ctx.fill('evenodd');
+      list.forEach((d, j) => {
+        const px = x + 13 + j * 5, py = y - 3;
+        ctx.fillStyle = 'rgba(233,237,244,.18)'; ctx.fillRect(px, py, 3.5, 5.5);
+        ctx.fillStyle = distCol(d, me); ctx.fillRect(px, py, 3.5, 5.5);
+        if (d.by >= 0) { ctx.fillStyle = TEAM_DOT[d.by === me.team ? 0 : 1]; ctx.fillRect(px, py + 5.5 * (1 - d.prog), 3.5, 5.5 * d.prog); }
+      });
+    });
+  }
+  function stationName(d, s, me) {
+    if (d.home) return 'Base';
+    const mine = s.districts.find(x => x.home && x.owner === me.team), foe = s.districts.find(x => x.home && x.owner !== me.team);
+    const near = !mine || !foe || Math.hypot(d.x - mine.x, d.y - mine.y) <= Math.hypot(d.x - foe.x, d.y - foe.y);
+    return `${near ? 'Near' : 'Far'} ${d.y < Sim.H / 2 ? 'N' : 'S'}`;
+  }
+  // Subway rides and the Blackout are offered only where they can be used, and leave the thumbs and centre clear.
+  function travelSync(me, s) {
+    const box = $('subw');
+    const links = !G.spectator && me.alive && !me.chan && Sim.subwayLinks ? Sim.subwayLinks(s, me) : [], black = !G.spectator && me.alive && Sim.blackoutReady && Sim.blackoutReady(s, me.team);
+    const cd = Math.ceil(me.subCd || 0), key = links.map(d => d.id).join() + (cd > 0 ? `c${cd}` : '') + (black ? 'b' : '');
+    if (key === H.travelKey) return; H.travelKey = key;
+    box.textContent = '';
+    links.forEach(d => {
+      const b = document.createElement('button'); b.className = 'evpill auto' + (cd > 0 ? ' off' : ''); b.innerHTML = `<small>To</small>${stationName(d, s, me)}${cd > 0 ? `<em>${cd}s</em>` : ''}`;
+      b.setAttribute('aria-label', `Ride the subway to ${stationName(d, s, me)}`);
+      b.onpointerdown = e => { e.stopPropagation(); if (!G || !G.me.alive) return; G.me.q.push({ t: 'subway', to: d.id }); Sound.play('tap'); H.travelKey = ''; };
+      box.append(b);
+    });
+    if (black) { const b = document.createElement('button'); b.className = 'evpill auto'; b.innerHTML = 'Blackout'; b.setAttribute('aria-label', 'Trigger a Blackout'); b.onpointerdown = e => { e.stopPropagation(); if (!G) return; G.me.q.push({ t: 'blackout' }); Sound.play('tap'); H.travelKey = ''; }; box.append(b); }
+    box.classList.toggle('hide', !links.length && !black);
+  }
+  // Breaking News: big city moments only, one line at the bottom edge, gone in a few seconds.
+  function newsPush(text) { if (!H.news) H.news = []; if (H.news.length < 2) H.news.push({ text, t: 0 }); }
+  function drawNews(dt) {
+    const n = H.news && H.news[0]; if (!n || !$('evo').classList.contains('hide')) return;
+    const DUR = 5, fade = .35; n.t += dt;
+    if (n.t >= DUR) { H.news.shift(); return; }
+    const a = Math.min(1, n.t / fade, (DUR - n.t) / fade), h = U.compact ? 15 : 17, y = VH - h - 1, cx = VW / 2;
+    ctx.save(); ctx.globalAlpha = a; ctx.textBaseline = 'middle'; ctx.textAlign = 'left';
+    const f1 = fw(800, U.compact ? 9.5 : 10.5), f2 = fw(600, U.compact ? 11.5 : 12.5), tag = 'BREAKING';
+    ctx.font = f1; const tw = ctx.measureText(tag).width + 12; ctx.font = f2; const mw = ctx.measureText(n.text).width + 14, x = cx - (tw + mw) / 2;
+    ctx.fillStyle = 'rgba(7,8,13,.86)'; ctx.fillRect(x + tw, y, mw, h); ctx.fillStyle = '#c62d3f'; ctx.fillRect(x, y, tw, h);
+    ctx.font = f1; ctx.fillStyle = '#fff'; ctx.fillText(tag, x + 6, y + h / 2 + .5);
+    ctx.font = f2; ctx.fillStyle = WHITE; ctx.fillText(n.text, x + tw + 7, y + h / 2 + .5);
+    ctx.restore();
+  }
   function drawMap(dt, s, me) {
     const M = U.map, kx = M.w / Sim.W, ky = M.h / Sim.H;
     if (!H.mapC) H.mapC = bakeMap(s);
@@ -14042,6 +14129,7 @@ const { hud, initHud, hudDraw, uiEvent } = (() => {
     ctx.save(); ctx.beginPath(); ctx.rect(M.x, M.y, M.w, M.h); ctx.clip();
     for (const t of s.towers) if (t.alive) { const r = t.sub === 'core' ? 3.4 : 2.4; ctx.fillStyle = INK; ctx.fillRect(M.x + t.x * kx - r - .8, M.y + t.y * ky - r - .8, 2 * r + 1.6, 2 * r + 1.6); ctx.fillStyle = TEAM_DOT[t.team === me.team ? 0 : 1]; ctx.fillRect(M.x + t.x * kx - r, M.y + t.y * ky - r, 2 * r, 2 * r); }
     ctx.fillStyle = 'rgba(233,237,244,.7)'; for (const c of s.sites) if (c.alive) { disc(M.x + c.x * kx, M.y + c.y * ky, 1.6); ctx.fill(); }
+    drawMapDistricts(s, me, M, kx, ky);
     for (const b of (s.bosses || [])) if (b.up) { diamond(M.x + b.x * kx, M.y + b.y * ky, b.kind === 'colossus' ? 4.5 : 3.6); ctx.fillStyle = BUFF_COL[b.kind] || GOLD; ctx.fill(); ctx.strokeStyle = INK; ctx.lineWidth = 1; ctx.stroke(); }
     if (s.event) { const X = M.x + s.event.x * kx, Y = M.y + s.event.y * ky, p = calm ? .4 : (H.t * 1.4) % 1; disc(X, Y, 3.5 + p * 7); ctx.strokeStyle = GOLD; ctx.lineWidth = 1.2; ctx.globalAlpha = 1 - p * .7; ctx.stroke(); ctx.globalAlpha = 1; disc(X, Y, 2.6); ctx.fillStyle = GOLD; ctx.fill(); }
     const vw = VW / Z * kx, vh = VH / (Z * TILT) * ky;
@@ -14189,36 +14277,6 @@ const { hud, initHud, hudDraw, uiEvent } = (() => {
     if (!me.alive) return;
     const R = me.range || (me.kit && me.kit.range) || 400, dmg = me.dmg || 55, r2 = (R + 40) * (R + 40);
     for (const u of s.minions) { if (!u.alive || u.team === me.team || u.hp > dmg) continue; const dx = u.x - me.x, dy = u.y - me.y; if (dx * dx + dy * dy < r2 && Sim.canSee(s, me.team, u)) { H.lastHitHot = 1; return; } }
-  }
-
-  // ---------- beacons ----------
-  const BEACON_R = () => Sim.BEACON_RANGE || 460;
-  const beaconLeft = me => me.beacons === undefined ? 2 : me.beacons;
-  const beaconMax = () => Sim.BEACON_MAX || 2;
-  const beaconWait = me => me.beaconT || 0;
-  function drawBeacon(dt, me) {
-    const B = U.beacon, n = beaconLeft(me), max = beaconMax(), wait = beaconWait(me), acc = SIDE_ACC[me.team], held = !!Ctl.beacon, hot = n > 0;
-    H.sq.beacon = Math.max(0, H.sq.beacon - dt * 7);
-    if (wait > H.bcnPrev + .01) H.bcnMax = wait;
-    H.bcnPrev = wait;
-    const r = B.r * (1 - H.sq.beacon * .14), k = B.r / 20;
-    ctx.globalAlpha = hot ? 1 : .55;
-    disc(B.x, B.y, r); ctx.fillStyle = held ? acc : GLASS; ctx.fill(); ctx.strokeStyle = held ? WHITE : HAIR; ctx.lineWidth = 1.2; ctx.stroke();
-    const col = held ? INK : hot ? PAPER : MUTE;
-    ctx.fillStyle = col; ctx.beginPath(); ctx.moveTo(B.x, B.y - 7 * k); ctx.lineTo(B.x + 4.6 * k, B.y); ctx.lineTo(B.x, B.y + 7 * k); ctx.lineTo(B.x - 4.6 * k, B.y); ctx.closePath(); ctx.fill();
-    ctx.strokeStyle = col; ctx.lineWidth = 1.4 * k; ctx.beginPath(); ctx.arc(B.x, B.y, 10.5 * k, -2.5, -.64); ctx.moveTo(B.x + Math.cos(.64) * 10.5 * k, B.y + Math.sin(.64) * 10.5 * k); ctx.arc(B.x, B.y, 10.5 * k, .64, 2.5); ctx.stroke();
-    ctx.globalAlpha = 1;
-    if (wait > 0 && H.bcnMax > 0 && n < max) arcLine(B.x, B.y, B.r + 3, -HPI, -HPI + TAU * clamp01(1 - wait / H.bcnMax), acc, 2);
-    for (let i = 0; i < max; i++) { diamond(B.x - (max - 1) * 4.4 + i * 8.8, B.y + B.r + 7, 2.6); ctx.fillStyle = i < n ? acc : 'rgba(148,167,194,.32)'; ctx.fill(); }
-    if (H.first) { ctx.font = fw(500, 10); ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; label('Beacon', B.x, B.y - B.r - 8, WHITE); }
-  }
-  function drawBeaconAim(me) {
-    const B = Ctl.beacon; if (!B || !me.alive) return;
-    const X = sx(me.x), Y = sy(me.y), R = BEACON_R() * Z, pt = Ctl.beaconPoint(), PX_ = sx(pt.x), PY_ = sy(pt.y), acc = B.cancelHot ? CRIM : SIDE_ACC[me.team];
-    ctx.beginPath(); ctx.ellipse(X, Y, R, R * TILT, 0, 0, TAU); ctx.strokeStyle = 'rgba(233,237,244,.35)'; ctx.lineWidth = 1.2; ctx.stroke();
-    ctx.setLineDash([6, 6]); ctx.beginPath(); ctx.moveTo(X, Y); ctx.lineTo(PX_, PY_); ctx.strokeStyle = acc; ctx.lineWidth = 1.6; ctx.stroke(); ctx.setLineDash([]);
-    diamond(PX_, PY_ - 3, 7); ctx.fillStyle = acc; ctx.fill(); ctx.strokeStyle = INK; ctx.lineWidth = 1; ctx.stroke();
-    ctx.beginPath(); ctx.ellipse(PX_, PY_, 26, 26 * TILT, 0, 0, TAU); ctx.strokeStyle = acc; ctx.lineWidth = 1.4; ctx.stroke();
   }
 
   // ---------- pings ----------
@@ -14448,7 +14506,6 @@ const { hud, initHud, hudDraw, uiEvent } = (() => {
     { s: () => 'Drag an ability to aim, then let go', done: me => me.stats.casts > 0, hold: 0 },
     { s: () => 'Tap the shop to buy items', done: () => shopOpen(), hold: 0 },
     { s: () => 'Hold the flag and slide to ping your team', done: () => H.pingLog.length > 0, hold: 0 },
-    { s: () => 'Drag from Beacon to light up the fog', done: me => Hud.beaconLeft(me) < beaconMax(), hold: 0 },
     { s: () => 'All set. Stay as long as you like', done: () => false, hold: 0, end: 4 },
   ];
   function drawTips(dt, me) {
@@ -14465,7 +14522,8 @@ const { hud, initHud, hudDraw, uiEvent } = (() => {
 
   // Death is the shopping window: the shop opens below the timer on its own.
   function drawDeath(me) {
-    ctx.fillStyle = 'rgba(5,6,10,.5)'; ctx.fillRect(0, 0, VW, VH);
+    // A dead player is spectating: only dim hard behind the open shop.
+    ctx.fillStyle = shopOpen() ? 'rgba(5,6,10,.5)' : 'rgba(5,6,10,.2)'; ctx.fillRect(0, 0, VW, VH);
     const cx = VW / 2, y = U.compact ? 48 : 58, R = U.compact ? 12 : 15, ang = calm ? 0 : H.t * 1.8, ab = Math.abs(Math.cos(ang)), str = `BACK IN ${Math.ceil(me.respawn)}`, sz = U.compact ? 25 : 31;
     ctx.textAlign = 'left'; ctx.textBaseline = 'middle'; ctx.font = Deco.disp(sz);
     const w = ctx.measureText(str).width, x0 = cx - (w + R * 2 + 10) / 2;
@@ -14477,7 +14535,7 @@ const { hud, initHud, hudDraw, uiEvent } = (() => {
     if (me.alive === !H.wasDead) return;
     H.wasDead = !me.alive;
     const f = $('shop');
-    if (H.wasDead) { if (G.outro || G.ended) return; H.shopAuto = true; clearTimeout(f._c); f.classList.add('dead'); f.classList.toggle('solo', !H.recap); f.classList.remove('hide', 'closing'); shopBuild(); }
+    if (H.wasDead) { if (G.outro || G.ended) return; f.classList.toggle('solo', !H.recap); } // the shop stays closed so you can watch; the recap has a Shop button
     else { f.classList.remove('dead', 'solo'); if (H.shopAuto) f.classList.add('hide'); H.shopAuto = false; H.recap = null; $('recap').classList.add('hide'); }
   }
 
@@ -14500,14 +14558,15 @@ const { hud, initHud, hudDraw, uiEvent } = (() => {
     offset(-300 * away, 0); drawFrame(dt, me); drawBuffs(dt, s, me); drawFeed(dt);
     offset(0, -90 * away); drawStrip(dt, s, me); drawPeople(dt, s); drawObjective(dt, s, me);
     offset(300 * away, 0); drawMap(dt, s, me); drawCancel(dt);
-    offset((left() ? -320 : 320) * away, 0); if (!G.spectator) { lastHitTick(dt, me, s); drawAttack(dt, me); for (let i = 0; i < 3; i++) drawAbility(i, dt, me); drawBeacon(dt, me); } drawRipples(dt);
+    offset((left() ? -320 : 320) * away, 0); if (!G.spectator) { lastHitTick(dt, me, s); drawAttack(dt, me); for (let i = 0; i < 3; i++) drawAbility(i, dt, me); } drawRipples(dt);
     offset(0, 0);
     if (want) drawWorldPings(dt, s, me);
-    drawBeaconAim(me);
     if (!G.spectator) { deathShop(me); if (!me.alive) drawDeath(me); }
     drawEmotes(dt, s, me); drawChat(dt); if (!G.spectator) { drawHint(dt, me); drawTips(dt, me); drawAimCard(me); } drawBanner(dt); drawRadial(dt);
     H.frame++;
     if (shopOpen()) { const sg = Math.floor(H.goldShow); if (sg !== H.shopGoldV) { H.shopGoldV = sg; $('shGold').textContent = sg; } if (H.frame % 10 === 0) shopSync(false); }
+    if (H.frame % 12 === 0) travelSync(me, s);
+    drawDistricts(s, me); drawNews(dt);
     if (H.frame % 12 === 0 && !G.spectator) { evoSync(me, s); svSync(s, me); if (!me.alive) recapSync(me); }
     if (H.tips && H.frame % 6 === 0) practiceSync(s, me);
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
@@ -14534,8 +14593,9 @@ const { hud, initHud, hudDraw, uiEvent } = (() => {
     if (top.kit) { const c = document.createElement('canvas'); c.width = c.height = 84; Hud.coinTo(c, Art.champCoin(top.kit, foe, 2, 40)); head.append(c); }
     head.insertAdjacentHTML('beforeend', `<div><small>Taken down by</small><b>${top.name}</b></div>`);
     el.append(head);
-    el.insertAdjacentHTML('beforeend', `<div class="rcl">${list.slice(0, n).map((r, i) => recapRow(r, list[0].dmg, i, foe)).join('')}</div><div class="rct"><span>Last 15 seconds</span><b>${total} damage</b></div><button class="go" id="recBuy"></button>`);
+    el.insertAdjacentHTML('beforeend', `<div class="rcl">${list.slice(0, n).map((r, i) => recapRow(r, list[0].dmg, i, foe)).join('')}</div><div class="rct"><span>Last 15 seconds</span><b>${total} damage</b></div><button class="ghost" id="recShop">Shop</button><button class="go" id="recBuy"></button>`);
     $('recBuy').onpointerdown = e2 => doCity('buyback', 0, e2.currentTarget);
+    $('recShop').onpointerdown = () => Hud.toggleShop();
     recapSync(me);
     el.classList.remove('hide');
   }
@@ -15092,8 +15152,6 @@ const { hud, initHud, hudDraw, uiEvent } = (() => {
 
   Hud.radialR = radialR; Hud.radialOpen = () => { if (H) H.radial = .15; };
   Hud.ping = localPing;
-  Hud.beaconLeft = beaconLeft;
-  Hud.beaconPlaced = pt => { if (H) ripple(U.beacon.x, U.beacon.y, U.beacon.r, SIDE_ACC[G.me.team]); Sound.play('clink'); };
   Hud.atkPressed = mode => { if (!H) return; const B = mode === 'minion' ? U.atkM : mode === 'tower' ? U.atkT : U.atk; if (mode === 'champ') H.atkPress = 1; else H.atkHeld[mode] = 1; H.atkPop[mode] = 1; ripple(B.x, B.y, B.r, SIDE_ACC[G.me.team]); };
 
   // ---------- small helpers for the controls ----------
@@ -15141,6 +15199,8 @@ const { hud, initHud, hudDraw, uiEvent } = (() => {
     const canVote = !G.spectator && !!Sim.SURRENDER_AT && G.s.t >= Sim.SURRENDER_AT && !G.s.practice && !(G.s.votes && G.s.votes[G.me.team]);
     $('pSur').classList.toggle('hide', !canVote);
     $('pNote').classList.toggle('hide', !net);
+    // Online the match carries on, so the menu docks to one side and leaves the game in view.
+    $('pause').classList.toggle('live', net); $('pause').classList.remove('showb');
     Hud.closeShop();
     Hud.scoreTable($('pBoard'), G.s, G.me);
     if (Hud.syncToggles) Hud.syncToggles();
@@ -15285,7 +15345,8 @@ const { initMenus, animMenus, showEnd } = (() => {
     if (nm.textContent !== who.name) { nm.textContent = who.name; nm.classList.toggle('long', who.name.length > 11); nm.classList.remove('pop'); void nm.offsetWidth; nm.classList.add('pop'); }
     $('mission').innerHTML = `<b>${L.practice ? 'Practice' : Sim.TEAM_NAMES[L.team]}</b><span${N.mode ? ' class="hide"' : ''}>${L.practice ? `${Sim.TEAM_NAMES[L.team]}, no pressure` : MISSION[L.team]}</span>`;
     $('wB').textContent = who.title;
-    renderWho(true);
+    // Net-driven repaints land here too, so the panel's entrance plays only when the champion or lane actually changed.
+    const whoKey = `${id}|${seat.role}`; renderWho(whoKey !== L.whoKey); L.whoKey = whoKey;
     const lad = $('ladder'); lad.textContent = '';
     TIERS.forEach((t, i) => {
       const r = document.createElement('div'); r.className = 'rung' + (i < tier ? ' done' : i === tier ? ' now' : ''); r.title = t.name;
@@ -15298,7 +15359,7 @@ const { initMenus, animMenus, showEnd } = (() => {
     rosterOf(L.team).slice().sort((a, b) => Sim.KITS[b].fit[seat.role] - Sim.KITS[a].fit[seat.role]).forEach(cid => {
       const b = document.createElement('button'), nm0 = charName(L.team, cid); b.className = 'pick'; b.setAttribute('aria-label', nm0); b.setAttribute('aria-pressed', cid === id);
       b.append(coinCanvas(Art.champCoin(cid, L.team, Sim.tierOf(pts(cid)), 54), 112));
-      b.insertAdjacentHTML('beforeend', `<span class="pn">${shortName(nm0)}</span>${pipsHtml(Sim.KITS[cid].fit[seat.role])}`);
+      b.insertAdjacentHTML('beforeend', `${isCountered(L.team, cid) ? CTR : ''}<span class="pn">${shortName(nm0)}</span>${pipsHtml(Sim.KITS[cid].fit[seat.role])}`);
       const taken = friendHolds('champ', cid), ban = isBanned(cid);
       if (ban) { b.classList.add('ban'); b.setAttribute('aria-label', `${nm0}, banned`); } else if (taken) { b.classList.add('taken'); b.setAttribute('aria-label', `${nm0}, taken by a teammate`); }
       b.onclick = () => { if (cid === id || mine().locked) return; if (taken || ban) { Sound.play('cancel'); return; } setChamp(L.team, L.slot, cid); Sound.play('coin'); netPicked(); renderLobby(); };
@@ -15356,7 +15417,7 @@ const { initMenus, animMenus, showEnd } = (() => {
         g.append(b);
       });
       wp.textContent = ''; wp.append(g);
-      if (animate) { wp.classList.remove('in'); void wp.offsetWidth; wp.classList.add('in'); }
+      if (animate) { wp.classList.remove('in'); void wp.offsetWidth; wp.classList.add('in'); } else wp.classList.remove('in');
       return;
     }
     if (showKit) {
@@ -15372,7 +15433,7 @@ const { initMenus, animMenus, showEnd } = (() => {
         g.append(b);
       });
       wb.textContent = ''; wb.append(g);
-      if (animate) { wb.classList.remove('in'); void wb.offsetWidth; wb.classList.add('in'); }
+      if (animate) { wb.classList.remove('in'); void wb.offsetWidth; wb.classList.add('in'); } else wb.classList.remove('in');
     }
   }
   const shortTag = n => String(n).split(' ')[0].slice(0, 7);
@@ -15835,6 +15896,9 @@ const { initMenus, animMenus, showEnd } = (() => {
 
   // ---------- versus splash: it also hides the map paint ----------
   const V = { on: false, t0: 0, stage: 0, after: 0, outAt: 0, cfg: null };
+  // "Countered": this champion's nemesis is on the other team.
+  const CTR = '<em class="ctr">Countered</em>';
+  function isCountered(team, kit) { if (!kit || !Sim.nemesisOf) return false; const k = Sim.nemesisOf(kit), foes = (L.seats[1 - team] || []).map(s => s.champ); return !!k && foes.includes(k); }
   function renderVs() {
     [0, 1].forEach(team => {
       const el = $('vs' + team); el.textContent = '';
@@ -15844,7 +15908,7 @@ const { initMenus, animMenus, showEnd } = (() => {
         const cv = document.createElement('canvas'); cv.width = cv.height = 168;
         Hud.coinTo(cv, Art.champCoin(s.champ, team, seatTier(s), 80, s.finish));
         const b = document.createElement('b'); b.textContent = charName(team, s.champ);
-        d.append(cv, b);
+        d.append(cv); if (isCountered(team, s.champ)) d.insertAdjacentHTML('beforeend', CTR); d.append(b);
         if (isMe(s) || isFriend(s)) d.append(vsTag(s));
         el.append(d);
       });
@@ -15908,7 +15972,7 @@ const { initMenus, animMenus, showEnd } = (() => {
   let E = null;
   function showEnd(r) {
     const st = Object.assign({ kills: 0, deaths: 0, assists: 0, skillHits: 0, casts: 0, parries: 0 }, r.me.stats), tier = Sim.tierOf(r.before);
-    for (const id of ['shop', 'evo', 'prac', 'pause', 'recap', 'qc', 'sv', 'specBar', 'vox']) hide(id); Ctl.reset();
+    for (const id of ['shop', 'evo', 'subw', 'prac', 'pause', 'recap', 'qc', 'sv', 'specBar', 'vox']) hide(id); Ctl.reset();
     L.team = r.me.team; applySide();
     const canRe = !!N.mode && hasNet() && Net.canRematch && Net.canRematch();
     $('again').textContent = canRe ? 'Rematch' : N.mode === 'guest' ? 'Waiting for host' : N.mode ? 'Back to room' : 'Play again';
@@ -16139,7 +16203,7 @@ const { initMenus, animMenus, showEnd } = (() => {
   }
   function clearAll() {
     E = null;
-    for (const id of ['potgUI', 'specBar', 'vox', 'lobby', 'ban', 'end', 'rankup', 'pause', 'shop', 'evo', 'prac', 'recap', 'qc', 'sv', 'sheet', 'settings', 'hudEd', 'notice', 'flip', 'vs']) hide(id);
+    for (const id of ['potgUI', 'specBar', 'vox', 'lobby', 'ban', 'end', 'rankup', 'pause', 'shop', 'evo', 'subw', 'prac', 'recap', 'qc', 'sv', 'sheet', 'settings', 'hudEd', 'notice', 'flip', 'vs']) hide(id);
     $('flip').classList.remove('out'); $('vs').classList.remove('out');
     V.on = false; F.on = false; F.done = null; L.sheet = null;
   }
@@ -16211,9 +16275,13 @@ const { initMenus, animMenus, showEnd } = (() => {
   function onRoom() {
     if (!N.mode) return;
     if (G && G.ended && Net.phase === 'room') { backToRoom(); return; }
+    // The host republishes the room every few seconds just to refresh pings, which nothing on these screens shows.
+    if (roomSig() === N.roomKey) return;
+    N.roomKey = roomSig();
     if (curScr === 'room') renderRoom();
     if (N.lobby && N.draft) paintDraft();
   }
+  function roomSig() { const r = Net.room || {}; return JSON.stringify([(r.players || []).map(p => [p.pid, p.name, p.rank, p.team, p.side, p.host, p.online]), (r.spectators || []).length, r.mode]); }
   const roster = () => (Net.room && Net.room.players) || [];
 
   // ---------- online: the flip and the draft ----------
@@ -16234,7 +16302,9 @@ const { initMenus, animMenus, showEnd } = (() => {
     N.inDraft = true; hide('flip'); $('flip').classList.remove('out'); scr(null);
     paintDraft();
   }
-  function onDraft(d) { if (!N.mode) return; N.draft = d; if (N.inDraft) paintDraft(); else tryDraft(); }
+  // The host resends the draft every 2 seconds to keep clocks honest. Take the new clock, repaint only if the draft itself changed.
+  const draftSig = d => JSON.stringify([d.phase, d.bans, d.votes, d.picks]);
+  function onDraft(d) { if (!N.mode) return; N.draft = d; const k = draftSig(d); if (N.inDraft) { if (k !== N.draftKey) { N.draftKey = k; paintDraft(); } } else { N.draftKey = k; tryDraft(); } }
   function draftSeats(d) {
     const out = [[], []];
     for (const p of roster()) {
@@ -16274,6 +16344,7 @@ const { initMenus, animMenus, showEnd } = (() => {
     else { renderLobby(); if (L.sheet) renderSheet(); }
     if (d.phase === 'done' && N.mode === 'host' && !N.started) { N.started = true; try { Net.start(); } catch (e) { } }
   }
+  function banCountered(d, foe, kit) { const k = Sim.nemesisOf && Sim.nemesisOf(kit); return !!k && roster().some(p => p.side === 1 - foe && d.picks && d.picks[p.pid] && d.picks[p.pid].champ === k); }
   function renderBan(d) {
     const foe = 1 - L.team, me = roster().find(p => p.pid === N.pid), mates = roster().filter(p => p.side === L.team || (p.side === null && me && p.team === me.team)), box = $('bCards');
     const votes = d.votes || {}, myV = votes[N.pid], banned = bannedFrom(d, foe);
@@ -16283,8 +16354,8 @@ const { initMenus, animMenus, showEnd } = (() => {
       const nm = charName(foe, kit), b = document.createElement('button'), n = mates.filter(p => votes[p.pid] === kit).length, gone = banned.includes(kit);
       b.className = 'bcard stick' + (gone ? ' gone' : ''); b.style.setProperty('--i', i); b.setAttribute('aria-pressed', myV === kit); b.setAttribute('aria-label', `Ban ${nm}`);
       b.append(coinCanvas(Art.champCoin(kit, foe, 2, 64), 152));
-      b.insertAdjacentHTML('beforeend', `<b${shortName(nm).length >= 12 ? ' class="long"' : ''}>${shortName(nm)}</b><small>${Sim.charOf(foe, kit).title}</small><span class="vt">${Array.from({ length: n }, () => '<i></i>').join('')}</span>`);
-      b.onclick = () => { if (gone) { Sound.play('cancel'); return; } Sound.play('banVote'); try { Net.ban(kit); } catch (e) { } if (N.draft.votes) { N.draft.votes[N.pid] = kit; renderBan(N.draft); } };
+      b.insertAdjacentHTML('beforeend', `${banCountered(d, foe, kit) ? CTR : ''}<b${shortName(nm).length >= 12 ? ' class="long"' : ''}>${shortName(nm)}</b><small>${Sim.charOf(foe, kit).title}</small><span class="vt">${Array.from({ length: n }, () => '<i></i>').join('')}</span>`);
+      b.onclick = () => { if (gone) { Sound.play('cancel'); return; } Sound.play('banVote'); try { Net.ban(kit); } catch (e) { } if (N.draft.votes) { N.draft.votes[N.pid] = kit; N.draftKey = draftSig(N.draft); renderBan(N.draft); } };
       box.append(b);
     });
     const bv = $('bVotes'); bv.textContent = '';
@@ -16299,7 +16370,7 @@ const { initMenus, animMenus, showEnd } = (() => {
     const box = d.phase === 'ban' ? $('bClock') : $('lClock');
     if (!box || hidden(d.phase === 'ban' ? 'ban' : 'lobby') || d.phase === 'done') { return; }
     const left = Math.max(0, (d.endsAt - performance.now()) / 1000), max = d.total || CLOCK_MAX[d.phase] || 20, n = Math.ceil(left);
-    box.firstElementChild.textContent = n;
+    if (N.clockN !== n) { N.clockN = n; box.firstElementChild.textContent = n; }
     box.querySelector('u').style.width = `${clamp01m(left / max) * 100}%`;
     box.classList.toggle('hot', left <= 5);
     if (n !== N.tick) { N.tick = n; if (left <= 5 && left > 0 && d.phase !== 'done') Sound.play('tick'); }
@@ -16319,12 +16390,15 @@ const { initMenus, animMenus, showEnd } = (() => {
     $('rLink').classList.toggle('hide', !isHost);
     $('rShuf').classList.toggle('hide', !isHost);
     if (N.sel !== null && !ps.some(p => p.pid === N.sel)) N.sel = null;
+    const rowsWere = curScr === 'room' && N.roomRows || new Set(), rowsNow = new Set();
     [0, 1].forEach(team => {
       const col = $(team ? 'rB' : 'rA'), row = ps.filter(p => p.team === team);
       col.className = 'rcol' + (team ? ' b' : ''); col.textContent = '';
       col.insertAdjacentHTML('beforeend', `<h4>Team ${team ? 'B' : 'A'}<small>${row.length} of 4</small></h4>`);
-      for (let i = 0; i < 4; i++) col.append(roomRow(row[i] || null, team, isHost));
+      // Rows are rebuilt, so a row that was already showing must not replay its entrance.
+      for (let i = 0; i < 4; i++) { const key = `${team}:${i}:${row[i] ? row[i].pid : 'b'}`, el = roomRow(row[i] || null, team, isHost); if (rowsWere.has(key)) el.style.animation = 'none'; rowsNow.add(key); col.append(el); }
     });
+    N.roomRows = rowsNow; N.roomKey = hasNet() ? roomSig() : '';
     const n = ps.length, ok = n >= 2;
     $('rStat').innerHTML = !N.code && isHost ? `Opening your room${DOTS}` : isHost ? (ok ? `${n} in the room` : `Send the code to your friends${DOTS}`) : `Waiting for the host to flip${DOTS}`;
     const hint = $('rHint');
@@ -16848,7 +16922,21 @@ const { initMenus, animMenus, showEnd } = (() => {
     const champs = document.createElement('div'); champs.className = 'pfbars'; champs.insertAdjacentHTML('beforeend', '<h4 class="pfh">Most played champions</h4>');
     const cs = Object.keys(t.champs).filter(c => Sim.KITS[c]).sort((a, b) => t.champs[b].n - t.champs[a].n).slice(0, 6), mC = cs.length ? t.champs[cs[0]].n : 1;
     cs.forEach(c => { const side = teamOf(c), k = t.champs[c]; champs.append(bar(coinCanvas(Art.champCoin(c, side, Sim.tierOf(pts(c)), 26), 60), charName(side, c), rec(k), k.n / mC)); });
-    cols.append(lanes, champs); wrap.append(cols); box.append(wrap);
+    cols.append(lanes, champs); wrap.append(cols);
+    wrap.append(rivalry()); box.append(wrap);
+  }
+  // Rivalry: this device's record for each champion whenever its nemesis was in the match.
+  function rivalry() {
+    const d = document.createElement('div'); d.className = 'pfbars'; d.insertAdjacentHTML('beforeend', '<h4 class="pfh">Rivalry</h4>');
+    const riv = save.rivals || {}, list = Object.keys(riv).filter(c => Sim.KITS[c] && riv[c].n).sort((a, b) => riv[b].n - riv[a].n);
+    if (!list.length) { d.insertAdjacentHTML('beforeend', '<p class="pfnone">Face your champion\'s nemesis to start a record.</p>'); return d; }
+    for (const c of list) {
+      const o = riv[c], side = teamOf(c), foeK = Sim.nemesisOf(c), row = document.createElement('div'); row.className = 'pfb';
+      row.append(coinCanvas(Art.champCoin(c, side, Sim.tierOf(pts(c)), 26), 60));
+      row.insertAdjacentHTML('beforeend', `<div><div class="tx"><b>${charName(side, c)} vs ${foeK ? charName(1 - side, foeK) : 'nemesis'}</b><span>${o.w}-${o.n - o.w} in matches, ${o.k}-${o.d} in kills</span></div><i><u style="width:${Math.round(o.w / o.n * 100)}%"></u></i></div>`);
+      d.append(row);
+    }
+    return d;
   }
   function pfHist(box) {
     const list = history(), wrap = document.createElement('div'); wrap.className = 'pfscr scroll'; wrap.style.gap = '4px';
@@ -17046,6 +17134,7 @@ const { initMenus, animMenus, showEnd } = (() => {
     r.earned = [];
     if (!G || G.cfg.practice || r.spectator || r.recorded) return;
     r.recorded = true;
+    if (r.me.nem) { const riv = save.rivals || (save.rivals = {}), o = riv[r.me.champ] || (riv[r.me.champ] = { n: 0, w: 0, k: 0, d: 0 }), st0 = r.me.stats || {}; o.n++; if (r.won) o.w++; o.k += st0.nemKills || 0; o.d += st0.nemDeaths || 0; }
     if (Sim.medalProgress) {
       if (!save.career || typeof save.career !== 'object') save.career = Sim.newCareer();
       r.earned = Sim.medalProgress(save.career, Sim.matchStats(r.s, r.me)).earned || [];
@@ -17211,6 +17300,7 @@ const { initMenus, animMenus, showEnd } = (() => {
     $('shSit').onclick = () => { if (!L.sheet) return; moveMe(L.sheet.i); hide('sheet'); L.sheet = null; renderLobby(); };
     twoTap($('lBack'), 'Leave?', () => !!N.mode, () => { if (N.mode) toMenu(); else { const go = () => { hide('lobby'); hide('sheet'); scr('menu'); }; if (!wipe(go)) go(); } });
     $('resume').onclick = () => { paused = false; hide('pause'); Sound.play('tap'); };
+    $('pBoardT').onclick = () => { $('pause').classList.toggle('showb'); Sound.play('tick'); };
     twoTap($('leave'), 'Tap again to leave', () => Hud.isLive(), () => toMenu());
     $('again').onclick = () => { Sound.play('tap'); if (N.mode && hasNet() && Net.canRematch && Net.canRematch()) { const b = $('again'); if (Net.rematch() !== false) { b.textContent = 'Waiting for others'; b.classList.add('off'); b.classList.remove('hot'); } return; } if (N.mode === 'host') { try { Net.toRoom(); } catch (e) { backToRoom(); } } else if (!N.mode) begin(true); };
     $('tolobby').onclick = () => { Sound.play('tap'); toMenu(); };

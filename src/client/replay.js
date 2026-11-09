@@ -93,7 +93,7 @@ const Replay = (() => {
       near(cx, cy, fr.min).map(u => [u.id, r1(u.x), r1(u.y), u.hp, u.fl, u.ex]),
       near(cx, cy, fr.proj).map(p => [p.id, r1(p.x), r1(p.y), p.fl, p.fx, p.w, p.owner, p.target, p.vx, p.vy]),
       near(cx, cy, fr.zones, 400).map(z => [z.id, r1(z.x), r1(z.y), z.r, z.t, z.total, z.fl, z.fx, z.owner, z.ext, z.x1, z.y1, z.x2, z.y2, z.tgt]),
-      fr.beacons.map(b => [b.id, r1(b.x), r1(b.y), b.fl, b.t]),
+      [],
       fr.prog || 0];
   }
   function unpackFrame(a) {
@@ -103,7 +103,7 @@ const Replay = (() => {
       mon: a[2].map(unit), min: a[3].map(unit),
       proj: a[4].map(p => ({ id: p[0], x: p[1], y: p[2], fl: p[3], fx: p[4], w: p[5], owner: p[6], target: p[7], vx: p[8], vy: p[9] })),
       zones: a[5].map(z => { const o = { id: z[0], x: z[1], y: z[2], r: z[3], t: z[4], total: z[5], fl: z[6], fx: z[7], owner: z[8], ext: z[9] }; if (o.ext & 1) { o.x1 = z[10]; o.y1 = z[11]; o.x2 = z[12]; o.y2 = z[13]; } if (o.ext & 2) o.tgt = z[14]; return o; }),
-      beacons: a[6].map(b => ({ id: b[0], x: b[1], y: b[2], fl: b[3], t: b[4] })),
+      beacons: [],
       prog: a[7] || null };
   }
   function freeze(m, c, s, got, from, to) {

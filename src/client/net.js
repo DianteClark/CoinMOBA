@@ -370,15 +370,29 @@ const Net = (() => {
     if (api.role !== 'host' || heroTeam === null || api.phase !== 'room') return false;
     draftTimes = { ban: o.ban === undefined ? 20 : o.ban, pick: o.pick === undefined ? 35 : o.pick };
     api.phase = 'draft'; draft = { phase: 'ban', total: draftTimes.ban, endsAt: now_() + draftTimes.ban * 1000, bans: [[], []], votes: {}, voteOrder: 0, picks: {} };
+    // A side with no players still bans. Its choice lands a moment in, so it reads as a decision on the ban screen.
+    botBans = [0, 1].filter(side => !humans().some(p => sideOf(p.team) === side)).map(side => ({ side, at: now_() + 1500 + Math.random() * 2500 }));
     pushRoom(); pushDraft();
     clearInterval(draftTimer); draftTimer = setInterval(draftTick, 250);
     return true;
   }
   function humans() { return players.filter(p => p.online); }
+  // The bot team's ban against the other side's roster. Sim.botBan weighs strength and nemeses; anything illegal falls back to a random free kit.
+  let botBans = [];
+  function applyBotBan(b) {
+    const d = draft, foe = 1 - b.side, pool = kitsOf(foe).filter(k => !d.bans[foe].includes(k));
+    if (!pool.length) return;
+    let kit = null;
+    try { if (Sim.botBan) kit = Sim.botBan(b.side, { banned: d.bans[foe].slice() }); } catch (e) { kit = null; }
+    if (!pool.includes(kit)) kit = pool[Math.floor(Math.random() * pool.length)];
+    d.bans[foe].push(kit);
+  }
   function draftTick() {
     if (!draft) return;
     const now = now_();
     if (draft.phase === 'ban') {
+      const due = botBans.filter(b => now >= b.at);
+      if (due.length) { botBans = botBans.filter(b => now < b.at); due.forEach(applyBotBan); pushDraft(); }
       const all = humans().every(p => draft.votes[p.pid]);
       if (all || now >= draft.endsAt) endBans();
       else if (now - lastDraftSync > 2000) pushDraft();
@@ -390,6 +404,7 @@ const Net = (() => {
   }
   function endBans() {
     const d = draft;
+    botBans.forEach(applyBotBan); botBans = [];
     [0, 1].forEach(side => {
       const tally = new Map();
       for (const p of players) if (sideOf(p.team) === side && d.votes[p.pid]) { const k = d.votes[p.pid]; tally.set(k, (tally.get(k) || 0) + 1); }
@@ -800,7 +815,7 @@ const Net = (() => {
   }
   const clampMv = v => Math.max(-1, Math.min(1, isFinite(v) ? v : 0));
   // Commands with no position, or only simple fields, travel as [10, t, fields...] and are whitelisted here.
-  const SIMPLE = { buyback: [], reinforce: ['lane'], fund: ['amount'], surrender: ['vote'], use: ['slot'], pref: ['v'] };
+  const SIMPLE = { buyback: [], reinforce: ['lane'], fund: ['amount'], surrender: ['vote'], use: ['slot'], pref: ['v'], subway: ['to'], blackout: [] };
   function hostBefore() {
     for (const p of players) {
       if (p.host || !p.link || p.seat < 0) continue;
@@ -824,7 +839,6 @@ const Net = (() => {
         else if (v === 5 && typeof m[1] === 'string') c.q.push({ t: 'buy', id: m[1] });
         else if (v === 6) c.q.push({ t: 'sell', slot: sl });
         else if (v === 7) c.q.push({ t: 'evolve', tier: sl, choice: m[2] | 0 });
-        else if (v === 8 && ok(m[1], m[2])) c.q.push({ t: 'beacon', tx: c.x + m[1], ty: c.y + m[2] });
         else if (v === 9 && ok(m[2], m[3])) c.q.push({ t: 'ping', kind: String(m[1]), x: m[2], y: m[3] });
         else if (v === 10 && SIMPLE[m[1]]) { const q = { t: m[1] }; SIMPLE[m[1]].forEach((k, i) => { const x = m[i + 2]; if (typeof x === 'number' && isFinite(x)) q[k] = x; else if (typeof x === 'boolean' || x === 'hp' || x === 'pct') q[k] = x; }); c.q.push(q); }
       }
@@ -1051,7 +1065,6 @@ const Net = (() => {
       else if (q.t === 'buy') sendCmd([5, String(q.id)]);
       else if (q.t === 'sell') sendCmd([6, q.slot | 0]);
       else if (q.t === 'evolve') sendCmd([7, q.tier | 0, q.choice | 0]);
-      else if (q.t === 'beacon') sendCmd([8, Math.round(q.tx - me.x), Math.round(q.ty - me.y)]);
       else if (q.t === 'ping') sendCmd([9, String(q.kind), Math.round(q.x), Math.round(q.y)]);
       else if (SIMPLE[q.t]) sendCmd([10, q.t, ...SIMPLE[q.t].map(k => q[k])]);
     }

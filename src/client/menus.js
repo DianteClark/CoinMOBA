@@ -132,7 +132,8 @@ const { initMenus, animMenus, showEnd } = (() => {
     if (nm.textContent !== who.name) { nm.textContent = who.name; nm.classList.toggle('long', who.name.length > 11); nm.classList.remove('pop'); void nm.offsetWidth; nm.classList.add('pop'); }
     $('mission').innerHTML = `<b>${L.practice ? 'Practice' : Sim.TEAM_NAMES[L.team]}</b><span${N.mode ? ' class="hide"' : ''}>${L.practice ? `${Sim.TEAM_NAMES[L.team]}, no pressure` : MISSION[L.team]}</span>`;
     $('wB').textContent = who.title;
-    renderWho(true);
+    // Net-driven repaints land here too, so the panel's entrance plays only when the champion or lane actually changed.
+    const whoKey = `${id}|${seat.role}`; renderWho(whoKey !== L.whoKey); L.whoKey = whoKey;
     const lad = $('ladder'); lad.textContent = '';
     TIERS.forEach((t, i) => {
       const r = document.createElement('div'); r.className = 'rung' + (i < tier ? ' done' : i === tier ? ' now' : ''); r.title = t.name;
@@ -145,7 +146,7 @@ const { initMenus, animMenus, showEnd } = (() => {
     rosterOf(L.team).slice().sort((a, b) => Sim.KITS[b].fit[seat.role] - Sim.KITS[a].fit[seat.role]).forEach(cid => {
       const b = document.createElement('button'), nm0 = charName(L.team, cid); b.className = 'pick'; b.setAttribute('aria-label', nm0); b.setAttribute('aria-pressed', cid === id);
       b.append(coinCanvas(Art.champCoin(cid, L.team, Sim.tierOf(pts(cid)), 54), 112));
-      b.insertAdjacentHTML('beforeend', `<span class="pn">${shortName(nm0)}</span>${pipsHtml(Sim.KITS[cid].fit[seat.role])}`);
+      b.insertAdjacentHTML('beforeend', `${isCountered(L.team, cid) ? CTR : ''}<span class="pn">${shortName(nm0)}</span>${pipsHtml(Sim.KITS[cid].fit[seat.role])}`);
       const taken = friendHolds('champ', cid), ban = isBanned(cid);
       if (ban) { b.classList.add('ban'); b.setAttribute('aria-label', `${nm0}, banned`); } else if (taken) { b.classList.add('taken'); b.setAttribute('aria-label', `${nm0}, taken by a teammate`); }
       b.onclick = () => { if (cid === id || mine().locked) return; if (taken || ban) { Sound.play('cancel'); return; } setChamp(L.team, L.slot, cid); Sound.play('coin'); netPicked(); renderLobby(); };
@@ -203,7 +204,7 @@ const { initMenus, animMenus, showEnd } = (() => {
         g.append(b);
       });
       wp.textContent = ''; wp.append(g);
-      if (animate) { wp.classList.remove('in'); void wp.offsetWidth; wp.classList.add('in'); }
+      if (animate) { wp.classList.remove('in'); void wp.offsetWidth; wp.classList.add('in'); } else wp.classList.remove('in');
       return;
     }
     if (showKit) {
@@ -219,7 +220,7 @@ const { initMenus, animMenus, showEnd } = (() => {
         g.append(b);
       });
       wb.textContent = ''; wb.append(g);
-      if (animate) { wb.classList.remove('in'); void wb.offsetWidth; wb.classList.add('in'); }
+      if (animate) { wb.classList.remove('in'); void wb.offsetWidth; wb.classList.add('in'); } else wb.classList.remove('in');
     }
   }
   const shortTag = n => String(n).split(' ')[0].slice(0, 7);
@@ -682,6 +683,9 @@ const { initMenus, animMenus, showEnd } = (() => {
 
   // ---------- versus splash: it also hides the map paint ----------
   const V = { on: false, t0: 0, stage: 0, after: 0, outAt: 0, cfg: null };
+  // "Countered": this champion's nemesis is on the other team.
+  const CTR = '<em class="ctr">Countered</em>';
+  function isCountered(team, kit) { if (!kit || !Sim.nemesisOf) return false; const k = Sim.nemesisOf(kit), foes = (L.seats[1 - team] || []).map(s => s.champ); return !!k && foes.includes(k); }
   function renderVs() {
     [0, 1].forEach(team => {
       const el = $('vs' + team); el.textContent = '';
@@ -691,7 +695,7 @@ const { initMenus, animMenus, showEnd } = (() => {
         const cv = document.createElement('canvas'); cv.width = cv.height = 168;
         Hud.coinTo(cv, Art.champCoin(s.champ, team, seatTier(s), 80, s.finish));
         const b = document.createElement('b'); b.textContent = charName(team, s.champ);
-        d.append(cv, b);
+        d.append(cv); if (isCountered(team, s.champ)) d.insertAdjacentHTML('beforeend', CTR); d.append(b);
         if (isMe(s) || isFriend(s)) d.append(vsTag(s));
         el.append(d);
       });
@@ -755,7 +759,7 @@ const { initMenus, animMenus, showEnd } = (() => {
   let E = null;
   function showEnd(r) {
     const st = Object.assign({ kills: 0, deaths: 0, assists: 0, skillHits: 0, casts: 0, parries: 0 }, r.me.stats), tier = Sim.tierOf(r.before);
-    for (const id of ['shop', 'evo', 'prac', 'pause', 'recap', 'qc', 'sv', 'specBar', 'vox']) hide(id); Ctl.reset();
+    for (const id of ['shop', 'evo', 'subw', 'prac', 'pause', 'recap', 'qc', 'sv', 'specBar', 'vox']) hide(id); Ctl.reset();
     L.team = r.me.team; applySide();
     const canRe = !!N.mode && hasNet() && Net.canRematch && Net.canRematch();
     $('again').textContent = canRe ? 'Rematch' : N.mode === 'guest' ? 'Waiting for host' : N.mode ? 'Back to room' : 'Play again';
@@ -986,7 +990,7 @@ const { initMenus, animMenus, showEnd } = (() => {
   }
   function clearAll() {
     E = null;
-    for (const id of ['potgUI', 'specBar', 'vox', 'lobby', 'ban', 'end', 'rankup', 'pause', 'shop', 'evo', 'prac', 'recap', 'qc', 'sv', 'sheet', 'settings', 'hudEd', 'notice', 'flip', 'vs']) hide(id);
+    for (const id of ['potgUI', 'specBar', 'vox', 'lobby', 'ban', 'end', 'rankup', 'pause', 'shop', 'evo', 'subw', 'prac', 'recap', 'qc', 'sv', 'sheet', 'settings', 'hudEd', 'notice', 'flip', 'vs']) hide(id);
     $('flip').classList.remove('out'); $('vs').classList.remove('out');
     V.on = false; F.on = false; F.done = null; L.sheet = null;
   }
@@ -1058,9 +1062,13 @@ const { initMenus, animMenus, showEnd } = (() => {
   function onRoom() {
     if (!N.mode) return;
     if (G && G.ended && Net.phase === 'room') { backToRoom(); return; }
+    // The host republishes the room every few seconds just to refresh pings, which nothing on these screens shows.
+    if (roomSig() === N.roomKey) return;
+    N.roomKey = roomSig();
     if (curScr === 'room') renderRoom();
     if (N.lobby && N.draft) paintDraft();
   }
+  function roomSig() { const r = Net.room || {}; return JSON.stringify([(r.players || []).map(p => [p.pid, p.name, p.rank, p.team, p.side, p.host, p.online]), (r.spectators || []).length, r.mode]); }
   const roster = () => (Net.room && Net.room.players) || [];
 
   // ---------- online: the flip and the draft ----------
@@ -1081,7 +1089,9 @@ const { initMenus, animMenus, showEnd } = (() => {
     N.inDraft = true; hide('flip'); $('flip').classList.remove('out'); scr(null);
     paintDraft();
   }
-  function onDraft(d) { if (!N.mode) return; N.draft = d; if (N.inDraft) paintDraft(); else tryDraft(); }
+  // The host resends the draft every 2 seconds to keep clocks honest. Take the new clock, repaint only if the draft itself changed.
+  const draftSig = d => JSON.stringify([d.phase, d.bans, d.votes, d.picks]);
+  function onDraft(d) { if (!N.mode) return; N.draft = d; const k = draftSig(d); if (N.inDraft) { if (k !== N.draftKey) { N.draftKey = k; paintDraft(); } } else { N.draftKey = k; tryDraft(); } }
   function draftSeats(d) {
     const out = [[], []];
     for (const p of roster()) {
@@ -1121,6 +1131,7 @@ const { initMenus, animMenus, showEnd } = (() => {
     else { renderLobby(); if (L.sheet) renderSheet(); }
     if (d.phase === 'done' && N.mode === 'host' && !N.started) { N.started = true; try { Net.start(); } catch (e) { } }
   }
+  function banCountered(d, foe, kit) { const k = Sim.nemesisOf && Sim.nemesisOf(kit); return !!k && roster().some(p => p.side === 1 - foe && d.picks && d.picks[p.pid] && d.picks[p.pid].champ === k); }
   function renderBan(d) {
     const foe = 1 - L.team, me = roster().find(p => p.pid === N.pid), mates = roster().filter(p => p.side === L.team || (p.side === null && me && p.team === me.team)), box = $('bCards');
     const votes = d.votes || {}, myV = votes[N.pid], banned = bannedFrom(d, foe);
@@ -1130,8 +1141,8 @@ const { initMenus, animMenus, showEnd } = (() => {
       const nm = charName(foe, kit), b = document.createElement('button'), n = mates.filter(p => votes[p.pid] === kit).length, gone = banned.includes(kit);
       b.className = 'bcard stick' + (gone ? ' gone' : ''); b.style.setProperty('--i', i); b.setAttribute('aria-pressed', myV === kit); b.setAttribute('aria-label', `Ban ${nm}`);
       b.append(coinCanvas(Art.champCoin(kit, foe, 2, 64), 152));
-      b.insertAdjacentHTML('beforeend', `<b${shortName(nm).length >= 12 ? ' class="long"' : ''}>${shortName(nm)}</b><small>${Sim.charOf(foe, kit).title}</small><span class="vt">${Array.from({ length: n }, () => '<i></i>').join('')}</span>`);
-      b.onclick = () => { if (gone) { Sound.play('cancel'); return; } Sound.play('banVote'); try { Net.ban(kit); } catch (e) { } if (N.draft.votes) { N.draft.votes[N.pid] = kit; renderBan(N.draft); } };
+      b.insertAdjacentHTML('beforeend', `${banCountered(d, foe, kit) ? CTR : ''}<b${shortName(nm).length >= 12 ? ' class="long"' : ''}>${shortName(nm)}</b><small>${Sim.charOf(foe, kit).title}</small><span class="vt">${Array.from({ length: n }, () => '<i></i>').join('')}</span>`);
+      b.onclick = () => { if (gone) { Sound.play('cancel'); return; } Sound.play('banVote'); try { Net.ban(kit); } catch (e) { } if (N.draft.votes) { N.draft.votes[N.pid] = kit; N.draftKey = draftSig(N.draft); renderBan(N.draft); } };
       box.append(b);
     });
     const bv = $('bVotes'); bv.textContent = '';
@@ -1146,7 +1157,7 @@ const { initMenus, animMenus, showEnd } = (() => {
     const box = d.phase === 'ban' ? $('bClock') : $('lClock');
     if (!box || hidden(d.phase === 'ban' ? 'ban' : 'lobby') || d.phase === 'done') { return; }
     const left = Math.max(0, (d.endsAt - performance.now()) / 1000), max = d.total || CLOCK_MAX[d.phase] || 20, n = Math.ceil(left);
-    box.firstElementChild.textContent = n;
+    if (N.clockN !== n) { N.clockN = n; box.firstElementChild.textContent = n; }
     box.querySelector('u').style.width = `${clamp01m(left / max) * 100}%`;
     box.classList.toggle('hot', left <= 5);
     if (n !== N.tick) { N.tick = n; if (left <= 5 && left > 0 && d.phase !== 'done') Sound.play('tick'); }
@@ -1166,12 +1177,15 @@ const { initMenus, animMenus, showEnd } = (() => {
     $('rLink').classList.toggle('hide', !isHost);
     $('rShuf').classList.toggle('hide', !isHost);
     if (N.sel !== null && !ps.some(p => p.pid === N.sel)) N.sel = null;
+    const rowsWere = curScr === 'room' && N.roomRows || new Set(), rowsNow = new Set();
     [0, 1].forEach(team => {
       const col = $(team ? 'rB' : 'rA'), row = ps.filter(p => p.team === team);
       col.className = 'rcol' + (team ? ' b' : ''); col.textContent = '';
       col.insertAdjacentHTML('beforeend', `<h4>Team ${team ? 'B' : 'A'}<small>${row.length} of 4</small></h4>`);
-      for (let i = 0; i < 4; i++) col.append(roomRow(row[i] || null, team, isHost));
+      // Rows are rebuilt, so a row that was already showing must not replay its entrance.
+      for (let i = 0; i < 4; i++) { const key = `${team}:${i}:${row[i] ? row[i].pid : 'b'}`, el = roomRow(row[i] || null, team, isHost); if (rowsWere.has(key)) el.style.animation = 'none'; rowsNow.add(key); col.append(el); }
     });
+    N.roomRows = rowsNow; N.roomKey = hasNet() ? roomSig() : '';
     const n = ps.length, ok = n >= 2;
     $('rStat').innerHTML = !N.code && isHost ? `Opening your room${DOTS}` : isHost ? (ok ? `${n} in the room` : `Send the code to your friends${DOTS}`) : `Waiting for the host to flip${DOTS}`;
     const hint = $('rHint');
@@ -1695,7 +1709,21 @@ const { initMenus, animMenus, showEnd } = (() => {
     const champs = document.createElement('div'); champs.className = 'pfbars'; champs.insertAdjacentHTML('beforeend', '<h4 class="pfh">Most played champions</h4>');
     const cs = Object.keys(t.champs).filter(c => Sim.KITS[c]).sort((a, b) => t.champs[b].n - t.champs[a].n).slice(0, 6), mC = cs.length ? t.champs[cs[0]].n : 1;
     cs.forEach(c => { const side = teamOf(c), k = t.champs[c]; champs.append(bar(coinCanvas(Art.champCoin(c, side, Sim.tierOf(pts(c)), 26), 60), charName(side, c), rec(k), k.n / mC)); });
-    cols.append(lanes, champs); wrap.append(cols); box.append(wrap);
+    cols.append(lanes, champs); wrap.append(cols);
+    wrap.append(rivalry()); box.append(wrap);
+  }
+  // Rivalry: this device's record for each champion whenever its nemesis was in the match.
+  function rivalry() {
+    const d = document.createElement('div'); d.className = 'pfbars'; d.insertAdjacentHTML('beforeend', '<h4 class="pfh">Rivalry</h4>');
+    const riv = save.rivals || {}, list = Object.keys(riv).filter(c => Sim.KITS[c] && riv[c].n).sort((a, b) => riv[b].n - riv[a].n);
+    if (!list.length) { d.insertAdjacentHTML('beforeend', '<p class="pfnone">Face your champion\'s nemesis to start a record.</p>'); return d; }
+    for (const c of list) {
+      const o = riv[c], side = teamOf(c), foeK = Sim.nemesisOf(c), row = document.createElement('div'); row.className = 'pfb';
+      row.append(coinCanvas(Art.champCoin(c, side, Sim.tierOf(pts(c)), 26), 60));
+      row.insertAdjacentHTML('beforeend', `<div><div class="tx"><b>${charName(side, c)} vs ${foeK ? charName(1 - side, foeK) : 'nemesis'}</b><span>${o.w}-${o.n - o.w} in matches, ${o.k}-${o.d} in kills</span></div><i><u style="width:${Math.round(o.w / o.n * 100)}%"></u></i></div>`);
+      d.append(row);
+    }
+    return d;
   }
   function pfHist(box) {
     const list = history(), wrap = document.createElement('div'); wrap.className = 'pfscr scroll'; wrap.style.gap = '4px';
@@ -1893,6 +1921,7 @@ const { initMenus, animMenus, showEnd } = (() => {
     r.earned = [];
     if (!G || G.cfg.practice || r.spectator || r.recorded) return;
     r.recorded = true;
+    if (r.me.nem) { const riv = save.rivals || (save.rivals = {}), o = riv[r.me.champ] || (riv[r.me.champ] = { n: 0, w: 0, k: 0, d: 0 }), st0 = r.me.stats || {}; o.n++; if (r.won) o.w++; o.k += st0.nemKills || 0; o.d += st0.nemDeaths || 0; }
     if (Sim.medalProgress) {
       if (!save.career || typeof save.career !== 'object') save.career = Sim.newCareer();
       r.earned = Sim.medalProgress(save.career, Sim.matchStats(r.s, r.me)).earned || [];
@@ -2058,6 +2087,7 @@ const { initMenus, animMenus, showEnd } = (() => {
     $('shSit').onclick = () => { if (!L.sheet) return; moveMe(L.sheet.i); hide('sheet'); L.sheet = null; renderLobby(); };
     twoTap($('lBack'), 'Leave?', () => !!N.mode, () => { if (N.mode) toMenu(); else { const go = () => { hide('lobby'); hide('sheet'); scr('menu'); }; if (!wipe(go)) go(); } });
     $('resume').onclick = () => { paused = false; hide('pause'); Sound.play('tap'); };
+    $('pBoardT').onclick = () => { $('pause').classList.toggle('showb'); Sound.play('tick'); };
     twoTap($('leave'), 'Tap again to leave', () => Hud.isLive(), () => toMenu());
     $('again').onclick = () => { Sound.play('tap'); if (N.mode && hasNet() && Net.canRematch && Net.canRematch()) { const b = $('again'); if (Net.rematch() !== false) { b.textContent = 'Waiting for others'; b.classList.add('off'); b.classList.remove('hot'); } return; } if (N.mode === 'host') { try { Net.toRoom(); } catch (e) { backToRoom(); } } else if (!N.mode) begin(true); };
     $('tolobby').onclick = () => { Sound.play('tap'); toMenu(); };

@@ -1,8 +1,8 @@
 // Touch controls. Abilities fire on release so the player always has a chance to cancel.
 const { Ctl, applyInput, aimDir } = (() => {
   const Ctl = {
-    p: new Map(), stick: null, aim: null, atk: null, atkMode: 'champ', beacon: null, ping: null, mapHold: null,
-    reset() { if (this.talking) { this.talking = false; Voice.talk(false); } this.p.clear(); this.stick = null; this.aim = null; this.atk = null; this.atkMode = 'champ'; this.beacon = null; this.ping = null; this.mapHold = null; },
+    p: new Map(), stick: null, aim: null, atk: null, atkMode: 'champ', ping: null, mapHold: null,
+    reset() { if (this.talking) { this.talking = false; Voice.talk(false); } this.p.clear(); this.stick = null; this.aim = null; this.atk = null; this.atkMode = 'champ'; this.ping = null; this.mapHold = null; },
     pt(e) { return rotated ? { x: e.clientY - stageX, y: physW - e.clientX } : { x: e.clientX - stageX, y: e.clientY }; },
   };
   const near = (b, p, pad) => Math.hypot(p.x - b.x, p.y - b.y) < b.r + pad;
@@ -89,23 +89,6 @@ const { Ctl, applyInput, aimDir } = (() => {
     Sound.play('tap');
   }
 
-  // Beacons aim like an ability: tap drops one at your feet, drag throws it out.
-  const beaconRange = () => Sim.BEACON_RANGE || 460;
-  function beaconPoint() {
-    const B = Ctl.beacon, me = G.me;
-    if (!B || !B.moved) return { x: me.x, y: me.y };
-    const wy = B.dy / TILT, l = Math.hypot(B.dx, wy) || 1, f = Math.min(1, Math.hypot(B.dx, B.dy) * sens() / FULL_PX) * beaconRange();
-    return { x: me.x + B.dx / l * f, y: me.y + wy / l * f };
-  }
-  function pressBeacon(id, p) {
-    const me = G.me;
-    if (!me.alive) return;
-    if (Hud.beaconLeft(me) < 1) { Hud.squash('beacon'); Hud.toast('No beacons ready'); Sound.play('cancel'); return; }
-    Ctl.beacon = { id, sx: p.x, sy: p.y, dx: 0, dy: 0, moved: false, cancelHot: false, left: false };
-    Ctl.p.set(id, { role: 'beacon' });
-    Hud.squash('beacon'); Sound.play('tap');
-  }
-
   // ---------- pings ----------
   const RADIAL = [['attack', 0, -1], ['omw', 1, 0], ['help', 0, 1], ['retreat', -1, 0]];
   function radialPick(dx, dy) {
@@ -146,7 +129,7 @@ const { Ctl, applyInput, aimDir } = (() => {
     return best;
   }
   const atkList = U => [['champ', U.atk], ['minion', U.atkM], ['tower', U.atkT]];
-  function clusterList(U) { return [...atkList(U), ['ab0', U.ab[0]], ['ab1', U.ab[1]], ['ab2', U.ab[2]], ['beacon', U.beacon]]; }
+  function clusterList(U) { return [...atkList(U), ['ab0', U.ab[0]], ['ab1', U.ab[1]], ['ab2', U.ab[2]]]; }
   function setAtk(id, mode) {
     Ctl.p.set(id, { role: 'atk' }); Ctl.atk = id; Ctl.atkMode = mode;
     Hud.atkPressed(mode); Sound.play(mode === 'minion' ? 'atkMinion' : mode === 'tower' ? 'atkTower' : 'atkChamp');
@@ -176,7 +159,6 @@ const { Ctl, applyInput, aimDir } = (() => {
       if (near(U.ping, p, 8)) { Hud.squash('ping'); openRadial(e.pointerId, p, { x: me.x, y: me.y }, false); Ctl.p.set(e.pointerId, { role: 'ping', fromBtn: true }); Sound.play('tap'); return; }
       const hit = closest(p, clusterList(U), 11);
       if (hit === 'champ' || hit === 'minion' || hit === 'tower') { setAtk(e.pointerId, hit); return; }
-      if (hit === 'beacon') { pressBeacon(e.pointerId, p); return; }
       if (hit) { pressAbility(+hit[2], e.pointerId, p); return; }
       const M = U.map;
       if (p.x > M.x - 6 && p.x < M.x + M.w + 6 && p.y > M.y - 6 && p.y < M.y + M.h + 8) {
@@ -206,13 +188,6 @@ const { Ctl, applyInput, aimDir } = (() => {
     if (r && r.role === 'ping' && Ctl.ping && Ctl.ping.id === e.pointerId) {
       const p = Ctl.pt(e), P = Ctl.ping, sel = radialPick(p.x - P.sx, p.y - P.sy);
       if (sel !== P.sel) { P.sel = sel; if (sel) Sound.play('tick'); }
-    }
-    if (r && r.role === 'beacon' && Ctl.beacon && Ctl.beacon.id === e.pointerId) {
-      const p = Ctl.pt(e), B = Ctl.beacon, U = Hud.ui;
-      B.dx = p.x - B.sx; B.dy = p.y - B.sy;
-      if (Math.hypot(B.dx, B.dy) > MOVE_PX / sens()) B.moved = true;
-      if (!near(U.beacon, p, 8)) B.left = true;
-      B.cancelHot = (B.left && near(U.beacon, p, 2)) || near(U.cancel, p, 10);
     }
     if (A && A.id === e.pointerId) {
       const p = Ctl.pt(e), U = Hud.ui, B = U.ab[A.slot], gate = MOVE_PX / sens();
@@ -245,12 +220,6 @@ const { Ctl, applyInput, aimDir } = (() => {
       if (!P.sel && r.fromBtn) { P.sticky = true; return; }
       closeRadial(true);
     }
-    else if (r.role === 'beacon' && Ctl.beacon && Ctl.beacon.id === e.pointerId) {
-      const B = Ctl.beacon, pt = beaconPoint(), bad = lost || B.cancelHot;
-      Ctl.beacon = null;
-      if (bad) { Sound.play('cancel'); return; }
-      if (G.me.alive) { G.me.q.push({ t: 'beacon', tx: pt.x, ty: pt.y }); Hud.beaconPlaced(pt); }
-    }
     else if (r.role === 'aim' && Ctl.aim && Ctl.aim.id === e.pointerId) {
       if (lost || Ctl.aim.cancelHot) { cancelAim(); return; }
       const me = G.me, A = Ctl.aim, d = aimDir();
@@ -274,13 +243,12 @@ const { Ctl, applyInput, aimDir } = (() => {
     me.atk = Ctl.atk !== null;
     me.atkMode = Ctl.atk !== null ? Ctl.atkMode : 'champ';
     mapHoldTick();
-    if (!me.alive) { if (Ctl.aim) Ctl.aim = null; if (Ctl.beacon) Ctl.beacon = null; }
+    if (!me.alive) { if (Ctl.aim) Ctl.aim = null; }
     if (Ctl.aim && me.charge && me.charge.slot === Ctl.aim.slot) {
       const d = aimDir(), far = me.kit[Ctl.aim.slot].range || 600;
       me.q.push({ t: 'aim', tx: me.x + d.dx * far, ty: me.y + d.dy * far });
     }
   }
-  Ctl.beaconPoint = beaconPoint;
   Ctl.radial = RADIAL;
 
   return { Ctl, applyInput, aimDir };

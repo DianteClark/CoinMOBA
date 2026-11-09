@@ -134,7 +134,7 @@ const Hud = {
   ui: {
     atk: { x: 0, y: 0, r: 46 },
     ab: [{ x: 0, y: 0, r: 33 }, { x: 0, y: 0, r: 33 }, { x: 0, y: 0, r: 37 }],
-    atkM: { x: 0, y: 0, r: 19 }, atkT: { x: 0, y: 0, r: 19 }, beacon: { x: 0, y: 0, r: 20 },
+    atkM: { x: 0, y: 0, r: 19 }, atkT: { x: 0, y: 0, r: 19 },
     cancel: { x: 0, y: 70, r: 34 }, pause: { x: 0, y: 20, r: 14 },
     shop: { x: 63, y: 76, r: 17 }, recall: { x: 106, y: 76, r: 17 }, ping: { x: 149, y: 76, r: 17 }, chat: { x: 192, y: 76, r: 17 }, ptt: { x: 235, y: 76, r: 17 },
     map: { x: 0, y: 6, w: 140, h: 84 },
@@ -195,9 +195,9 @@ const { hud, initHud, hudDraw, uiEvent } = (() => {
 
   // ---------- layout ----------
   // Every movable control, with its default offset from the attack coin (or its fixed spot) at full size.
-  const CLUSTER = { atk: [0, 0, 46], atkM: [-66, -20, 19], atkT: [-26, -64, 19], ab0: [-106, 20, 33], ab1: [-82, -76, 33], ab2: [2, -114, 37], beacon: [-162, -52, 20] };
+  const CLUSTER = { atk: [0, 0, 46], atkM: [-66, -20, 19], atkT: [-26, -64, 19], ab0: [-106, 20, 33], ab1: [-82, -76, 33], ab2: [2, -114, 37] };
   const CORNER = { shop: [63, 76, 17], recall: [106, 76, 17], ping: [149, 76, 17], chat: [192, 76, 17], ptt: [235, 76, 17] };
-  const LABELS = { atk: 'Attack', atkM: 'Minion', atkT: 'Tower', ab0: 'Ability 1', ab1: 'Ability 2', ab2: 'Ultimate', beacon: 'Beacon', shop: 'Shop', recall: 'Recall', ping: 'Ping', chat: 'Chat', ptt: 'Talk' };
+  const LABELS = { atk: 'Attack', atkM: 'Minion', atkT: 'Tower', ab0: 'Ability 1', ab1: 'Ability 2', ab2: 'Ultimate', shop: 'Shop', recall: 'Recall', ping: 'Ping', chat: 'Chat', ptt: 'Talk' };
   const hudOf = () => save.hud || (save.hud = { left: false, pos: {} });
   const left = () => !!hudOf().left;
   // Default position of a control for this screen and handedness, before the player's own offset.
@@ -219,7 +219,7 @@ const { hud, initHud, hudDraw, uiEvent } = (() => {
     U.compact = VW < 760 || VH < 350;
     stage.classList.toggle('sm', U.compact);
     stage.classList.toggle('lh', left());
-    put2(U.atk, 'atk'); put2(U.atkM, 'atkM'); put2(U.atkT, 'atkT'); put2(U.beacon, 'beacon');
+    put2(U.atk, 'atk'); put2(U.atkM, 'atkM'); put2(U.atkT, 'atkT');
     put2(U.ab[0], 'ab0'); put2(U.ab[1], 'ab1'); put2(U.ab[2], 'ab2');
     put2(U.shop, 'shop'); put2(U.recall, 'recall'); put2(U.ping, 'ping'); put2(U.chat, 'chat'); put2(U.ptt, 'ptt');
     const cx = VW - 250; U.cancel.x = left() ? VW - cx : cx; U.cancel.y = 122;
@@ -254,7 +254,7 @@ const { hud, initHud, hudDraw, uiEvent } = (() => {
       hpTrail: me.hp, hpHold: 0, hurt: 0, hpPrev: me.hp, goldShow: me.gold, goldStr: String(Math.floor(me.gold)), goldGain: 0, goldGainT: 0, goldGainStr: '', lvlFx: 0, first: save.hints < 1, guide: save.hints < 2, netStr: '', netKey: -2,
       prev: [0, 0, 0], cdMax: [1, 1, 1], recPrev: [0, 0, 0], recMax: [1, 1, 1], pop: [0, 0, 0], press: [0, 0, 0], deny: [0, 0, 0], flash: [0, 0, 0], spark: [.4, 1.2, 2.0],
       atkPress: 0, atkMax: 1, atkPrev: 0, cancelIn: 0,
-      feed: [], banner: null, queue: [], pings: [], pingAt: {}, towerAt: -99, mapC: null, kills: [s.kills[0], s.kills[1]], killBump: [0, 0], lvl: me.lvl, lvlBump: 0, sq: { shop: 0, recall: 0, pause: 0, ping: 0, beacon: 0, chat: 0, ptt: 0 }, emotes: [], sayLog: [], recap: null, bountyShow: 0, objK: '', objStr: '', objSub: '', buffs: [], svKey: '',
+      feed: [], banner: null, queue: [], pings: [], pingAt: {}, towerAt: -99, mapC: null, kills: [s.kills[0], s.kills[1]], killBump: [0, 0], lvl: me.lvl, lvlBump: 0, sq: { shop: 0, recall: 0, pause: 0, ping: 0, chat: 0, ptt: 0 }, emotes: [], sayLog: [], recap: null, bountyShow: 0, objK: '', objStr: '', objSub: '', buffs: [], svKey: '',
       clockSec: -1, clockStr: '0:00', hoardKey: -2, hoardStr: '', frame: 0,
       hint: save.hints < 2 ? { i: 0, t: 0, n: 0 } : null,
     };
@@ -301,6 +301,10 @@ const { hud, initHud, hudDraw, uiEvent } = (() => {
   function uiEvent(e) {
     if (!H || !G) return;
     const me = G.me, k = e.e;
+    if (k === 'district' && e.phase === 'flip') { const nm = (Sim.DISTRICT_INFO[e.kind] || {}).name || 'A district'; newsPush(e.team === 1 ? `${nm} falls to the villains` : `Heroes secure the ${nm}`); return; }
+    if (k === 'city') { newsPush(e.kind === 'rally' ? 'The city rallies behind the heroes' : 'Panic spreads across the city'); return; }
+    if (k === 'blackout') { newsPush('Blackout hits the city'); return; }
+    if (k === 'rival') { if (e.u === me.id || e.v === me.id) banner('Your nemesis', { pri: 3, team: me.team, dur: 1.5 }); return; }
     if (k === 'hit') {
       const u = H.byId.get(e.u); if (!u || u.team !== me.team) return;
       const now = G.s.t;
@@ -351,7 +355,7 @@ const { hud, initHud, hudDraw, uiEvent } = (() => {
     }
     ctx.globalAlpha = k;
     ctx.drawImage(scrimTop, 0, 0, VW, U.compact ? 66 : 76);
-    for (const B of [U.atk, U.ab[0], U.ab[1], U.ab[2], U.beacon]) { const R = B.r * 1.62; ctx.drawImage(shade, B.x - R, B.y - R, R * 2, R * 2); }
+    for (const B of [U.atk, U.ab[0], U.ab[1], U.ab[2]]) { const R = B.r * 1.62; ctx.drawImage(shade, B.x - R, B.y - R, R * 2, R * 2); }
     ctx.globalAlpha = 1;
   }
   function skewBar(x, y, w, h, s) { if (w <= 0) return; const sl = Math.min(w, s); ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x + w, y); ctx.lineTo(x + w - sl, y + h); ctx.lineTo(x, y + h); ctx.closePath(); ctx.fill(); }
@@ -532,6 +536,82 @@ const { hud, initHud, hudDraw, uiEvent } = (() => {
     for (const L of s.map.lanes) { g.beginPath(); L.forEach(([x, y], i) => g[i ? 'lineTo' : 'moveTo'](x * kx, y * ky)); g.stroke(); }
     return c;
   }
+  // ---------- districts ----------
+  const DIST_ORDER = ['hospital', 'bank', 'power', 'comms', 'armory', 'subway'];
+  const distCol = (d, me) => d.owner < 0 ? '#8c98ab' : TEAM_DOT[d.owner === me.team ? 0 : 1];
+  // One simple shape per kind, shared by the minimap and the control strip, so the two read as the same thing.
+  function distShape(kind, x, y, r) {
+    ctx.beginPath();
+    if (kind === 'hospital') { const t = r * .36; ctx.rect(x - r, y - t, r * 2, t * 2); ctx.rect(x - t, y - r, t * 2, r * 2); }
+    else if (kind === 'bank') { ctx.moveTo(x, y - r); ctx.lineTo(x + r, y); ctx.lineTo(x, y + r); ctx.lineTo(x - r, y); ctx.closePath(); }
+    else if (kind === 'power') { ctx.moveTo(x, y - r); ctx.lineTo(x + r, y + r * .8); ctx.lineTo(x - r, y + r * .8); ctx.closePath(); }
+    else if (kind === 'comms') { ctx.arc(x, y, r * .95, 0, TAU); ctx.moveTo(x + r * .42, y); ctx.arc(x, y, r * .42, 0, TAU, true); }
+    else if (kind === 'armory') ctx.rect(x - r * .82, y - r * .82, r * 1.64, r * 1.64);
+    else ctx.rect(x - r, y - r * .46, r * 2, r * .92);
+  }
+  function drawMapDistricts(s, me, M, kx, ky) {
+    for (const d of s.districts || []) {
+      if (d.home) continue;
+      const X = M.x + d.x * kx, Y = M.y + d.y * ky, r = U.compact ? 3 : 3.4;
+      if (d.by >= 0 && !calm) { const p = (H.t * 1.6) % 1; disc(X, Y, r + 1 + p * 3); ctx.strokeStyle = TEAM_DOT[d.by === me.team ? 0 : 1]; ctx.lineWidth = 1; ctx.globalAlpha = .9 - p * .7; ctx.stroke(); ctx.globalAlpha = 1; }
+      ctx.strokeStyle = INK; ctx.lineWidth = 1.6; distShape(d.kind, X, Y, r); ctx.stroke();
+      ctx.fillStyle = distCol(d, me); distShape(d.kind, X, Y, r); ctx.fill('evenodd');
+    }
+  }
+  // Who holds what: a shape per kind and a pip per district, under the minimap. A district being taken has a part-filled pip.
+  function drawDistricts(s, me) {
+    if (!s.districts || !s.districts.length) return;
+    const M = U.map, cols = 3, tw = (M.w + 4) / cols, th = U.compact ? 11 : 12, y0 = M.y + M.h + (G.net ? 19 : 6), r = U.compact ? 3.4 : 3.8;
+    DIST_ORDER.forEach((kind, i) => {
+      const list = s.districts.filter(d => d.kind === kind && !d.home); if (!list.length) return;
+      const x = M.x - 2 + (i % cols) * tw, y = y0 + (i / cols | 0) * th + th / 2, lead = Math.max(...list.map(d => d.owner === me.team ? 2 : d.owner >= 0 ? 1 : 0));
+      ctx.fillStyle = 'rgba(7,8,13,.62)'; ctx.fillRect(x, y - th / 2, tw - 1, th - 1);
+      ctx.fillStyle = lead === 2 ? TEAM_DOT[0] : lead === 1 ? TEAM_DOT[1] : '#8c98ab'; distShape(kind, x + 6, y - .5, r); ctx.fill('evenodd');
+      list.forEach((d, j) => {
+        const px = x + 13 + j * 5, py = y - 3;
+        ctx.fillStyle = 'rgba(233,237,244,.18)'; ctx.fillRect(px, py, 3.5, 5.5);
+        ctx.fillStyle = distCol(d, me); ctx.fillRect(px, py, 3.5, 5.5);
+        if (d.by >= 0) { ctx.fillStyle = TEAM_DOT[d.by === me.team ? 0 : 1]; ctx.fillRect(px, py + 5.5 * (1 - d.prog), 3.5, 5.5 * d.prog); }
+      });
+    });
+  }
+  function stationName(d, s, me) {
+    if (d.home) return 'Base';
+    const mine = s.districts.find(x => x.home && x.owner === me.team), foe = s.districts.find(x => x.home && x.owner !== me.team);
+    const near = !mine || !foe || Math.hypot(d.x - mine.x, d.y - mine.y) <= Math.hypot(d.x - foe.x, d.y - foe.y);
+    return `${near ? 'Near' : 'Far'} ${d.y < Sim.H / 2 ? 'N' : 'S'}`;
+  }
+  // Subway rides and the Blackout are offered only where they can be used, and leave the thumbs and centre clear.
+  function travelSync(me, s) {
+    const box = $('subw');
+    const links = !G.spectator && me.alive && !me.chan && Sim.subwayLinks ? Sim.subwayLinks(s, me) : [], black = !G.spectator && me.alive && Sim.blackoutReady && Sim.blackoutReady(s, me.team);
+    const cd = Math.ceil(me.subCd || 0), key = links.map(d => d.id).join() + (cd > 0 ? `c${cd}` : '') + (black ? 'b' : '');
+    if (key === H.travelKey) return; H.travelKey = key;
+    box.textContent = '';
+    links.forEach(d => {
+      const b = document.createElement('button'); b.className = 'evpill auto' + (cd > 0 ? ' off' : ''); b.innerHTML = `<small>To</small>${stationName(d, s, me)}${cd > 0 ? `<em>${cd}s</em>` : ''}`;
+      b.setAttribute('aria-label', `Ride the subway to ${stationName(d, s, me)}`);
+      b.onpointerdown = e => { e.stopPropagation(); if (!G || !G.me.alive) return; G.me.q.push({ t: 'subway', to: d.id }); Sound.play('tap'); H.travelKey = ''; };
+      box.append(b);
+    });
+    if (black) { const b = document.createElement('button'); b.className = 'evpill auto'; b.innerHTML = 'Blackout'; b.setAttribute('aria-label', 'Trigger a Blackout'); b.onpointerdown = e => { e.stopPropagation(); if (!G) return; G.me.q.push({ t: 'blackout' }); Sound.play('tap'); H.travelKey = ''; }; box.append(b); }
+    box.classList.toggle('hide', !links.length && !black);
+  }
+  // Breaking News: big city moments only, one line at the bottom edge, gone in a few seconds.
+  function newsPush(text) { if (!H.news) H.news = []; if (H.news.length < 2) H.news.push({ text, t: 0 }); }
+  function drawNews(dt) {
+    const n = H.news && H.news[0]; if (!n || !$('evo').classList.contains('hide')) return;
+    const DUR = 5, fade = .35; n.t += dt;
+    if (n.t >= DUR) { H.news.shift(); return; }
+    const a = Math.min(1, n.t / fade, (DUR - n.t) / fade), h = U.compact ? 15 : 17, y = VH - h - 1, cx = VW / 2;
+    ctx.save(); ctx.globalAlpha = a; ctx.textBaseline = 'middle'; ctx.textAlign = 'left';
+    const f1 = fw(800, U.compact ? 9.5 : 10.5), f2 = fw(600, U.compact ? 11.5 : 12.5), tag = 'BREAKING';
+    ctx.font = f1; const tw = ctx.measureText(tag).width + 12; ctx.font = f2; const mw = ctx.measureText(n.text).width + 14, x = cx - (tw + mw) / 2;
+    ctx.fillStyle = 'rgba(7,8,13,.86)'; ctx.fillRect(x + tw, y, mw, h); ctx.fillStyle = '#c62d3f'; ctx.fillRect(x, y, tw, h);
+    ctx.font = f1; ctx.fillStyle = '#fff'; ctx.fillText(tag, x + 6, y + h / 2 + .5);
+    ctx.font = f2; ctx.fillStyle = WHITE; ctx.fillText(n.text, x + tw + 7, y + h / 2 + .5);
+    ctx.restore();
+  }
   function drawMap(dt, s, me) {
     const M = U.map, kx = M.w / Sim.W, ky = M.h / Sim.H;
     if (!H.mapC) H.mapC = bakeMap(s);
@@ -541,6 +621,7 @@ const { hud, initHud, hudDraw, uiEvent } = (() => {
     ctx.save(); ctx.beginPath(); ctx.rect(M.x, M.y, M.w, M.h); ctx.clip();
     for (const t of s.towers) if (t.alive) { const r = t.sub === 'core' ? 3.4 : 2.4; ctx.fillStyle = INK; ctx.fillRect(M.x + t.x * kx - r - .8, M.y + t.y * ky - r - .8, 2 * r + 1.6, 2 * r + 1.6); ctx.fillStyle = TEAM_DOT[t.team === me.team ? 0 : 1]; ctx.fillRect(M.x + t.x * kx - r, M.y + t.y * ky - r, 2 * r, 2 * r); }
     ctx.fillStyle = 'rgba(233,237,244,.7)'; for (const c of s.sites) if (c.alive) { disc(M.x + c.x * kx, M.y + c.y * ky, 1.6); ctx.fill(); }
+    drawMapDistricts(s, me, M, kx, ky);
     for (const b of (s.bosses || [])) if (b.up) { diamond(M.x + b.x * kx, M.y + b.y * ky, b.kind === 'colossus' ? 4.5 : 3.6); ctx.fillStyle = BUFF_COL[b.kind] || GOLD; ctx.fill(); ctx.strokeStyle = INK; ctx.lineWidth = 1; ctx.stroke(); }
     if (s.event) { const X = M.x + s.event.x * kx, Y = M.y + s.event.y * ky, p = calm ? .4 : (H.t * 1.4) % 1; disc(X, Y, 3.5 + p * 7); ctx.strokeStyle = GOLD; ctx.lineWidth = 1.2; ctx.globalAlpha = 1 - p * .7; ctx.stroke(); ctx.globalAlpha = 1; disc(X, Y, 2.6); ctx.fillStyle = GOLD; ctx.fill(); }
     const vw = VW / Z * kx, vh = VH / (Z * TILT) * ky;
@@ -688,36 +769,6 @@ const { hud, initHud, hudDraw, uiEvent } = (() => {
     if (!me.alive) return;
     const R = me.range || (me.kit && me.kit.range) || 400, dmg = me.dmg || 55, r2 = (R + 40) * (R + 40);
     for (const u of s.minions) { if (!u.alive || u.team === me.team || u.hp > dmg) continue; const dx = u.x - me.x, dy = u.y - me.y; if (dx * dx + dy * dy < r2 && Sim.canSee(s, me.team, u)) { H.lastHitHot = 1; return; } }
-  }
-
-  // ---------- beacons ----------
-  const BEACON_R = () => Sim.BEACON_RANGE || 460;
-  const beaconLeft = me => me.beacons === undefined ? 2 : me.beacons;
-  const beaconMax = () => Sim.BEACON_MAX || 2;
-  const beaconWait = me => me.beaconT || 0;
-  function drawBeacon(dt, me) {
-    const B = U.beacon, n = beaconLeft(me), max = beaconMax(), wait = beaconWait(me), acc = SIDE_ACC[me.team], held = !!Ctl.beacon, hot = n > 0;
-    H.sq.beacon = Math.max(0, H.sq.beacon - dt * 7);
-    if (wait > H.bcnPrev + .01) H.bcnMax = wait;
-    H.bcnPrev = wait;
-    const r = B.r * (1 - H.sq.beacon * .14), k = B.r / 20;
-    ctx.globalAlpha = hot ? 1 : .55;
-    disc(B.x, B.y, r); ctx.fillStyle = held ? acc : GLASS; ctx.fill(); ctx.strokeStyle = held ? WHITE : HAIR; ctx.lineWidth = 1.2; ctx.stroke();
-    const col = held ? INK : hot ? PAPER : MUTE;
-    ctx.fillStyle = col; ctx.beginPath(); ctx.moveTo(B.x, B.y - 7 * k); ctx.lineTo(B.x + 4.6 * k, B.y); ctx.lineTo(B.x, B.y + 7 * k); ctx.lineTo(B.x - 4.6 * k, B.y); ctx.closePath(); ctx.fill();
-    ctx.strokeStyle = col; ctx.lineWidth = 1.4 * k; ctx.beginPath(); ctx.arc(B.x, B.y, 10.5 * k, -2.5, -.64); ctx.moveTo(B.x + Math.cos(.64) * 10.5 * k, B.y + Math.sin(.64) * 10.5 * k); ctx.arc(B.x, B.y, 10.5 * k, .64, 2.5); ctx.stroke();
-    ctx.globalAlpha = 1;
-    if (wait > 0 && H.bcnMax > 0 && n < max) arcLine(B.x, B.y, B.r + 3, -HPI, -HPI + TAU * clamp01(1 - wait / H.bcnMax), acc, 2);
-    for (let i = 0; i < max; i++) { diamond(B.x - (max - 1) * 4.4 + i * 8.8, B.y + B.r + 7, 2.6); ctx.fillStyle = i < n ? acc : 'rgba(148,167,194,.32)'; ctx.fill(); }
-    if (H.first) { ctx.font = fw(500, 10); ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; label('Beacon', B.x, B.y - B.r - 8, WHITE); }
-  }
-  function drawBeaconAim(me) {
-    const B = Ctl.beacon; if (!B || !me.alive) return;
-    const X = sx(me.x), Y = sy(me.y), R = BEACON_R() * Z, pt = Ctl.beaconPoint(), PX_ = sx(pt.x), PY_ = sy(pt.y), acc = B.cancelHot ? CRIM : SIDE_ACC[me.team];
-    ctx.beginPath(); ctx.ellipse(X, Y, R, R * TILT, 0, 0, TAU); ctx.strokeStyle = 'rgba(233,237,244,.35)'; ctx.lineWidth = 1.2; ctx.stroke();
-    ctx.setLineDash([6, 6]); ctx.beginPath(); ctx.moveTo(X, Y); ctx.lineTo(PX_, PY_); ctx.strokeStyle = acc; ctx.lineWidth = 1.6; ctx.stroke(); ctx.setLineDash([]);
-    diamond(PX_, PY_ - 3, 7); ctx.fillStyle = acc; ctx.fill(); ctx.strokeStyle = INK; ctx.lineWidth = 1; ctx.stroke();
-    ctx.beginPath(); ctx.ellipse(PX_, PY_, 26, 26 * TILT, 0, 0, TAU); ctx.strokeStyle = acc; ctx.lineWidth = 1.4; ctx.stroke();
   }
 
   // ---------- pings ----------
@@ -947,7 +998,6 @@ const { hud, initHud, hudDraw, uiEvent } = (() => {
     { s: () => 'Drag an ability to aim, then let go', done: me => me.stats.casts > 0, hold: 0 },
     { s: () => 'Tap the shop to buy items', done: () => shopOpen(), hold: 0 },
     { s: () => 'Hold the flag and slide to ping your team', done: () => H.pingLog.length > 0, hold: 0 },
-    { s: () => 'Drag from Beacon to light up the fog', done: me => Hud.beaconLeft(me) < beaconMax(), hold: 0 },
     { s: () => 'All set. Stay as long as you like', done: () => false, hold: 0, end: 4 },
   ];
   function drawTips(dt, me) {
@@ -964,7 +1014,8 @@ const { hud, initHud, hudDraw, uiEvent } = (() => {
 
   // Death is the shopping window: the shop opens below the timer on its own.
   function drawDeath(me) {
-    ctx.fillStyle = 'rgba(5,6,10,.5)'; ctx.fillRect(0, 0, VW, VH);
+    // A dead player is spectating: only dim hard behind the open shop.
+    ctx.fillStyle = shopOpen() ? 'rgba(5,6,10,.5)' : 'rgba(5,6,10,.2)'; ctx.fillRect(0, 0, VW, VH);
     const cx = VW / 2, y = U.compact ? 48 : 58, R = U.compact ? 12 : 15, ang = calm ? 0 : H.t * 1.8, ab = Math.abs(Math.cos(ang)), str = `BACK IN ${Math.ceil(me.respawn)}`, sz = U.compact ? 25 : 31;
     ctx.textAlign = 'left'; ctx.textBaseline = 'middle'; ctx.font = Deco.disp(sz);
     const w = ctx.measureText(str).width, x0 = cx - (w + R * 2 + 10) / 2;
@@ -976,7 +1027,7 @@ const { hud, initHud, hudDraw, uiEvent } = (() => {
     if (me.alive === !H.wasDead) return;
     H.wasDead = !me.alive;
     const f = $('shop');
-    if (H.wasDead) { if (G.outro || G.ended) return; H.shopAuto = true; clearTimeout(f._c); f.classList.add('dead'); f.classList.toggle('solo', !H.recap); f.classList.remove('hide', 'closing'); shopBuild(); }
+    if (H.wasDead) { if (G.outro || G.ended) return; f.classList.toggle('solo', !H.recap); } // the shop stays closed so you can watch; the recap has a Shop button
     else { f.classList.remove('dead', 'solo'); if (H.shopAuto) f.classList.add('hide'); H.shopAuto = false; H.recap = null; $('recap').classList.add('hide'); }
   }
 
@@ -999,14 +1050,15 @@ const { hud, initHud, hudDraw, uiEvent } = (() => {
     offset(-300 * away, 0); drawFrame(dt, me); drawBuffs(dt, s, me); drawFeed(dt);
     offset(0, -90 * away); drawStrip(dt, s, me); drawPeople(dt, s); drawObjective(dt, s, me);
     offset(300 * away, 0); drawMap(dt, s, me); drawCancel(dt);
-    offset((left() ? -320 : 320) * away, 0); if (!G.spectator) { lastHitTick(dt, me, s); drawAttack(dt, me); for (let i = 0; i < 3; i++) drawAbility(i, dt, me); drawBeacon(dt, me); } drawRipples(dt);
+    offset((left() ? -320 : 320) * away, 0); if (!G.spectator) { lastHitTick(dt, me, s); drawAttack(dt, me); for (let i = 0; i < 3; i++) drawAbility(i, dt, me); } drawRipples(dt);
     offset(0, 0);
     if (want) drawWorldPings(dt, s, me);
-    drawBeaconAim(me);
     if (!G.spectator) { deathShop(me); if (!me.alive) drawDeath(me); }
     drawEmotes(dt, s, me); drawChat(dt); if (!G.spectator) { drawHint(dt, me); drawTips(dt, me); drawAimCard(me); } drawBanner(dt); drawRadial(dt);
     H.frame++;
     if (shopOpen()) { const sg = Math.floor(H.goldShow); if (sg !== H.shopGoldV) { H.shopGoldV = sg; $('shGold').textContent = sg; } if (H.frame % 10 === 0) shopSync(false); }
+    if (H.frame % 12 === 0) travelSync(me, s);
+    drawDistricts(s, me); drawNews(dt);
     if (H.frame % 12 === 0 && !G.spectator) { evoSync(me, s); svSync(s, me); if (!me.alive) recapSync(me); }
     if (H.tips && H.frame % 6 === 0) practiceSync(s, me);
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
@@ -1033,8 +1085,9 @@ const { hud, initHud, hudDraw, uiEvent } = (() => {
     if (top.kit) { const c = document.createElement('canvas'); c.width = c.height = 84; Hud.coinTo(c, Art.champCoin(top.kit, foe, 2, 40)); head.append(c); }
     head.insertAdjacentHTML('beforeend', `<div><small>Taken down by</small><b>${top.name}</b></div>`);
     el.append(head);
-    el.insertAdjacentHTML('beforeend', `<div class="rcl">${list.slice(0, n).map((r, i) => recapRow(r, list[0].dmg, i, foe)).join('')}</div><div class="rct"><span>Last 15 seconds</span><b>${total} damage</b></div><button class="go" id="recBuy"></button>`);
+    el.insertAdjacentHTML('beforeend', `<div class="rcl">${list.slice(0, n).map((r, i) => recapRow(r, list[0].dmg, i, foe)).join('')}</div><div class="rct"><span>Last 15 seconds</span><b>${total} damage</b></div><button class="ghost" id="recShop">Shop</button><button class="go" id="recBuy"></button>`);
     $('recBuy').onpointerdown = e2 => doCity('buyback', 0, e2.currentTarget);
+    $('recShop').onpointerdown = () => Hud.toggleShop();
     recapSync(me);
     el.classList.remove('hide');
   }
@@ -1591,8 +1644,6 @@ const { hud, initHud, hudDraw, uiEvent } = (() => {
 
   Hud.radialR = radialR; Hud.radialOpen = () => { if (H) H.radial = .15; };
   Hud.ping = localPing;
-  Hud.beaconLeft = beaconLeft;
-  Hud.beaconPlaced = pt => { if (H) ripple(U.beacon.x, U.beacon.y, U.beacon.r, SIDE_ACC[G.me.team]); Sound.play('clink'); };
   Hud.atkPressed = mode => { if (!H) return; const B = mode === 'minion' ? U.atkM : mode === 'tower' ? U.atkT : U.atk; if (mode === 'champ') H.atkPress = 1; else H.atkHeld[mode] = 1; H.atkPop[mode] = 1; ripple(B.x, B.y, B.r, SIDE_ACC[G.me.team]); };
 
   // ---------- small helpers for the controls ----------
@@ -1640,6 +1691,8 @@ const { hud, initHud, hudDraw, uiEvent } = (() => {
     const canVote = !G.spectator && !!Sim.SURRENDER_AT && G.s.t >= Sim.SURRENDER_AT && !G.s.practice && !(G.s.votes && G.s.votes[G.me.team]);
     $('pSur').classList.toggle('hide', !canVote);
     $('pNote').classList.toggle('hide', !net);
+    // Online the match carries on, so the menu docks to one side and leaves the game in view.
+    $('pause').classList.toggle('live', net); $('pause').classList.remove('showb');
     Hud.closeShop();
     Hud.scoreTable($('pBoard'), G.s, G.me);
     if (Hud.syncToggles) Hud.syncToggles();

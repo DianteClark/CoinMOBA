@@ -17,7 +17,8 @@ const pts = id => save.m[id] || 0;
 Sound.setOn(save.music, save.sfx);
 
 function applyQuality() { quality = save.gfx === 'low' ? 0 : save.gfx === 'high' ? 2 : quality; resize(); }
-function resize() { dpr = Math.min(devicePixelRatio || 1, quality >= 2 ? 2 : quality === 1 ? 1.5 : 1); view.width = VW * dpr; view.height = VH * dpr; }
+// Assigning canvas size reallocates and blanks it, even with the same number, so only do it when the size really changes.
+function resize() { dpr = Math.min(devicePixelRatio || 1, quality >= 2 ? 2 : quality === 1 ? 1.5 : 1); const w = Math.floor(VW * dpr), h = Math.floor(VH * dpr); if (view.width !== w) view.width = w; if (view.height !== h) view.height = h; }
 // How far the stage starts from the physical screen edge, and the physical width used for touch mapping.
 let stageX = 0, physW = 0;
 const safeProbe = (() => { const d = document.createElement('div'); d.id = 'safeProbe'; d.style.cssText = 'position:fixed;left:0;top:0;width:0;height:0;visibility:hidden;pointer-events:none;padding:env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left)'; document.documentElement.appendChild(d); return d; })();
@@ -123,5 +124,6 @@ function frame(now) {
   }
   soundFrame(held ? 0 : dt);
   if (!window.__skipRender) render(held ? 0 : dt); // the skip flag is for many-browser network tests on one machine
-  if (save.gfx === 'auto') { const f = G.frames++; G.ms += dt * 1000; if (f && f % 120 === 0) { const avg = G.ms / 120; G.ms = 0; if (avg > 26 && quality > 0) { quality--; resize(); } } }
+  // Auto graphics: each step down visibly changes the picture, so only sustained slowness in live play counts, not the map paint during the intro.
+  if (save.gfx === 'auto' && !held && G.intro <= 0 && !G.ended) { const f = ++G.frames; G.ms += dt * 1000; if (f % 120 === 0) { const avg = G.ms / 120; G.ms = 0; G.slow = avg > 26 ? (G.slow || 0) + 1 : 0; if (G.slow >= 2 && quality > 0) { G.slow = 0; quality--; resize(); } } }
 }

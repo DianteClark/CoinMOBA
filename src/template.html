@@ -109,6 +109,8 @@ button.down{transform:translateY(1px) scale(.965);filter:brightness(1.3);transit
 .pick[aria-pressed=true]::after{opacity:1;transform:none}
 .pick[aria-pressed=true] canvas{transform:scale(1.04);filter:none}
 .pick[aria-pressed=true] span.pn{color:var(--txt)}
+.ctr{display:block;font-style:normal;font-size:10px;font-weight:700;line-height:1;letter-spacing:.06em;text-transform:uppercase;color:#ff7a6b;text-align:center}
+.pick .ctr{position:relative;z-index:1;margin-top:-10px;padding:1px 4px 0;background:rgba(7,8,13,.82)}
 .pick.taken{opacity:.38}
 .hero{grid-column:2;grid-row:2;display:flex;flex-direction:column;align-items:center;justify-content:flex-end;gap:4px;pointer-events:none}
 .hero canvas#big{position:absolute;left:50%;top:44%;width:176px;height:176px;transform:translate(-50%,-50%);display:block;z-index:0}
@@ -202,6 +204,10 @@ button.down{transform:translateY(1px) scale(.965);filter:brightness(1.3);transit
 /* Evolve: one thumb, never in the way */
 #evo{position:absolute;left:50%;bottom:6px;transform:translateX(-50%);z-index:2;display:flex;gap:6px;width:356px}
 #evo.shut{width:auto}
+#subw{position:absolute;left:50%;bottom:30px;transform:translateX(-50%);z-index:2;display:flex;gap:4px;align-items:center;max-width:44%;flex-wrap:wrap;justify-content:center}
+#subw .evpill{height:26px;padding:0 9px;font-size:14px;white-space:nowrap;gap:5px}
+#subw .evpill small{font-size:10.5px}
+#subw .evpill.off{opacity:.55;pointer-events:none}
 .ev{--cut:8px;--line:var(--acc);--fill:linear-gradient(112deg,var(--a) 0 74%,var(--a2) 74%);flex:1 1 0;min-width:0;display:flex;flex-direction:column;align-items:flex-start;padding:5px 9px 6px;text-align:left;animation:evin .28s cubic-bezier(.2,.9,.3,1.25) both;animation-delay:calc(var(--i)*50ms)}
 @keyframes evin{from{opacity:0;transform:translateY(16px) scale(.94)}}
 .ev b{font-family:var(--disp);font-size:18px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;line-height:1.05;font-synthesis:none;color:var(--acc)}
@@ -589,6 +595,8 @@ button.down{transform:translateY(1px) scale(.965);filter:brightness(1.3);transit
 @keyframes barin{from{transform:scaleX(0)}}
 .rct{flex:none;display:flex;justify-content:space-between;font-size:12.5px;font-weight:500;color:var(--mut);border-top:1px solid var(--hair);padding-top:4px;line-height:1}
 .rct b{color:var(--txt);font-weight:600;font-variant-numeric:tabular-nums}
+#recap .ghost{flex:none;height:32px;min-height:32px;font-size:15px}
+.sm #recap .ghost{height:28px;min-height:28px;font-size:13px}
 #recap .go{flex:none;height:40px;font-size:19px;padding:0 6px;display:flex;align-items:center;justify-content:center;white-space:nowrap}
 /* Quick chat */
 #qc{--cut:10px;--fill:rgba(9,11,17,.96);position:absolute;left:44px;top:96px;z-index:3;width:300px;padding:7px;display:flex;flex-direction:column;gap:5px;animation:pop .12s cubic-bezier(.2,.8,.2,1) both}
@@ -879,7 +887,6 @@ button.down{transform:translateY(1px) scale(.965);filter:brightness(1.3);transit
 #shop.dead{left:268px;right:36px;top:84px;bottom:6px}
 .lh #shop.dead{left:36px;right:268px}
 #shop.dead.solo{left:36px;right:36px}
-#shop.dead .shx{display:none}
 #shop.dead .shbody{grid-template-columns:60px minmax(0,1fr) 136px}
 #shop.dead .items{grid-template-columns:minmax(0,1fr)}
 #shop.dead.solo .items{grid-template-columns:repeat(2,minmax(0,1fr))}
@@ -1109,6 +1116,21 @@ button.down{transform:translateY(1px) scale(.955);filter:brightness(1.28);transi
 #vox span::before{content:"";width:6px;height:6px;background:var(--acc);transform:rotate(45deg)}
 .pright{display:flex;flex-direction:column;gap:6px;min-width:0;min-height:0;max-height:100%}
 .pright .board{flex:1 1 auto}
+#pause.live{z-index:6;background:none;justify-content:flex-start;align-items:stretch;padding:8px 0 8px 44px;pointer-events:none}
+#pause.live .plate{pointer-events:auto;align-self:center}
+#pause.live .pgrid{width:auto;grid-template-columns:150px auto;padding:8px 10px;gap:8px}
+#pause.live.showb .pgrid{grid-template-columns:150px 330px}
+#pause.live .pcol{gap:5px}
+#pause.live .pcol h2{font-size:26px}
+#pause.live .pcol .go,#pause.live .pcol .ghost,#pause.live .pcol .tog{height:36px;min-height:36px;font-size:14px}
+#pause.live .pcol .go{font-size:19px}
+#pause.live .pvox{max-width:130px}
+#pause.live .pright{display:none}
+#pause.live .pright:has(.pvox:not(.hide)){display:flex}
+#pause.live:not(.showb) #pBoard{display:none}
+#pBoardT{display:none}
+#pause.live #pBoardT{display:block}
+.lh #pause.live{justify-content:flex-end;padding:8px 44px 8px 0}
 .pvox{flex:none;display:flex;flex-wrap:wrap;gap:4px}
 .pvox button{min-height:36px;font-size:13px}.pvox button.off{color:var(--mut);text-decoration:line-through}
 .pvox p{margin:0;font-size:12.5px;line-height:1.15;color:var(--mut)}
@@ -1184,6 +1206,7 @@ button.down{transform:translateY(1px) scale(.955);filter:brightness(1.28);transi
   <div id="qc" class="plate hide" role="group" aria-label="Emotes and quick chat"><div class="qem" id="qcE"></div><div class="qch" id="qcC"></div></div>
   <div id="sv" class="plate hide" role="group" aria-label="Surrender vote"><span id="svT"></span><button class="tok" id="svN">Keep fighting</button><button class="tok" id="svY">Surrender</button></div>
   <div id="evo" class="hide" role="group" aria-label="Evolve"></div>
+  <div id="subw" class="hide" role="group" aria-label="Subway"></div>
   <div id="prac" class="hide" role="group" aria-label="Practice tools"><button class="tok" id="prGold" aria-label="Add gold">Gold</button><button class="tok" id="prXp" aria-label="Level up">Level</button><button class="tok" id="prCd" aria-label="Reset cooldowns">Reset</button></div>
 
   <div id="pause" class="over hide" role="dialog" aria-label="Paused">
@@ -1192,6 +1215,7 @@ button.down{transform:translateY(1px) scale(.955);filter:brightness(1.28);transi
         <h2 id="pT">Paused</h2>
         <p id="pNote" class="hide">The match keeps running</p>
         <button class="go" id="resume">Resume</button>
+        <button class="ghost" id="pBoardT">Scoreboard</button>
         <button class="ghost" id="leave">Leave match</button>
         <button class="ghost hide" id="pSur">Surrender</button>
         <button class="tog" id="pMusic">Music</button>
