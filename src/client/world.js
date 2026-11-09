@@ -60,17 +60,17 @@ const { initWorld, render, introTick, outroStart, outroTick, drawCoin, visOf, wo
     g.rain = g.villain ? .5 : 0; g.rainT = 0; g.rainNext = 95 + Math.random() * 40; g.bolt = 0; g.boltPts = null; g.thunderIn = 0; g.drops = []; g.ripples = [];
     g.evv = null; g.black = 0; g.cheer = 0; g.helis = []; g.heliNext = 28 + Math.random() * 30; g.spotK = [0, 0];
     g.motes = Array.from({ length: 8 }, () => ({ x: Math.random() * Sim.W, y: Math.random() * Sim.H, p: Math.random() * 6 }));
+    const wallStyle = w => { const cx = w.x + w.w / 2, cy = w.y + w.h / 2; return Terrain.nearRoad(map, cx, cy) < 250 || (map.lanes.length < 3 && Math.abs(cy - map.H / 2) < 200) || (map.plazas || []).some(p => p.kind === 'base' && Math.hypot(cx - p.x, cy - p.y) < p.r + 140) ? 1 : 0; };
+    g.walls = map.walls.filter(w => !w.big).map(w => { const style = wallStyle(w); return { w, spr: Terrain.cliff(w, style, w.x + w.w / 2 > map.W / 2 ? 1 : 0) }; });
     g.decor = buildDecor(g);
     g.brushes = map.brush.map((b, i) => ({ b, i, on: 0 }));
-    const wallStyle = w => { const cx = w.x + w.w / 2, cy = w.y + w.h / 2; return Terrain.nearRoad(map, cx, cy) < 360 || (map.lanes.length < 3 && Math.abs(cy - map.H / 2) < 330) ? 1 : 0; };
-    g.walls = map.walls.filter(w => !w.big).map(w => { const style = wallStyle(w); return { w, spr: Terrain.cliff(w, style, w.x + w.w / 2 > map.W / 2 ? 1 : 0) }; });
     g.houses = g.decor.filter(d => d.kind === 2);
     // Light that never changes is painted into the ground once.
-    const lampCol = g.villain ? '#ff9a6a' : '#ffcf8a', pools = [];
+    const lampCol = g.villain ? '#ffc0a0' : '#ffe0a8', pools = [];
     for (const d of g.decor) if (d.light) pools.push({ x: d.x, y: d.y, r: d.light.r, col: d.light.col, a: d.light.a });
     for (const a of map.arenas || []) pools.push({ x: a.x, y: a.y, r: (a.r || 240) * 1.2, col: Art.BOSS_COL[a.kind] || '#ffb04a', a: .05 });
-    for (const t of s.towers) pools.push({ x: t.x, y: t.y, r: t.sub === 'core' ? 340 : 240, col: t.team ? '#c8243a' : '#e6c98e', a: .15 });
-    if (map.center) pools.push({ x: map.center.x, y: map.center.y, r: 460, col: lampCol, a: .05 });
+    for (const t of s.towers) pools.push({ x: t.x, y: t.y, r: t.sub === 'core' ? 340 : 260, col: t.team ? '#d83048' : '#f0d8a0', a: .17 });
+    if (map.center) pools.push({ x: map.center.x, y: map.center.y, r: 460, col: lampCol, a: .12 });
     for (const f of map.fountains || []) pools.push({ x: f.x, y: f.y, r: 420, col: f.x > Sim.W / 2 ? '#ff4a5c' : '#ffdf9e', a: .12 });
     const mirrors = g.decor.filter(d => d.kind === 2 || d.kind === 3).map(d => ({ x: d.x, y: d.y, spr: d.spr, a: d.kind === 3 ? .9 : .5 }));
     for (const o of g.walls) if (o.spr.L) mirrors.push({ x: o.w.x + o.w.w / 2, y: o.w.y + o.w.h, a: .8, spr: { c: o.spr.c, L: o.spr.L, w: o.spr.w, h: o.spr.h, ax: o.spr.w / 2, ay: o.spr.h - o.spr.P - 8 } });
@@ -92,7 +92,7 @@ const { initWorld, render, introTick, outroStart, outroTick, drawCoin, visOf, wo
     for (const b of s.bosses || []) worldSprite({ kind: 'monster', team: 2, boss: true, bossKind: b.kind, r: b.r || 60 });
     for (const t of s.towers) { const a = artOf(t); Terrain.towerCoin(t.team, a.R); Terrain.towerCrown(t.team, t.sub === 'core'); }
     // Every building's depth sweep is cut now too; none of it should ever land on a playing frame.
-    for (const d of g.decor) if (d.kind >= 2 && d.kind !== 5) { Terrain.backOf(d.spr, d.kind === 3 ? '#04060a' : '#060910', '#222c3c', (d.kind === 3 ? 26 : 16) * .9); Terrain.litOf(d.spr); }
+    for (const d of g.decor) if (d.kind >= 2 && d.kind !== 5) { if (d.kind === 3) Terrain.backOf(d.spr, '#04060a', '#222c3c', 26 * .9); Terrain.litOf(d.spr); }
     for (const o of g.walls) Terrain.litOf(o.spr);
   }
   function buildDecor(g) {
@@ -102,7 +102,7 @@ const { initWorld, render, introTick, outroStart, outroTick, drawCoin, visOf, wo
     // The built-up corners behind each capital: rows of real towers, tallest at the back, trees along their feet.
     for (const w of map.walls) if (w.big) { for (let y = w.y + 50; y < w.y + w.h - 10; y += 180 + r() * 50) for (let x = w.x + 70; x < w.x + w.w - 30; x += 190 + r() * 60) { if (inRiver(x, y, Terrain.HALF + 80)) continue; const spr = Terrain.house(Math.floor(r() * 4) * 2 + 1 + (y < w.y + w.h / 2 ? 2 : 0), x > W / 2 ? 1 : 0); out.push({ x, y, spr, kind: 2, fade: true, half: 62, tall: spr.h * .9, al: 1, ph: r() * 6, smk: r() * 2 }); } }
     // The jungle's own trees grow on the terraces, which are solid ground in every sense.
-    for (const w of map.walls) if (!w.big && Terrain.nearRoad(map, w.x + w.w / 2, w.y + w.h / 2) >= 360 && (map.lanes.length >= 3 || Math.abs(w.y + w.h / 2 - H / 2) >= 330)) { const n = Math.max(1, Math.round(w.w * w.h / 16000)); for (let i = 0; i < n; i++) tree(w.x + 14 + r() * Math.max(1, w.w - 28), w.y + w.h - 6 - r() * Math.min(w.h * .4, 40)); }
+    for (const o of g.walls) if (o.spr.style === 0) { const w = o.w, n = Math.max(1, Math.round(w.w * w.h / 34000)); for (let i = 0; i < n; i++) tree(w.x + 14 + r() * Math.max(1, w.w - 28), w.y + w.h - 6 - r() * Math.min(w.h * .4, 40)); }
     for (let x = 240; x < W - 240; x += 200 + r() * 160) { if (inRiver(x, H - 30, Terrain.HALF + 80)) continue; if (r() > .4) { const spr = Terrain.house(Math.floor(r() * 2) * 2, x > W / 2 ? 1 : 0); out.push({ x, y: H - 24 - r() * 14, spr, kind: 2, fade: true, half: 62, tall: spr.h * .9, al: 1, ph: r() * 6, smk: r() * 2 }); } else tree(x, H - 14 - r() * 26); }
     for (let y = 300; y < H - 300; y += 170 + r() * 120) { tree(14 + r() * 16, y); tree(W - 14 - r() * 16, y); }
     // The skyline: deco towers along the north edge, behind everything you can walk on.
@@ -112,34 +112,18 @@ const { initWorld, render, introTick, outroStart, outroTick, drawCoin, visOf, wo
       out.push({ x, y, spr, kind: 2, half: 60, tall: spr.h * .9, al: 1, ph: r() * 6, smk: r() * 2, sky: 1 });
     }
     // Street lights on the road shoulders.
-    const lan = Terrain.lantern(g.villain), lanCol = g.villain ? '#ff9a6a' : '#ffcf8a';
+    const lan = Terrain.lantern(g.villain), lanCol = g.villain ? '#ffc0a0' : '#ffe0a8';
     const isClear = (x, y, m) => !map.walls.some(w => x > w.x - m && x < w.x + w.w + m && y > w.y - m && y < w.y + w.h + m);
     for (const lane of map.lanes) {
       const pts = Terrain.spline(lane, 16); let run = 120, side = 1;
       for (let i = 1; i < pts.length; i++) {
-        const [ax, ay] = pts[i - 1], [bx, by] = pts[i], d = Math.hypot(bx - ax, (by - ay) * TILT); run += d; if (run < 540) continue; run = 0; side = -side;
+        const [ax, ay] = pts[i - 1], [bx, by] = pts[i], d = Math.hypot(bx - ax, (by - ay) * TILT); run += d; if (run < 400) continue; run = 0; side = -side;
         const dx = bx - ax, dy = (by - ay) * TILT, l = Math.hypot(dx, dy) || 1, nx = -dy / l * side, ny = dx / l * side, x = bx + nx * 150, y = by + ny * 150 / TILT;
         if (inRiver(x, y, Terrain.HALF + 60) || s.towers.some(t => Math.hypot(t.x - x, t.y - y) < 150) || !isClear(x, y, 34)) continue;
-        out.push({ x, y, spr: lan, kind: 0, fade: true, half: 16, tall: lan.h * .95, al: 1, light: { r: 190, col: lanCol, a: .34 }, ph: r() * 6 });
+        out.push({ x, y, spr: lan, kind: 0, fade: true, half: 16, tall: lan.h * .95, al: 1, light: { r: 240, col: lanCol, a: .36 }, ph: r() * 6 });
       }
     }
-    // Town buildings stand clear of the roads, river, plazas and open squares.
-    const roadPts = map.lanes.flatMap(l => Terrain.spline(l, 8)), sites = s.sites || [], placed = [];
-    const clear = (x, y) => {
-      if (x < 70 || x > W - 70 || y < 150 || y > H - 150) return false;
-      if (inRiver(x, y, Terrain.HALF + 110) || plazas.some(p => Math.hypot(x - p.x, y - p.y) < p.r + 60)) return false;
-      if (roadPts.some(([rx, ry]) => Math.hypot(x - rx, (y - ry) * TILT) < 190) || !isClear(x, y, 70)) return false;
-      if (s.towers.some(t => Math.hypot(t.x - x, t.y - y) < 190) || map.brush.some(b => Math.hypot(b.x - x, b.y - y) < b.r + 110)) return false;
-      if ((s.camps || []).some(c => Math.hypot(c.x - x, c.y - y) < 200) || sites.some(c => Math.hypot(c.x - x, c.y - y) < 235)) return false;
-      return !placed.some(p => Math.hypot(p.x - x, (p.y - y) * TILT) < 300);
-    };
-    const house = (x, y) => {
-      if (!clear(x, y)) return false;
-      const spr = Terrain.house(Math.floor(r() * 4) * 2, x > W / 2 ? 1 : 0); placed.push({ x, y });
-      out.push({ x, y, spr, kind: 2, fade: true, half: 54, tall: spr.h * .9, al: 1, ph: r() * 6, smk: r() * 2 });
-      return true;
-    };
-    for (const site of sites) { let n = 0; const a0 = r() * TAU; for (let i = 0; i < 16 && n < 2; i++) { const a = a0 + i * TAU / 16, d = 250 + r() * 70; if (house(site.x + Math.cos(a) * d, site.y + Math.sin(a) * d)) n++; } }
+    const sites = s.sites || [];
     // Headquarters stand on the impassable ground at both ends of each base, so one is in view from the spawn.
     for (const f of map.fountains || []) {
       const team = f.x > W / 2 ? 1 : 0, spr = Terrain.hq(team), x = team ? W - 105 : 105;
@@ -281,27 +265,13 @@ const { initWorld, render, introTick, outroStart, outroTick, drawCoin, visOf, wo
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0); ctx.globalAlpha = 1; ctx.globalCompositeOperation = 'source-over';
   }
 
-  // The wet city in the road. A tiny baked map of its lights, swimming a little against the ground as the camera moves, cut to the
-  // wet surfaces and laid over the ground in one small upscaled blit. Live lights go in here too, so a coin carries its reflection.
-  let rfC = null, rfG = null, rfK = 0;
+  // The wet city is baked into the ground. What moves on it gets a small streak of its own light, only where the surface is actually wet.
   function reflection() {
-    const gd = G.ground; if (quality < 2 || !gd.refl) return;
-    const off = 1 - G.black * .85, k = 4, w = Math.ceil(VW / k) + 1, h = Math.ceil(VH / k) + 1;
-    if (!rfC || rfK !== k || rfC.width !== w || rfC.height !== h) { rfC = Art.cv(w, h); rfG = rfC.getContext('2d'); rfK = k; }
-    // Rebuilt on alternate frames: it is soft and wet, and half the frames then skip this canvas pass entirely.
-    if ((rfT = !rfT)) reflBuild(gd, w, h, k);
-    ctx.globalCompositeOperation = 'lighter'; ctx.globalAlpha = off * (.42 + G.rain * .18); ctx.imageSmoothingEnabled = true; ctx.drawImage(rfC, 0, 0, w * k, h * k); ctx.globalCompositeOperation = 'source-over'; ctx.globalAlpha = 1;
-  }
-  let rfT = false;
-  function reflBuild(gd, w, h, k) {
-    const g = rfG, q = Z / (gd.MS * k), ox = (VW / 2 + shX - G.cam.x * Z) / k, oy = (VH / 2 + shY - G.cam.y * TILT * Z) / k, cx = VW / 2 / k, cy = VH / 2 / k, zm = 1.06;
-    g.globalCompositeOperation = 'source-over'; g.globalAlpha = 1; g.clearRect(0, 0, w, h); g.imageSmoothingEnabled = true;
-    g.drawImage(gd.refl, cx + (ox - cx) * zm, cy + (oy - cy) * zm, gd.refl.width * q * zm, gd.refl.height * q * zm);
-    const zk = Z / k;
-    g.globalCompositeOperation = 'lighter';
-    for (let i = 0; i < VIS_CHAMPS.length; i += 3) { const c = VIS_CHAMPS[i + 2], R = 46 * zk; g.globalAlpha = .8; g.drawImage(Terrain.pool(c === G.me ? '#ffe9b0' : c.team === G.me.team ? '#7cc0ff' : '#ff6650'), sx(VIS_CHAMPS[i]) / k - R, sy(VIS_CHAMPS[i + 1]) / k - R * .22, R * 2, R * 3.4); }
-    for (const t of G.s.towers) { if (!isUp(t)) continue; const X = sx(t.x) / k, Y = sy(t.y) / k; if (X < -40 || X > w + 40 || Y < -60 || Y > h + 40) continue; const R = (t.sub === 'core' ? 110 : 76) * zk; g.globalAlpha = .75; g.drawImage(Terrain.pool(t.team ? '#ff4a5c' : '#ffe2a0'), X - R, Y - R * .2, R * 2, R * 5); }
-    g.globalAlpha = 1; g.globalCompositeOperation = 'destination-in'; g.drawImage(gd.mask, ox, oy, gd.mask.width * q, gd.mask.height * q);
+    const gd = G.ground; if (quality < 1 || !gd.wet) return;
+    ctx.globalCompositeOperation = 'lighter';
+    for (let i = 0; i < VIS_CHAMPS.length; i += 3) { const px = VIS_CHAMPS[i], py = VIS_CHAMPS[i + 1], c = VIS_CHAMPS[i + 2]; if (!gd.wet(px, py)) continue; const R = 40 * Z; ctx.globalAlpha = .3; ctx.drawImage(Terrain.pool(c === G.me ? '#ffe9b0' : c.team === G.me.team ? '#7cc0ff' : '#ff6650'), sx(px) - R, sy(py) - R * .1, R * 2, R * 2.6); }
+    for (const t of G.s.towers) { if (!isUp(t) || !onScreen(t.x, t.y, 120)) continue; const R = (t.sub === 'core' ? 96 : 66) * Z; ctx.globalAlpha = .26; ctx.drawImage(Terrain.pool(t.team ? '#ff4a5c' : '#ffe2a0'), sx(t.x) - R, sy(t.y) - R * .1, R * 2, R * 3.2); }
+    ctx.globalAlpha = 1; ctx.globalCompositeOperation = 'source-over';
   }
 
   // ---------- mood ----------
@@ -560,7 +530,7 @@ const { initWorld, render, introTick, outroStart, outroTick, drawCoin, visOf, wo
   }
   // How far anything tall leans away from the centre of the screen. This is the parallax: a strip of shear per frame.
   const leanAt = X => (X / VW - .5) * .9;
-  const hqOrLean = (o, lean) => quality >= 2 && (o.kind === 3 || Math.abs(lean) > .07);
+  const hqOrLean = o => quality >= 2 && o.kind === 3;
   function drawDecor(o, me, dt) {
     const X = sx(o.x), Y = sy(o.y), spr = o.spr;
     if (o.fade) {
@@ -583,7 +553,7 @@ const { initWorld, render, introTick, outroStart, outroTick, drawCoin, visOf, wo
       ctx.setTransform(dpr * Z, 0, dpr * Z * shear, dpr * Z, dpr * X, dpr * Y);
       if (o.kind >= 2) {
         // Extrusion only away from screen centre, where a side wall can actually be seen.
-        if (hqOrLean(o, lean)) {
+        if (hqOrLean(o)) {
         // Extrusion: the silhouette swept up in one image, sheared toward the centre of the screen. Lit from the side it faces.
         const hq = o.kind === 3, d = hq ? 26 : 16, up = d * .9, back = Terrain.backOf(spr, hq ? '#04060a' : '#060910', '#222c3c', up), bx = -lean * d * 2.4;
         // The side wall opens toward the top: a touch of offset at the foot, the rest as shear up the full height.
@@ -603,7 +573,7 @@ const { initWorld, render, introTick, outroStart, outroTick, drawCoin, visOf, wo
       } else ctx.drawImage(spr.c, -spr.ax, -spr.ay, spr.w, spr.h);
       // The capitals throw light into the sky: gold searchlights from the sunburst, a poison flare off the reactor.
       if (o.kind === 3 && quality >= 2 && G.black < .5) {
-        const vil = o.x > Sim.W / 2, bm = Terrain.beam(vil ? '#b6ec3a' : '#ffe6b8'), tip = spr.ay - (vil ? 44 : 30); ctx.globalCompositeOperation = 'lighter'; ctx.translate(0, -tip);
+        const vil = o.x > Sim.W / 2, bm = Terrain.beam(vil ? '#b6ec3a' : '#ffe6b8'), tip = spr.ay - (vil ? 32 : 22); ctx.globalCompositeOperation = 'lighter'; ctx.translate(0, -tip);
         for (let i = 0; i < 2; i++) { const a = Math.PI + Math.sin(G.t * (vil ? .9 : .42) + i * 2.4 + o.ph) * (vil ? .14 : .42) + (i ? .24 : -.24); ctx.save(); ctx.rotate(a); ctx.globalAlpha = (o.al < .995 ? o.al : 1) * .22 * (1 - G.black); ctx.drawImage(bm, -60, 0, 120, 560); ctx.restore(); }
         ctx.globalCompositeOperation = 'source-over';
       }
