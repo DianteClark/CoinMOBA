@@ -169,7 +169,8 @@ const { Ctl, applyInput, aimDir } = (() => {
       }
     }
     const zone = Hud.left() ? p.x > VW * .45 : p.x < VW * .55;
-    if (zone && !Ctl.stick) { Ctl.stick = { id: e.pointerId, sx: p.x, sy: p.y, x: p.x, y: p.y }; Ctl.p.set(e.pointerId, { role: 'stick' }); }
+    // A new thumb on the movement side always takes over: iOS can lose the lift of an old touch near the screen edge, which left the stick stuck.
+    if (zone) { if (Ctl.stick) Ctl.p.delete(Ctl.stick.id); Ctl.stick = { id: e.pointerId, sx: p.x, sy: p.y, x: p.x, y: p.y }; Ctl.p.set(e.pointerId, { role: 'stick' }); }
   });
 
   view.addEventListener('pointermove', e => {
@@ -229,6 +230,16 @@ const { Ctl, applyInput, aimDir } = (() => {
   }
   view.addEventListener('pointerup', e => endPointer(e, false));
   view.addEventListener('pointercancel', e => endPointer(e, true));
+  view.addEventListener('lostpointercapture', e => endPointer(e, true));
+  // iOS sometimes never reports a finger leaving near the edge of the screen. The touch list is the truth.
+  const dropStaleStick = e => {
+    const st = Ctl.stick; if (!st || !G) return;
+    let near = false; for (const t of e.touches) { const p = Ctl.pt(t); if (Math.hypot(p.x - st.x, p.y - st.y) < 130) near = true; }
+    if (!near) endPointer({ pointerId: st.id }, true);
+  };
+  document.addEventListener('touchend', dropStaleStick, { passive: true });
+  document.addEventListener('touchcancel', dropStaleStick, { passive: true });
+  document.addEventListener('visibilitychange', () => { if (document.hidden && G) { for (const id of [...Ctl.p.keys()]) endPointer({ pointerId: id }, true); } });
 
   function applyInput() {
     const me = G.me, st = Ctl.stick;
@@ -269,7 +280,8 @@ const Kin = (() => {
     s.x = isX(el);
     return s;
   }
-  const limit = s => s.x ? s.el.scrollWidth - s.el.clientWidth : s.el.scrollHeight - s.el.clientHeight;
+  // Held steady during a drag or fling: the rubber-band transform can inflate scrollHeight, and a limit that moves makes the list jerk at its end.
+  const limit = s => s.lock > 0 ? s.lock : (s.x ? s.el.scrollWidth - s.el.clientWidth : s.el.scrollHeight - s.el.clientHeight);
   const read = s => s.x ? s.el.scrollLeft : s.el.scrollTop;
   const size = s => s.x ? s.el.clientWidth : s.el.clientHeight;
   // Soft resistance past the ends: the further you pull, the less it follows.
@@ -303,7 +315,7 @@ const Kin = (() => {
     if (!quiet) paintBar(s);
   }
   function wake(s) { active.add(s); if (!raf) { last = performance.now(); raf = requestAnimationFrame(tick); } }
-  function settle(s, keepBar) { s.mode = 'idle'; s.v = 0; if (s.over) { s.over = 0; s.el.classList.remove('kov'); s.el.style.removeProperty('--ko'); } if (!keepBar) active.delete(s); }
+  function settle(s, keepBar) { s.lock = 0; s.mode = 'idle'; s.v = 0; if (s.over) { s.over = 0; s.el.classList.remove('kov'); s.el.style.removeProperty('--ko'); } if (!keepBar) active.delete(s); }
   function tick(now) {
     raf = 0;
     const dt = Math.min(34, now - last || 16); last = now;
@@ -350,7 +362,7 @@ const Kin = (() => {
       if (Math.hypot(dx, dy) < SLOP) return;
       const wantX = Math.abs(dx) > Math.abs(dy), el = track.chain.find(c => isX(c) === wantX && limit(st(c)) > 1);
       if (!el) { track = null; return; }
-      const s = st(el); s.pos = s.raw = read(s); s.v = 0; s.mode = 'drag'; track.owner = s; track.p = p; swallow = true;
+      const s = st(el); s.lock = 0; s.lock = limit(s); s.pos = s.raw = read(s); s.v = 0; s.mode = 'drag'; track.owner = s; track.p = p; swallow = true;
       if (track.btn) track.btn.classList.remove('down');
       active.add(s);
       track.samples = [[e.timeStamp, s.pos]];

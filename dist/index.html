@@ -35,6 +35,7 @@ h1,h2,h3,p{margin:0;font-weight:inherit}
 .scroll{overflow-x:hidden;overflow-y:auto;touch-action:none;scrollbar-width:none;overscroll-behavior:contain}
 .scroll::-webkit-scrollbar{display:none}
 .scroll.sx{overflow-x:auto;overflow-y:hidden}
+@media (pointer:coarse){.scroll,.scroll.sx{overflow:hidden}}
 .scroll.kov>*{transform:translate3d(0,var(--ko),0)}.scroll.sx.kov>*{transform:translate3d(var(--ko),0,0)}
 .kbar{position:absolute!important;z-index:6;display:block;width:3px;height:3px;background:var(--acc);opacity:0;pointer-events:none;transition:opacity .28s;will-change:transform}
 .kbar.on{opacity:.75;transition:opacity .08s}
@@ -1039,7 +1040,7 @@ button.down{transform:translateY(1px) scale(.955);filter:brightness(1.28);transi
 .arslot[aria-pressed=true]{--line:var(--acc);--fill:var(--a)}
 .arslot .plus{flex:none;width:38px;height:38px;background:linear-gradient(var(--mut),var(--mut)) center/16px 2px no-repeat,linear-gradient(var(--mut),var(--mut)) center/2px 16px no-repeat}
 .arslot.empty b{color:var(--mut)}.arslot.buy b{color:var(--gold)}.arslot.buy.no{opacity:.55}
-.ared{--cut:12px;min-height:0;display:flex;padding:2px}.arscr{flex:1;min-width:0;min-height:0;padding:7px 11px;display:flex;flex-direction:column;gap:9px}
+.ared{--cut:12px;min-height:0;display:flex;padding:2px}.arscr{flex:1;min-width:0;min-height:0;padding:7px 11px 14px;display:flex;flex-direction:column;gap:9px}.arscr>*{flex:none}
 .arrow{flex:none;min-width:0;display:flex;flex-direction:column;gap:4px}
 .arrow h4{margin:0;font-family:var(--disp);font-size:16px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;line-height:1.05;font-synthesis:none;color:var(--acc)}
 .arrow h4 small{font-family:var(--ui);font-size:13px;font-weight:500;letter-spacing:0;text-transform:none;color:var(--txt);margin-left:8px}
@@ -2648,7 +2649,8 @@ const Sim = (() => {
   // The full cost of a step: from an owned ancestor if there is one, otherwise the whole chain.
   function itemPrice(c, id) {
     const it = ITEM_BY[id]; if (!it) return null;
-    if (c.items.includes(id)) return null;
+    // One of each item: you can't own it twice, or buy a piece you've already built into something bigger.
+    if (c.items.includes(id) || c.items.some(x => x && itemPath(x).includes(id))) return null;
     const path = itemPath(id); let own = -1, slot = -1;
     for (let i = path.length - 2; i >= 0 && slot < 0; i--) { const k = c.items.indexOf(path[i]); if (k >= 0) { own = i; slot = k; } }
     if (slot < 0 && !c.items.some(x => !x)) return null;
@@ -12465,7 +12467,8 @@ const { Ctl, applyInput, aimDir } = (() => {
       }
     }
     const zone = Hud.left() ? p.x > VW * .45 : p.x < VW * .55;
-    if (zone && !Ctl.stick) { Ctl.stick = { id: e.pointerId, sx: p.x, sy: p.y, x: p.x, y: p.y }; Ctl.p.set(e.pointerId, { role: 'stick' }); }
+    // A new thumb on the movement side always takes over: iOS can lose the lift of an old touch near the screen edge, which left the stick stuck.
+    if (zone) { if (Ctl.stick) Ctl.p.delete(Ctl.stick.id); Ctl.stick = { id: e.pointerId, sx: p.x, sy: p.y, x: p.x, y: p.y }; Ctl.p.set(e.pointerId, { role: 'stick' }); }
   });
 
   view.addEventListener('pointermove', e => {
@@ -12525,6 +12528,16 @@ const { Ctl, applyInput, aimDir } = (() => {
   }
   view.addEventListener('pointerup', e => endPointer(e, false));
   view.addEventListener('pointercancel', e => endPointer(e, true));
+  view.addEventListener('lostpointercapture', e => endPointer(e, true));
+  // iOS sometimes never reports a finger leaving near the edge of the screen. The touch list is the truth.
+  const dropStaleStick = e => {
+    const st = Ctl.stick; if (!st || !G) return;
+    let near = false; for (const t of e.touches) { const p = Ctl.pt(t); if (Math.hypot(p.x - st.x, p.y - st.y) < 130) near = true; }
+    if (!near) endPointer({ pointerId: st.id }, true);
+  };
+  document.addEventListener('touchend', dropStaleStick, { passive: true });
+  document.addEventListener('touchcancel', dropStaleStick, { passive: true });
+  document.addEventListener('visibilitychange', () => { if (document.hidden && G) { for (const id of [...Ctl.p.keys()]) endPointer({ pointerId: id }, true); } });
 
   function applyInput() {
     const me = G.me, st = Ctl.stick;
@@ -12565,7 +12578,8 @@ const Kin = (() => {
     s.x = isX(el);
     return s;
   }
-  const limit = s => s.x ? s.el.scrollWidth - s.el.clientWidth : s.el.scrollHeight - s.el.clientHeight;
+  // Held steady during a drag or fling: the rubber-band transform can inflate scrollHeight, and a limit that moves makes the list jerk at its end.
+  const limit = s => s.lock > 0 ? s.lock : (s.x ? s.el.scrollWidth - s.el.clientWidth : s.el.scrollHeight - s.el.clientHeight);
   const read = s => s.x ? s.el.scrollLeft : s.el.scrollTop;
   const size = s => s.x ? s.el.clientWidth : s.el.clientHeight;
   // Soft resistance past the ends: the further you pull, the less it follows.
@@ -12599,7 +12613,7 @@ const Kin = (() => {
     if (!quiet) paintBar(s);
   }
   function wake(s) { active.add(s); if (!raf) { last = performance.now(); raf = requestAnimationFrame(tick); } }
-  function settle(s, keepBar) { s.mode = 'idle'; s.v = 0; if (s.over) { s.over = 0; s.el.classList.remove('kov'); s.el.style.removeProperty('--ko'); } if (!keepBar) active.delete(s); }
+  function settle(s, keepBar) { s.lock = 0; s.mode = 'idle'; s.v = 0; if (s.over) { s.over = 0; s.el.classList.remove('kov'); s.el.style.removeProperty('--ko'); } if (!keepBar) active.delete(s); }
   function tick(now) {
     raf = 0;
     const dt = Math.min(34, now - last || 16); last = now;
@@ -12646,7 +12660,7 @@ const Kin = (() => {
       if (Math.hypot(dx, dy) < SLOP) return;
       const wantX = Math.abs(dx) > Math.abs(dy), el = track.chain.find(c => isX(c) === wantX && limit(st(c)) > 1);
       if (!el) { track = null; return; }
-      const s = st(el); s.pos = s.raw = read(s); s.v = 0; s.mode = 'drag'; track.owner = s; track.p = p; swallow = true;
+      const s = st(el); s.lock = 0; s.lock = limit(s); s.pos = s.raw = read(s); s.v = 0; s.mode = 'drag'; track.owner = s; track.p = p; swallow = true;
       if (track.btn) track.btn.classList.remove('down');
       active.add(s);
       track.samples = [[e.timeStamp, s.pos]];
@@ -15722,7 +15736,7 @@ const { hud, initHud, hudDraw, uiEvent } = (() => {
       wirePath(foot);
       return;
     }
-    const cost = costOf(me, it), own = slots.includes(it.id), can = canBuy(me, it), lead = pathOf(it.id).slice(0, -1).some(id => slots.includes(id)) ? 'Upgrade' : 'Buy';
+    const cost = costOf(me, it), own = !isCons(it) && slots.some(x => x && pathOf(x).includes(it.id)), can = canBuy(me, it), lead = pathOf(it.id).slice(0, -1).some(id => slots.includes(id)) ? 'Upgrade' : 'Buy';
     foot.innerHTML = info + `<div class="shact"><button class="go${can ? ' hot' : ' off'}" id="shAct">${own ? 'Owned' : cost === null ? 'No slot free' : `${lead}<span class="c"><i class="gc"></i>${cost}</span>`}</button></div>`;
     $('shAct').onpointerdown = () => { if (doBuy(it.id)) H.shopSel = null; };
     wirePath(foot);

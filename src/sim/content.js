@@ -935,7 +935,8 @@
   // The full cost of a step: from an owned ancestor if there is one, otherwise the whole chain.
   function itemPrice(c, id) {
     const it = ITEM_BY[id]; if (!it) return null;
-    if (c.items.includes(id)) return null;
+    // One of each item: you can't own it twice, or buy a piece you've already built into something bigger.
+    if (c.items.includes(id) || c.items.some(x => x && itemPath(x).includes(id))) return null;
     const path = itemPath(id); let own = -1, slot = -1;
     for (let i = path.length - 2; i >= 0 && slot < 0; i--) { const k = c.items.indexOf(path[i]); if (k >= 0) { own = i; slot = k; } }
     if (slot < 0 && !c.items.some(x => !x)) return null;

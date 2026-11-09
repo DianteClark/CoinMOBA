@@ -1535,7 +1535,7 @@ const { hud, initHud, hudDraw, uiEvent } = (() => {
       wirePath(foot);
       return;
     }
-    const cost = costOf(me, it), own = slots.includes(it.id), can = canBuy(me, it), lead = pathOf(it.id).slice(0, -1).some(id => slots.includes(id)) ? 'Upgrade' : 'Buy';
+    const cost = costOf(me, it), own = !isCons(it) && slots.some(x => x && pathOf(x).includes(it.id)), can = canBuy(me, it), lead = pathOf(it.id).slice(0, -1).some(id => slots.includes(id)) ? 'Upgrade' : 'Buy';
     foot.innerHTML = info + `<div class="shact"><button class="go${can ? ' hot' : ' off'}" id="shAct">${own ? 'Owned' : cost === null ? 'No slot free' : `${lead}<span class="c"><i class="gc"></i>${cost}</span>`}</button></div>`;
     $('shAct').onpointerdown = () => { if (doBuy(it.id)) H.shopSel = null; };
     wirePath(foot);
