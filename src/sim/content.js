@@ -23,7 +23,7 @@
   const shield = (s, t, amt, dur) => { t.shieldHp = Math.max(t.shieldHp > 0 && t.shieldT > 0 ? t.shieldHp : 0, 0) + amt; t.shieldT = Math.max(t.shieldT || 0, dur); s.ev.push({ e: 'shield', u: t.id, a: Math.round(amt) }); };
   const haste = (t, a, d) => { t.hasteA = Math.max(t.hasteT > 0 ? t.hasteA : 0, a); t.hasteT = Math.max(t.hasteT || 0, d); };
   const root = (s, t, d) => { if (t.kind === 'tower' || t.boss) return; t.rootT = Math.max(t.rootT || 0, d); if (t.dash && !t.dash.unstop && !t.dash.forced) t.dash = null; if (t.charge) t.charge = null; s.ev.push({ e: 'root', u: t.id }); };
-  const knock = (s, t, d) => { if (t.kind === 'tower' || t.boss) return; stun(s, t, d); t.knockT = t.knockMax = Math.max(t.knockT || 0, d); s.ev.push({ e: 'knock', u: t.id }); };
+  const knock = (s, t, d) => { if (t.kind === 'tower' || t.boss) return; if (t.champ === 'gravel' && t.hp > t.maxHp * .4) { stun(s, t, d * .5); return; } stun(s, t, d); t.knockT = t.knockMax = Math.max(t.knockT || 0, d); s.ev.push({ e: 'knock', u: t.id }); };
   const poly = (s, t, d) => { if (t.kind === 'tower' || t.boss) return; stun(s, t, d); t.polyT = Math.max(t.polyT || 0, d); s.ev.push({ e: 'poly', u: t.id }); };
   const poison = (s, c, t, dps, d) => { if (t.kind === 'tower') return; t.poisonT = Math.max(t.poisonT || 0, d); t.poisonDps = Math.max(t.poisonT > 0 ? t.poisonDps || 0 : 0, dps); t.poisonBy = c; t.poisonAbil = curAbil; };
   const bleed = (s, c, t, dps, d) => { if (t.kind === 'tower') return; t.bleedDps = t.bleedT > 0 ? Math.max(t.bleedDps, dps) : dps; t.bleedT = Math.max(t.bleedT || 0, d); t.bleedBy = c; t.bleedAbil = curAbil; };
@@ -55,7 +55,7 @@
     vesper: {
       name: 'Vesper', role: 'Marksman', blurb: 'Charge your shot while they try to read it.',
       sight: 950, hp: 540, hpG: 72, dmg: 60, dmgG: 7, armor: 16, armG: 3, range: 360, as: 1.0, ms: 305, pref: 325, fit: { top: 1, jungle: 0, bottom: 3, support: 0 },
-      passive: { name: 'Steady Hand', d: 'Stand still for a moment and your next basic attack hits 30% harder.' },
+      passive: { name: 'Steady Hand', d: 'Stand still for a moment and your next basic attack hits 30% harder. Long Shot deals 25% more to targets over 480 away.' },
       builds: [
         { id: 'marksman', name: 'Marksman', tag: 'Long range', d: 'Long Shot reaches farther and full charges hit far harder, but Smoke Step comes back slowly.', mods: { 0: { range_add: 135, dmgF_add: 60, d: 'Hold to charge. Reaches very far; a full charge pierces and hits hard.' }, 1: { cd_add: 3 } } },
         { id: 'skirmisher', name: 'Skirmisher', tag: 'Kiting', d: 'Hit a champion with your empowered attack to refund most of Smoke Step. Long Shot charges fast but stays short.', stats: { as: 1.12 }, mods: { 0: { charge: .55, range_add: -135, dmgF_add: -50, d: 'Quick charge, shorter reach.' }, 1: { cd_add: -2, d: 'Dash. Your next attack hits harder; landing it on a champion refunds most of the cooldown.' } } },
@@ -69,9 +69,9 @@
       kit: [
         { name: 'Long Shot', d: 'Hold to charge. A full charge pierces.', fx: 'snipe', cd: 6, range: 600, minRange: 375, shape: 'line', w: 34, charge: 1.1, dmg: 70, dmgF: 120,
           cast(s, c, a, A) {
-            const f = c.charge ? clamp(c.charge.t / A.charge, 0, 1) : 0; c.charge = null;
+            const f = c.charge ? clamp(c.charge.t / A.charge, 0, 1) : 0, ox = c.x, oy = c.y; c.charge = null;
             fire(s, c, a, { speed: 1600, range: A.minRange + (A.range - A.minRange) * f, w: 28 + 8 * f, fx: f >= 1 ? 'snipeFull' : 'snipe', pierce: f >= 1, filter: 'units',
-              hit(s, c, t, p) { hurt(s, c, t, (A.dmg + A.dmgF * f) * pow(c) * (c.f.executioner && t.hp < t.maxHp * .5 ? 1.3 : 1), { skill: 1 }); if (t.kind === 'champ') { skillHit(c, p); if (c.f.spotter) t.revealT = Math.max(t.revealT || 0, 4); } } });
+              hit(s, c, t, p) { hurt(s, c, t, (A.dmg + A.dmgF * f) * pow(c) * (c.f.executioner && t.hp < t.maxHp * .5 ? 1.3 : 1) * (Math.hypot(t.x - ox, t.y - oy) > 480 ? 1.25 : 1), { skill: 1 }); if (t.kind === 'champ') { skillHit(c, p); if (c.f.spotter) t.revealT = Math.max(t.revealT || 0, 4); } } });
           },
         },
         { name: 'Smoke Step', d: 'Dash. Your next basic attack hits harder.', fx: 'dash', cd: 9, range: 200, shape: 'dash', w: 60, pd: [200, 1200],
@@ -98,7 +98,7 @@
     kade: {
       name: 'Kade', role: 'Duelist', blurb: 'Time the parry and the fight is yours.',
       sight: 720, hp: 640, hpG: 95, dmg: 64, dmgG: 8, armor: 28, armG: 4, range: 140, as: .95, ms: 325, pref: 105, melee: true, fit: { top: 3, jungle: 2, bottom: 0, support: 0 },
-      passive: { name: 'Riposte', d: 'After a successful Parry, or Lunging into a champion, your next attack hits 60% harder and slows.' },
+      passive: { name: 'Riposte', d: 'After a successful Parry, or Lunging into a champion, your next attack hits 60% harder and slows. A parried champion takes back 60% of the blow.' },
       builds: [
         { id: 'parrymaster', name: 'Parrymaster', tag: 'Counter', d: 'Parry comes up fast, holds longer and stuns longer. Lunge comes back slower.', mods: { 1: { cd: 7, parry: .7, stunT: 1.25, d: 'Near-constant block. Catching a hit stuns the attacker longer.' }, 0: { cd_add: 2 } } },
         { id: 'blitz', name: 'Blitz', tag: 'Engage', d: 'Lunge reaches farther and refunds on champions. Crash leaps far more often, but Parry is a sliver of a window.', mods: { 0: { range: 255, pd: [255, 1200], pdr: [225, 1200], d: 'Long dash. Hit a champion and you can dash again.' }, 2: { cd: 30, range: 465 }, 1: { parry: .32 } } },
@@ -137,7 +137,7 @@
     ione: {
       name: 'Ione', role: 'Mage', blurb: 'Mark them, then break the mark.',
       sight: 850, hp: 500, hpG: 68, dmg: 50, dmgG: 5, armor: 14, armG: 3, range: 320, as: .85, ms: 300, pref: 290, fit: { top: 1, jungle: 0, bottom: 2, support: 2 },
-      passive: { name: 'Stardust', d: 'Breaking a mark refunds 2 seconds of Sigil Orb and restores a little health.' },
+      passive: { name: 'Stardust', d: 'Breaking a mark refunds 2 seconds of Sigil Orb, restores a little health and throws a new mark onto the nearest enemy.' },
       builds: [
         { id: 'constellation', name: 'Constellation', tag: 'Burst', d: 'Marks linger, Sigil Orb is quick, and Rupture hits marked targets far harder and unmarked ones barely.', mods: { 0: { cd: 3.2, markT: 7 }, 1: { dmg_add: -40, dmgM_add: 75, d: 'Ground blast. Barely hurts unmarked targets; marked targets take massive damage and a stun.' } } },
         { id: 'meteor', name: 'Meteor', tag: 'Zone', d: 'Rupture falls slow and huge. Hit where they must stand.', mods: { 1: { cd_add: 2, r: 150, delay: .9, dmg_add: 75, dmgM_add: 75, d: 'A slow, wide ground blast.' }, 2: { d: 'Three slow meteors walk forward. Each one marks.', delay_add: .35, dmg_add: 40 } } },
@@ -155,7 +155,7 @@
             hurt(s, c, t, A.dmg * pow(c), { skill: 1 }); t.markT = A.markT; s.ev.push({ e: 'mark', u: t.id }); if (t.kind === 'champ') skillHit(c, p); p.left = 0; } }); },
         },
         { name: 'Rupture', d: 'Ground blast. Breaks marks for double damage and a stun.', fx: 'rupture', cd: 6.5, range: 405, shape: 'circle', r: 100, delay: .42, dmg: 85, dmgM: 180,
-          cast(s, c, a, A) { const car = {}; blast(s, c, a.tx, a.ty, A.r, A.delay, (s, z) => { eachEnemy(s, c, z.x, z.y, A.r, t => { const m = t.markT > 0; hurt(s, c, t, (m ? A.dmgM : A.dmg) * pow(c), { skill: 1 }); if (m) { t.markT = 0; if (t.kind === 'champ') { stun(s, t, 1); c.cd[0] = Math.max(0, c.cd[0] - 2); heal(s, c, c, c.maxHp * .03); } s.ev.push({ e: 'boom', x: t.x, y: t.y, r: 60, fx: 'break' }); } if (t.kind === 'champ') skillHit(c, car); }); }, 'rupture'); },
+          cast(s, c, a, A) { const car = {}; blast(s, c, a.tx, a.ty, A.r, A.delay, (s, z) => { eachEnemy(s, c, z.x, z.y, A.r, t => { const m = t.markT > 0; hurt(s, c, t, (m ? A.dmgM : A.dmg) * pow(c), { skill: 1 }); if (m) { t.markT = 0; if (t.kind === 'champ') { stun(s, t, 1); c.cd[0] = Math.max(0, c.cd[0] - 2); heal(s, c, c, c.maxHp * .03); const nx = enemiesIn(s, c, t.x, t.y, 320, true).find(e => e !== t && e.kind === 'champ'); if (nx) { nx.markT = 4; s.ev.push({ e: 'mark', u: nx.id }); } } s.ev.push({ e: 'boom', x: t.x, y: t.y, r: 60, fx: 'break' }); } if (t.kind === 'champ') skillHit(c, car); }); }, 'rupture'); },
         },
         { name: 'Cascade', d: 'Three blasts walk forward. Each one marks.', fx: 'rupture', cd: 46, range: 480, shape: 'line', w: 170, delay: 0, dmg: 115,
           cast(s, c, a, A) { const reach = rayWall(c.x, c.y, a.dx, a.dy, A.range), n = c.f.longcascade ? 4 : 3; for (let i = 0; i < n; i++) { const dl = .32 + i * .28 + A.delay, k = 165 + i * 150, car = {}, last = i === n - 1; if (k > reach + 60) continue; blast(s, c, c.x + a.dx * k, c.y + a.dy * k, 118, dl, (s, z) => { eachEnemy(s, c, z.x, z.y, 118, t => { hurt(s, c, t, A.dmg * pow(c), { skill: 1 }); t.markT = 4; if (t.kind === 'champ') { skillHit(c, car); if (c.f.starsurge && last) stun(s, t, .8); } }); if (c.f.stellar) for (const al of alliesIn(s, c.team, z.x, z.y, 170)) haste(al, .2, 2.5); }, 'rupture'); } },
@@ -165,7 +165,7 @@
     solenne: {
       name: 'Solenne', role: 'Support', blurb: 'Every heal is a shot you can miss.',
       sight: 850, hp: 540, hpG: 76, dmg: 46, dmgG: 5, armor: 20, armG: 3.5, range: 300, as: .85, ms: 310, pref: 270, support: true, fit: { top: 0, jungle: 0, bottom: 1, support: 3 },
-      passive: { name: 'First Light', d: 'Whenever you heal an ally they gain 15% move speed for 2 seconds.' },
+      passive: { name: 'First Light', d: 'Your heals give 15% move speed for 2 seconds, and healing past full health becomes a shield.' },
       builds: [
         { id: 'lifebringer', name: 'Lifebringer', tag: 'Healer', d: 'Mending Ray pierces allies and heals more, and Daybreak heals enormously. Your burn is weak.', stats: { dmg: .9 }, mods: { 0: { heal_add: 40, dmg_add: -20, cd_add: -.5, d: 'Heals every ally it passes. Burns the first enemy, weakly.' }, 2: { heal_add: 120 } } },
         { id: 'protector', name: 'Protector', tag: 'Shields', d: 'Aegis is wider, lasts longer and refreshes faster. Allies inside are shielded.', mods: { 1: { cd: 9.5, r_add: 30, dur: 3.6, d: 'A wide dome that destroys projectiles and shields allies inside.' } } },
@@ -204,7 +204,7 @@
     sable: {
       name: 'Sable', role: 'Assassin', blurb: 'Strike from behind, then be somewhere else.',
       sight: 720, hp: 510, hpG: 74, dmg: 66, dmgG: 8, armor: 18, armG: 3, range: 125, as: 1.05, ms: 335, pref: 92, melee: true, fit: { top: 2, jungle: 3, bottom: 0, support: 0 },
-      passive: { name: 'Nightstalker', d: 'Move 15% faster whenever no enemy can see you.' },
+      passive: { name: 'Nightstalker', d: 'Move 15% faster whenever no enemy can see you. For 1.5 seconds after any blink, Rend always counts as from behind.' },
       builds: [
         { id: 'ghost', name: 'Ghost', tag: 'Evasive', d: 'Echo comes back quickly and waits longer. Snapping back heals you.', mods: { 1: { cd: 6.5, window: 5.5, d: 'Blink away and leave an echo. Snap back within 5 seconds to heal.' } } },
         { id: 'reaper', name: 'Reaper', tag: 'Execute', d: 'Reap comes up far more often, executes harder, and any champion takedown resets it.', mods: { 2: { cd: 26, missing: .5, d: 'Blink behind a champion. Massive execute. A takedown resets it.' } } },
@@ -217,16 +217,16 @@
       ],
       kit: [
         { name: 'Rend', d: 'Short slash. Hits half again as hard from behind.', fx: 'slash', cd: 3.5, range: 180, shape: 'cone', w: 150, dmg: 92, dot: .72,
-          cast(s, c, a, A) { const hitF = (px, py, dx, dy, mul) => { let hit = 0; eachEnemy(s, c, px, py, A.range, t => { const n = norm(t.x - px, t.y - py); if (n.x * dx + n.y * dy < A.dot || !hasLOS(px, py, t.x, t.y)) return; const back = (t.fx || 0) * -n.x + (t.fy || 0) * -n.y < -.25; let d = A.dmg * pow(c) * (back ? 1.5 : 1) * mul; if (c.f.hunter && t.kind === 'monster') d *= 1.8; hurt(s, c, t, d, { skill: 1, crit: back }); if (t.kind === 'champ') hit = 1; }); return hit; };
+          cast(s, c, a, A) { const hitF = (px, py, dx, dy, mul) => { let hit = 0; eachEnemy(s, c, px, py, A.range, t => { const n = norm(t.x - px, t.y - py); if (n.x * dx + n.y * dy < A.dot || !hasLOS(px, py, t.x, t.y)) return; const back = c.behindT > 0 || (t.fx || 0) * -n.x + (t.fy || 0) * -n.y < -.25; let d = A.dmg * pow(c) * (back ? 1.5 : 1) * mul; if (c.f.hunter && t.kind === 'monster') d *= 1.8; hurt(s, c, t, d, { skill: 1, crit: back }); if (t.kind === 'champ') hit = 1; }); return hit; };
             let hit = hitF(c.x, c.y, a.dx, a.dy, 1); if (c.f.twin && c.echo) hit |= hitF(c.echo.x, c.echo.y, a.dx, a.dy, .7);
             if (hit) c.stats.skillHits++; },
         },
         { name: 'Echo', d: 'Blink away and leave an echo. Cast again to snap back.', fx: 'blink', cd: 10, range: 240, shape: 'dash', w: 60, over: true, recastInstant: true, armsRecast: true, window: 3.5,
-          cast(s, c, a, A) { c.echo = { x: c.x, y: c.y }; const f = nearestFree(s.map, a.tx, a.ty); s.ev.push({ e: 'blink', x: c.x, y: c.y }); c.x = f.x; c.y = f.y; c.recast[1] = A.window; s.ev.push({ e: 'blink', x: c.x, y: c.y }); },
-          recast(s, c, a, A) { if (!c.echo) return; s.ev.push({ e: 'blink', x: c.x, y: c.y }); c.x = c.echo.x; c.y = c.echo.y; c.echo = null; s.ev.push({ e: 'blink', x: c.x, y: c.y }); if (c.f.ghost) heal(s, c, c, c.maxHp * .1); if (c.f.phantom) for (const t of enemiesIn(s, c, c.x, c.y, 150)) if (t.kind === 'champ') stun(s, t, .6); },
+          cast(s, c, a, A) { c.behindT = 1.5; c.echo = { x: c.x, y: c.y }; const f = nearestFree(s.map, a.tx, a.ty); s.ev.push({ e: 'blink', x: c.x, y: c.y }); c.x = f.x; c.y = f.y; c.recast[1] = A.window; s.ev.push({ e: 'blink', x: c.x, y: c.y }); },
+          recast(s, c, a, A) { if (!c.echo) return; c.behindT = 1.5; s.ev.push({ e: 'blink', x: c.x, y: c.y }); c.x = c.echo.x; c.y = c.echo.y; c.echo = null; s.ev.push({ e: 'blink', x: c.x, y: c.y }); if (c.f.ghost) heal(s, c, c, c.maxHp * .1); if (c.f.phantom) for (const t of enemiesIn(s, c, c.x, c.y, 150)) if (t.kind === 'champ') stun(s, t, .6); },
         },
         { name: 'Reap', d: 'Blink behind a champion. Execute damage. A kill resets it.', fx: 'blink', cd: 40, range: 360, shape: 'circle', r: 90, over: true, target: true, dmg: 125, missing: .35,
-          cast(s, c, a, A) { const t = nearChamp(s, c, a.tx, a.ty, 180); if (!t || dist(c, t) > A.range + 45) return false; const n = { x: t.fx || 1, y: t.fy || 0 }; s.ev.push({ e: 'blink', x: c.x, y: c.y }); const f = nearestFree(s.map, t.x - n.x * 90, t.y - n.y * 90); c.x = f.x; c.y = f.y; c.fx = n.x; c.fy = n.y; c.reap = { id: t.id, t: 2 }; hurt(s, c, t, (A.dmg * pow(c)) + (t.maxHp - t.hp) * A.missing, { skill: 1, crit: 1 }); c.stats.skillHits++; if (c.f.deathmark) { t.markedBy = c.id; t.dmarkT = 4; } s.ev.push({ e: 'blink', x: c.x, y: c.y }); },
+          cast(s, c, a, A) { const t = nearChamp(s, c, a.tx, a.ty, 180); if (!t || dist(c, t) > A.range + 45) return false; const n = { x: t.fx || 1, y: t.fy || 0 }; s.ev.push({ e: 'blink', x: c.x, y: c.y }); const f = nearestFree(s.map, t.x - n.x * 90, t.y - n.y * 90); c.x = f.x; c.y = f.y; c.fx = n.x; c.fy = n.y; c.behindT = 1.5; c.reap = { id: t.id, t: 2 }; hurt(s, c, t, (A.dmg * pow(c)) + (t.maxHp - t.hp) * A.missing, { skill: 1, crit: 1 }); c.stats.skillHits++; if (c.f.deathmark) { t.markedBy = c.id; t.dmarkT = 4; } s.ev.push({ e: 'blink', x: c.x, y: c.y }); },
         },
       ],
       tick(s, c) { const seen = canSee(s, 1 - c.team, c); if (!seen) haste(c, .15, .1); if (c.f.hunter && s.tick % 15 === 0) for (const e of s.champs) if (e.alive && e.team !== c.team && e.hp / e.maxHp < .3) e.revealT = Math.max(e.revealT || 0, .6); },
@@ -234,7 +234,7 @@
     gravel: {
       name: 'Gravel', role: 'Tank', blurb: 'One good hook moves the whole fight.',
       sight: 680, hp: 720, hpG: 112, dmg: 54, dmgG: 6, armor: 34, armG: 5, range: 150, as: .8, ms: 305, pref: 120, melee: true, fit: { top: 2, jungle: 2, bottom: 0, support: 3 },
-      passive: { name: 'Immovable', d: 'Dropping below 40% health hardens you for 3 seconds. Once every 30 seconds.' },
+      passive: { name: 'Immovable', d: 'Above 40% health nothing can push, drag or lift you. Dropping below it hardens you for 3 seconds, once every 30 seconds.' },
       builds: [
         { id: 'anchor', name: 'Anchor', tag: 'Catch', d: 'Chain reaches farther and stuns longer, but takes longer to come back.', mods: { 0: { range: 555, stun: .5, cd_add: 2, d: 'Long reach. Drags the first enemy to you and holds them a moment.' } } },
         { id: 'juggernaut', name: 'Juggernaut', tag: 'Bruiser', d: 'Avalanche comes up far more often. Stomp is wider and hits harder. Lighter hook.', mods: { 0: { dmg_add: -20 }, 1: { r_add: 35, dmg_add: 30, d: 'Wide, strong stomp. Slow everyone around you and harden.' }, 2: { cd: 30 } } },
@@ -265,7 +265,7 @@
     deadbolt: {
       name: 'Deadbolt', role: 'Marksman', blurb: 'Lay the wire, then finish what it caught.',
       sight: 950, hp: 505, hpG: 70, dmg: 58, dmgG: 7, armor: 15, armG: 3, range: 360, as: 1.0, ms: 305, pref: 325, fit: { top: 1, jungle: 0, bottom: 3, support: 0 },
-      passive: { name: 'Deadlock', d: 'Basic attacks against rooted or slowed targets crit for 50% more.' },
+      passive: { name: 'Deadlock', d: 'Basic attacks against rooted or slowed targets crit for 50% more. A wire that catches a champion refunds 3 seconds of Ricochet.' },
       builds: [
         { id: 'trapper', name: 'Trapper', tag: 'Traps', d: 'Up to three wires, longer lasting and tighter. Your bullets stay modest.', stats: { dmg: .93 }, mods: { 0: { cd: 6.5, dur: 22, maxWires: 3, rootT: 1.5, d: 'Lay up to three wires. Each roots the first enemy to cross it.' } } },
         { id: 'deadeyed', name: 'Dead Aim', tag: 'Poke', d: 'Ricochet flies far and hits very hard but never bounces.', mods: { 1: { range: 690, dmg_add: 75, bounces: 0, cd_add: 1.5, d: 'A long, heavy shot. No bounce.' } } },
@@ -282,7 +282,7 @@
             const nx = -a.dy, ny = a.dx, w1 = rayWall(a.tx, a.ty, nx, ny, A.r), w2 = rayWall(a.tx, a.ty, -nx, -ny, A.r);
             const mine = s.zones.filter(z => z.kind === 'tripline' && z.owner === c); if (mine.length >= A.maxWires) mine[0].dead = true;
             const z = field(s, c, 'tripline', lineZone({ r: A.r, dur: A.dur, arm: .25 }, a.tx + nx * w1, a.ty + ny * w1, a.tx - nx * w2, a.ty - ny * w2));
-            z.step = (s, z) => { if (z.arm > 0) { z.arm -= DT; return; } for (const t of s.champs) if (t.alive && !t.air && t.team !== c.team && segDist(t.x, t.y, z.x1, z.y1, z.x2, z.y2) < t.r + 12) { hurt(s, c, t, A.dmg * pow(c), { skill: 1 }); root(s, t, A.rootT); z.t = 0; s.ev.push({ e: 'boom', x: t.x, y: t.y, r: 70, fx: 'tripwire' }); c.stats.skillHits++; return; } };
+            z.step = (s, z) => { if (z.arm > 0) { z.arm -= DT; return; } for (const t of s.champs) if (t.alive && !t.air && t.team !== c.team && segDist(t.x, t.y, z.x1, z.y1, z.x2, z.y2) < t.r + 12) { hurt(s, c, t, A.dmg * pow(c), { skill: 1 }); root(s, t, A.rootT); c.cd[1] = Math.max(0, c.cd[1] - 3); z.t = 0; s.ev.push({ e: 'boom', x: t.x, y: t.y, r: 70, fx: 'tripwire' }); c.stats.skillHits++; return; } };
           },
         },
         { name: 'Ricochet', d: 'A shot that bounces to a second target.', fx: 'ricochet', cd: 6, range: 495, shape: 'line', w: 36, dmg: 80, bounces: 1, bdmg: .7,
@@ -308,7 +308,7 @@
     duelist: {
       name: 'Duelist', role: 'Fighter', blurb: 'Circle them, cut them, salute them.',
       sight: 720, hp: 600, hpG: 90, dmg: 62, dmgG: 8, armor: 26, armG: 4, range: 140, as: .98, ms: 330, pref: 105, melee: true, fit: { top: 3, jungle: 2, bottom: 0, support: 0 },
-      passive: { name: 'Flurry of Angles', d: 'Hitting a target from a new angle builds up to 5 stacks, each adding 5% damage. Stacks fade after 3 seconds.' },
+      passive: { name: 'Flurry of Angles', d: 'Hitting a target from a new angle builds up to 5 stacks, each adding 5% damage. Stacks fade after 3 seconds. The third cut of Flourish takes 4 seconds off Feint.' },
       builds: [
         { id: 'fencer', name: 'Fencer', tag: 'Combo', d: 'Flourish refreshes on a clean finish. Longer window, and the third cut stuns longer.', mods: { 0: { cd: 6, window: 2.4, knockT: .9, d: 'Three quick cuts. Land the third on a champion to refund half the cooldown.' } } },
         { id: 'masquerade', name: 'Masquerade', tag: 'Trickster', d: 'Feint is quick and long. The decoy bursts when it ends and damages nearby enemies.', mods: { 1: { cd: 7.5, stealth: 1.9, d: 'A decoy steps away and bursts, while you vanish longer.' } } },
@@ -352,7 +352,7 @@
     hex: {
       name: 'Hex', role: 'Curse mage', blurb: 'Stack the curses, then call them in.',
       sight: 850, hp: 495, hpG: 66, dmg: 50, dmgG: 5, armor: 14, armG: 3, range: 320, as: .85, ms: 300, pref: 290, fit: { top: 1, jungle: 0, bottom: 3, support: 2 },
-      passive: { name: 'Contagion', d: 'When a cursed enemy dies, their curses spread to enemies nearby.' },
+      passive: { name: 'Contagion', d: 'When a cursed enemy dies, their curses spread to enemies nearby. Each curse strips 6 magic resist.' },
       builds: [
         { id: 'cursebinder', name: 'Cursebinder', tag: 'Stacks', d: 'Curses stack to five and linger. Hex Bolt is faster, and full stacks detonate far harder.', mods: { 0: { cd: 2.6, d: 'Stacks curses up to five. At five, the next hit detonates them.' } } },
         { id: 'transmuter', name: 'Transmuter', tag: 'Control', d: 'Polymorph comes up fast and turns targets into very fragile coins.', mods: { 1: { cd: 8.5, w_add: 10, d: 'Turns a target into a spinning coin that takes 25% more damage.' } } },
@@ -385,7 +385,7 @@
     plague: {
       name: 'Plague Doctor', role: 'Attrition support', blurb: 'Nobody leaves the ward healthy.',
       sight: 850, hp: 520, hpG: 76, dmg: 46, dmgG: 5, armor: 20, armG: 3.5, range: 300, as: .85, ms: 310, pref: 270, support: true, fit: { top: 2, jungle: 0, bottom: 1, support: 3 },
-      passive: { name: 'Vile Recovery', d: 'Poisoned enemies nearby slowly heal you.' },
+      passive: { name: 'Vile Recovery', d: 'Poisoned enemies nearby slowly heal you, and everything they deal is 10% weaker.' },
       builds: [
         { id: 'apothecary', name: 'Apothecary', tag: 'Support', d: 'Leech feeds allies for much more and comes back faster. Weak poison.', mods: { 1: { cd: 7, heal: 1.15, d: 'Tether an enemy, draining them and feeding your lowest ally for much more.' }, 0: { dps_add: -8 } } },
         { id: 'pestilence', name: 'Pestilence', tag: 'Damage over time', d: 'Miasma is wider, longer and far deadlier.', mods: { 0: { r_add: 35, dur: 7.5, dps_add: 9 }, 1: { heal: .3 } } },
@@ -423,7 +423,7 @@
     shiv: {
       name: 'Shiv', role: 'Stealth assassin', blurb: 'If you can see her, she missed.',
       sight: 720, hp: 500, hpG: 72, dmg: 68, dmgG: 8, armor: 18, armG: 3, range: 125, as: 1.05, ms: 335, pref: 92, melee: true, fit: { top: 2, jungle: 3, bottom: 0, support: 0 },
-      passive: { name: 'Opening Cut', d: 'The first strike out of stealth crits for 60% more.' },
+      passive: { name: 'Opening Cut', d: 'The first strike out of stealth crits for 60% more and cripples the target, slowing them by half for a second.' },
       builds: [
         { id: 'cutthroat', name: 'Cutthroat', tag: 'Burst', d: 'Shank bleeds harder and refreshes on any bleeding kill.', mods: { 0: { dps_add: 16, d: 'Dash through. Deep bleed. A kill on a bleeding enemy resets it.' } } },
         { id: 'nightblade', name: 'Nightblade', tag: 'Stealth', d: 'Vanish comes up fast and lasts longer, and you move faster inside it.', mods: { 1: { cd: 8.5, dur: 3.1, ms: .32, d: 'Long stealth with a big speed boost. Fades on attack.' } } },
@@ -451,7 +451,7 @@
     ironjaw: {
       name: 'Ironjaw', role: 'Brawler tank', blurb: 'Hit him. It only makes it worse.',
       sight: 680, hp: 655, hpG: 100, dmg: 54, dmgG: 6, armor: 30, armG: 4, range: 150, as: .82, ms: 305, pref: 120, melee: true, fit: { top: 3, jungle: 2, bottom: 0, support: 3 },
-      passive: { name: 'Rage', d: 'Taking damage builds rage. Rage makes your basic attacks up to 50% stronger.' },
+      passive: { name: 'Rage', d: 'Taking damage builds rage. Rage makes your basic attacks up to 50% stronger and Grab hold up to 60% longer, spending half of it.' },
       builds: [
         { id: 'brawler', name: 'Brawler', tag: 'Brawl', d: 'Attacking builds rage too, and full rage reaches further.', stats: { as: 1.08 }, mods: {} },
         { id: 'wrecker', name: 'Wrecker', tag: 'Area', d: 'Wrecking Ball orbits longer, wider and comes up sooner.', mods: { 0: { cd: 7, dur: 4.2, orbit_add: 30, dmg_add: 10 } } },
@@ -476,7 +476,7 @@
             let hx = c.x - a.dx * 190, hy = c.y - a.dy * 190;
             if (c.f.bouncer) { let b = null, bb = 900; for (const o of [...s.champs.filter(x => x.alive && x.team === c.team && x !== c), ...s.towers.filter(x => x.alive && x.team === c.team)]) { const d2 = dist(o, c); if (d2 < bb) { bb = d2; b = o; } } if (b) { const n = norm(b.x - t.x, b.y - t.y); hx = b.x - n.x * 60; hy = b.y - n.y * 60; } }
             const n = norm(hx - t.x, hy - t.y); dashDir(t, n.x, n.y, Math.min(n.l, c.f.bouncer ? 420 : 340), 1500, { forced: true });
-            stun(s, t, Math.min(n.l, 420) / 1500 + A.stunT); hurt(s, c, t, A.dmg * pow(c), { skill: 1 }); if (t.kind === 'champ') c.stats.skillHits++;
+            stun(s, t, Math.min(n.l, 420) / 1500 + A.stunT * (1 + .6 * (c.rage || 0) / 100)); c.rage = (c.rage || 0) / 2; hurt(s, c, t, A.dmg * pow(c), { skill: 1 }); if (t.kind === 'champ') c.stats.skillHits++;
           },
         },
         { name: 'Demolish', d: 'A ground fissure line that knocks up all along it.', fx: 'demolish', cd: 48, range: 495, shape: 'line', w: 130, delay: .42, dmg: 165, knockT: 1,
@@ -734,8 +734,8 @@
   // Sweep-driven tuning lives here, multiplying the base numbers above, so a balance pass is a table edit.
   // Kit: hp, dmg (basic attack), as, ms (added), abil (ability damage and healing). Build: pw (ability power), hp, dmg, as.
   const TUNE = {
-    kits: {cataclysm: { hp: 1.014, dmg: 1.014, abil: 1.014 }, cinder: { hp: 1.027, dmg: 1.027, abil: 1.027 }, deadbolt: { hp: 1.015, dmg: 1.015, abil: 1.015 }, duelist: { hp: 0.976, dmg: 0.976, abil: 0.976 }, gravel: { hp: 0.934, dmg: 0.934, abil: 0.934 }, hex: { hp: 1.055, dmg: 1.055, abil: 1.055 }, ione: { hp: 1.047, dmg: 1.047, abil: 1.047 }, ironjaw: { hp: 0.947, dmg: 0.947, abil: 0.947 }, kade: { hp: 0.92, dmg: 0.92, abil: 0.92 }, mirage: { hp: 0.969, dmg: 0.969, abil: 0.969 }, paragon: { hp: 0.949, dmg: 0.949, abil: 0.949 }, plague: { hp: 1.035, dmg: 1.035, abil: 1.035 }, puppeteer: { hp: 1.017, dmg: 1.017, abil: 1.017 }, ravager: { hp: 0.989, dmg: 0.989, abil: 0.989 }, sable: { hp: 1.026, dmg: 1.026, abil: 1.026 }, shiv: { hp: 1.025, dmg: 1.025, abil: 1.025 }, solenne: { hp: 1.017, dmg: 1.017, abil: 1.017 }, tidecaller: { hp: 0.981, dmg: 0.981, abil: 0.981 }, vesper: { hp: 0.994, dmg: 0.994, abil: 0.994 }, voltaic: { hp: 1.059, dmg: 1.059, abil: 1.059 }},
-    builds: { deluge: { pw: .92 }, sunlance: { pw: .94 }, twinshot: { dmg: .95 }, sunstriker: { pw: .95 }, apothecary: { pw: 1.14 }, cutthroat: { pw: 1.12 }, masquerade: { pw: 1.1 }, butcher: { pw: 1.06 }, fencer: { pw: 1.05 } },
+    kits: {cataclysm: { hp: 0.996, dmg: 0.996, abil: 0.996 }, cinder: { hp: 1.041, dmg: 1.041, abil: 1.041 }, deadbolt: { hp: 1.03, dmg: 1.03, abil: 1.03 }, duelist: { hp: 0.967, dmg: 0.967, abil: 0.967 }, gravel: { hp: 0.899, dmg: 0.899, abil: 0.899 }, hex: { hp: 1.069, dmg: 1.069, abil: 1.069 }, ione: { hp: 1.042, dmg: 1.042, abil: 1.042 }, ironjaw: { hp: 0.933, dmg: 0.933, abil: 0.933 }, kade: { hp: 0.898, dmg: 0.898, abil: 0.898 }, mirage: { hp: 0.963, dmg: 0.963, abil: 0.963 }, paragon: { hp: 0.916, dmg: 0.916, abil: 0.916 }, plague: { hp: 1.074, dmg: 1.074, abil: 1.074 }, puppeteer: { hp: 1.034, dmg: 1.034, abil: 1.034 }, ravager: { hp: 1.001, dmg: 1.001, abil: 1.001 }, sable: { hp: 1.078, dmg: 1.078, abil: 1.078 }, shiv: { hp: 1.05, dmg: 1.05, abil: 1.05 }, solenne: { hp: 0.998, dmg: 0.998, abil: 0.998 }, tidecaller: { hp: 0.947, dmg: 0.947, abil: 0.947 }, vesper: { hp: 0.987, dmg: 0.987, abil: 0.987 }, voltaic: { hp: 1.101, dmg: 1.101, abil: 1.101 }},
+    builds: {alpha: { pw: 1.05 }, apothecary: { pw: 1.18 }, bastille: { hp: .96 }, butcher: { pw: 1.04 }, constellation: { pw: .97 }, cursebinder: { pw: 1.06 }, fencer: { pw: 1.0 }, fortress: { pw: .96 }, honorbound: { pw: .93 }, hunter: { pw: 1.07 }, jailer: { pw: 1.08 }, juggernaut: { pw: .93 }, maestro: { pw: .97 }, masquerade: { pw: 1.14 }, nightblade: { pw: 1.06 }, pyre: { pw: 1.05 }, radiant: { pw: .94 }, reaper: { pw: 1.1 }, ritualist: { pw: .97 }, savage: { pw: .96 }, shade: { pw: 1.06 }, spotter: { pw: 1.05 }, stormchaser: { pw: 1.08 }, sunlance: { pw: .94 }, sunstriker: { pw: .95 }, surge: { pw: 1.08 }, twinshot: { dmg: .95 }, venomous: { pw: 1.06 }},
   };
   const ABIL_KEYS = ['dmg', 'dmgF', 'dmgM', 'dmg0', 'dmg1', 'dmg2', 'dps', 'heal', 'shot'];
   // Damage types. A kit's dtype is the default for its abilities; an ability's own `mag` overrides it. Basic attacks are physical.
@@ -781,6 +781,7 @@
       let d = A['dmg' + n] * pow(c); if (n === 2 && c.f.coupdegrace) d += (t.maxHp - t.hp) * .12; if (t.kind === 'champ') { hit = 1; c.pstack = Math.min(5, (c.pstack || 0) + 1); c.ptime = 3; }
       hurt(s, c, t, d, { skill: 1, crit: n === 2 ? 1 : 0 }); if (n === 2 && t.alive && t.kind === 'champ') knock(s, t, A.knockT); });
     if (hit) c.stats.skillHits++;
+    if (hit && n === 2) c.cd[1] = Math.max(0, c.cd[1] - 4);
     if (hit && n === 2 && c.f.fencer) c.cd[0] *= .5;
   }
   function detonate(s, c, t, mul) {

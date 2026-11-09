@@ -529,7 +529,7 @@
         ai.pushUntil = s.t + 35;
       }
       const top = mine.find(c => c.bot && c.role === 'top' && frac(c) > .6);
-      if (top && mine.length >= foesAlive) ai.split = top.id;
+      if (top && mine.length >= foesAlive && !(s.catchup[team] > .35)) ai.split = top.id;
     } else ai.push = null;
   }
 
@@ -1124,6 +1124,8 @@
     const safeMode = s.t < b.safeUntil;
     if (safeMode) b.ratio *= 1 - .4 * sk.guard;
     if (fresh) b.ratio *= 1 - .1 * sk.guard;
+    // A side that is behind picks its fights instead of walking into them one at a time.
+    if (s.catchup[c.team] > .25) b.ratio *= 1 - .2 * s.catchup[c.team] * (.4 + .6 * sk.macro);
     if (b.deaths.length > 6) b.deaths.splice(0, b.deaths.length - 6);
 
     // Too hurt to stay: recall if it is quiet, walk home if it is not.

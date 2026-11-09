@@ -385,6 +385,8 @@ const Net = (() => {
       });
       const used = new Set(seats.map(x => x.champ)), pool = kitsOf(side).filter(k => !used.has(k) && !d.bans[side].includes(k));
       for (let i = pool.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [pool[i], pool[j]] = [pool[j], pool[i]]; }
+      // Bots fill the roles people left open with kits that suit them.
+      for (const r of ROLES.filter(r => !seats.some(x => x.role === r))) { if (seats.length >= TEAM_MAX) break; let i = pool.findIndex(k => (Sim.KITS[k].fit[r] || 0) >= 2); if (i < 0) i = pool.length - 1; seats.push({ champ: pool.splice(i, 1)[0], role: r, tier: Math.min(5, Math.floor(Math.random() * Math.random() * 6)), human: false, name: BOTS[nameI++ % BOTS.length] }); }
       while (seats.length < TEAM_MAX) seats.push({ champ: pool.pop(), role: undefined, tier: Math.min(5, Math.floor(Math.random() * Math.random() * 6)), human: false, name: BOTS[nameI++ % BOTS.length] });
       // Roles: keep what people chose, then give each remaining seat its best free role.
       const free = ROLES.filter(r => !seats.some(x => x.role === r));
