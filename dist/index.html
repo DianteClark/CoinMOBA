@@ -6217,7 +6217,426 @@ const Art = (() => {
     const out = { c, w: W, h: W }; cache.set(id, out); return out;
   }
 
-  return { flare, minionGear, bossCoin, bossTurn, BOSS_COL, seal, shock, bountyMark, TEAM, TEAM_DARK, METAL, TILT, TAU, INK, COSMETICS, champCoin, champTurn, minionCoin, minionTurn, monsterCoin, monsterTurn, civCoin, coin, glow, shadow, drawEmblemIcon, abilityCoin, iconURL, sheen, vignette, seeded, mix, mixH, cv, reed, puff, leaf, shardsOf, impact, speedLines, sparkSp, dustCel, chip, glint, pillar, hazard, koCoin, pump, defer, frameAt, ensure, sigil, spikeBall, stats, buildFace, shade, canvasFrom, reliefStack, FINISH };
+  // ---------- 11.0 minted medals ----------
+  // Art.medal(id, tier, R): tier 0/1/2 (or 'Bronze'/'Silver'/'Gold'), -1 for not yet earned. Returns a canvas that fits a 2R x 2R box, and paints 2R CSS px when placed in the page.
+  // Each medal is a real height field (rim, field, emblem, gems) shaded through the same matcap as the coins, so the three tiers differ in silhouette, build and material.
+  // Nothing bakes until it is asked for. Baked masters and composites sit in an LRU bounded by bytes; Art.medalInto spreads first-time bakes over frames for long lists.
+  const MEDAL_TIERS = ['bronze', 'silver', 'gold'];
+  const tierOf = t => typeof t === 'string' ? MEDAL_TIERS.indexOf(t.toLowerCase()) : t === undefined || t === null ? 0 : t | 0;
+  const rampLUT = stops => { const o = new Uint8ClampedArray(768), n = stops.length - 1; for (let i = 0; i < 256; i++) { const t = i / 255 * n, k = Math.min(n - 1, t | 0), f = t - k, A = hex(stops[k]), B = hex(stops[k + 1]); for (let c = 0; c < 3; c++) o[i * 3 + c] = A[c] + (B[c] - A[c]) * f; } return o; };
+  const lazyRamp = stops => { let l; return () => l || (l = rampLUT(stops)); };
+  const MINT_RAMP = {
+    bronze: lazyRamp(['#120804', '#3d1d0c', '#7e4620', '#b87638', '#e0a768', '#f8dcb4', '#fff6e6']),
+    bronzeDk: lazyRamp(['#0c0503', '#2a140a', '#573018', '#85522a', '#ad7a48', '#d6ae80']),
+    silver: lazyRamp(['#070a12', '#2a3346', '#66748c', '#a8b6ca', '#dde6f2', '#f6faff', '#ffffff']),
+    silverDk: lazyRamp(['#05070d', '#1c2331', '#454f63', '#7a879c', '#aebacb', '#dde5f0']),
+    gold: lazyRamp(['#140800', '#552a02', '#a8680c', '#e8a822', '#ffd257', '#fff0ac', '#fffdf2']),
+    goldDk: lazyRamp(['#0e0500', '#3e1d02', '#7e4a08', '#b97e14', '#e2ae3a', '#f6d78a']),
+    rose: lazyRamp(['#160603', '#5a2410', '#a85c2a', '#e39a52', '#ffc98a', '#ffeccc', '#fffaf0']),
+    iron: lazyRamp(['#05060a', '#14171f', '#262b36', '#3b424f', '#555e6e', '#737d8e']),
+    ruby: lazyRamp(['#1e0006', '#5c0414', '#b00c28', '#ee2a44', '#ff7a84', '#ffe4e4', '#ffffff']),
+    sapphire: lazyRamp(['#00061e', '#04206a', '#0e50c0', '#3a8cf4', '#9ccaff', '#eef6ff', '#ffffff']),
+    diamond: lazyRamp(['#28364e', '#6a86a8', '#b8d2ea', '#eaf6ff', '#ffffff', '#ffffff']),
+  };
+  // Metal ids index this table; 'e' entries are enamels whose colours come from the medal's category.
+  const MINT_MAT = [null,
+    { r: 'bronze', g: .95, brush: .2 }, { r: 'bronzeDk', g: .8, brush: .1, patina: 1, grain: .05 },
+    { r: 'silver', g: 1, brush: .34 }, { r: 'silverDk', g: .86, brush: .45 },
+    { r: 'gold', g: 1.08, brush: .36 }, { r: 'goldDk', g: .9, brush: .5 }, { r: 'rose', g: 1.05, brush: .3 },
+    { e: 0 }, { e: 1 }, { r: 'ruby', g: 1.2, gem: 1, brush: 0 }, { r: 'sapphire', g: 1.2, gem: 1, brush: 0 }, { r: 'diamond', g: 1.4, gem: 1, brush: 0 }, { r: 'iron', g: .75, brush: .08, grain: .03 }];
+  const BRZ = 1, BRZD = 2, SLV = 3, SLVD = 4, GLD = 5, GLDD = 6, ROSE = 7, ENA = 8, ENB = 9, RUBY = 10, SAPH = 11, DIAM = 12, IRON = 13;
+  // Category dress: enamel deep and bright, then a second enamel for the outer ring. Ordered by the sim's cat strings, loosely matched.
+  const MEDAL_DRESS = {
+    multi: ['#3e020e', '#d61a38', '#0a0a12', '#3a2a30'], deathless: ['#14063c', '#7a42ea', '#0a0a14', '#322a48'], mastery: ['#031a56', '#2a78ec', '#0a0b12', '#26304a'],
+    rescue: ['#02302c', '#14b8a0', '#070e10', '#203a3a'], objective: ['#3a1402', '#ec7a14', '#0c0a08', '#40301e'], clutch: ['#063014', '#22c45a', '#070e0a', '#22382a'], role: ['#10163e', '#5a64ea', '#090a12', '#2a2c44'],
+  };
+  const D2R = Math.PI / 180;
+  const rr = (x, y, w, h) => [[x - w, y - h], [x + w, y - h], [x + w, y + h], [x - w, y + h]];
+  const SKEL = {
+    blade: (a, w = .13, tipY = -1, baseY = .34) => rot([[0, tipY], [w, tipY + .26], [w * .78, baseY], [-w * .78, baseY], [-w, tipY + .26]], a),
+    guard: (a, y = .36, w = .36, t = .07) => rot([[-w, y - t], [w, y - t], [w * .8, y + t], [-w * .8, y + t]], a),
+    grip: (a, y0 = .42, y1 = .8, w = .07) => rot(rr(0, (y0 + y1) / 2, w, (y1 - y0) / 2), a),
+    pommel: (a, y = .9, r = .1) => rot(lozenge(0, y, r, r), a),
+    sword(L, a, k = 1) { L.a(rot(this.blade(0, .13 * k), a)); L.b(rot(this.guard(0, .36, .36 * k), a), rot(this.grip(0), a), rot(this.pommel(0), a)); },
+    shield: (k = 1, y = 0) => [[0, -.95], [.74, -.68], [.74, .08], [.44, .66], [0, .98], [-.44, .66], [-.74, .08], [-.74, -.68]].map(([p, q]) => [p * k, q * k + y]),
+    star(cx, cy, R, r, n = 5, a0 = -HALF / 2) { const o = []; for (let i = 0; i < n * 2; i++) { const a = a0 + i / (n * 2) * TAU, d = i % 2 ? r : R; o.push([cx + Math.cos(a) * d, cy + Math.sin(a) * d]); } return o; },
+    heart(cx, cy, k) { const o = []; for (let i = 0; i < 40; i++) { const t = i / 40 * TAU, x = 16 * Math.sin(t) ** 3, y = 13 * Math.cos(t) - 5 * Math.cos(2 * t) - 2 * Math.cos(3 * t) - Math.cos(4 * t); o.push([cx + x / 17 * k, cy - y / 17 * k]); } return o; },
+    feather(a, r0, r1, w) { const c = Math.cos(a), s = Math.sin(a), n = [-s, c]; return [[c * r0 + n[0] * w * .3, s * r0 + n[1] * w * .3], [c * (r0 + (r1 - r0) * .7) + n[0] * w, s * (r0 + (r1 - r0) * .7) + n[1] * w], [c * r1, s * r1], [c * (r0 + (r1 - r0) * .7) - n[0] * w * .6, s * (r0 + (r1 - r0) * .7) - n[1] * w * .6], [c * r0 - n[0] * w * .3, s * r0 - n[1] * w * .3]]; },
+    skull(L) { L.a(disc(0, -.2, .68), [[-.4, .2], [.4, .2], [.34, .72], [-.34, .72]]); L.x(lozenge(-.26, -.16, .19, .2), lozenge(.26, -.16, .19, .2), [[0, .1], [.09, .3], [-.09, .3]]); for (const x of [-.2, 0, .2]) L.x(rr(x, .6, .03, .12)); },
+    pips(L, n, y = .86) { for (let i = 0; i < n; i++) L.c(lozenge((i - (n - 1) / 2) * .2, y, .07, .09)); },
+  };
+  // Twenty-odd emblems, each drawn once as flat parts that the mint then raises. Same L interface as the champion marks.
+  const MEDAL_EMB = {
+    double(L) { SKEL.sword(L, -.72); SKEL.sword(L, .72); },
+    triple(L) { SKEL.sword(L, -.82, .85); SKEL.sword(L, .82, .85); SKEL.sword(L, 0, 1.1); },
+    quad(L) { for (let i = 0; i < 4; i++) L.a(rot(SKEL.blade(0, .16, -1.02, -.2), HALF / 4 + i / 4 * TAU)); L.b(ngon(0, 0, .34, 4, 0)); L.c(lozenge(0, 0, .15, .19)); },
+    penta(L) { for (let i = 0; i < 5; i++) L.a(rot(SKEL.blade(0, .15, -1.02, -.2), i / 5 * TAU)); L.b(ngon(0, 0, .36, 5)); L.c(lozenge(0, 0, .15, .19)); },
+    reaper(L) { SKEL.skull(L); L.b(rot(rr(0, 0, .06, 1), .85), rot(rr(0, 0, .06, 1), -.85)); },
+    streak(L) { for (let i = 0; i < 3; i++) { const y = -.62 + i * .62; L[i === 1 ? 'b' : 'a']([[-.76, y - .24], [-.2, y - .24], [.52, y + .02], [-.2, y + .28], [-.76, y + .28], [-.1, y + .02]]); } L.c(lozenge(.76, 0, .14, .28)); },
+    aegis(L) { L.b(SKEL.shield(1)); L.x(SKEL.shield(.8)); L.a(SKEL.shield(.66)); L.x(SKEL.heart(0, -.04, .38)); },
+    flawless(L) { L.b(SKEL.shield(1)); L.x(SKEL.shield(.82)); L.a(SKEL.star(0, -.03, .7, .29)); },
+    deathward(L) { L.a(disc(0, -.1, .74)); L.x(lozenge(-.3, -.1, .19, .19), lozenge(.3, -.1, .19, .19)); L.a([[-.5, .4], [.5, .4], [.42, .92], [-.42, .92]]); for (const x of [-.24, 0, .24]) L.x(rr(x, .72, .04, .16)); L.b(rot(rr(0, -.06, 1, .09), -.74)); },
+    ghost(L) { const body = [...arcPts(0, -.2, .68, Math.PI, TAU, 22), [.68, .86], [.4, .62], [.14, .9], [-.14, .62], [-.4, .9], [-.68, .62]]; L.a(body); L.x(lozenge(-.26, -.22, .14, .19), lozenge(.26, -.22, .14, .19)); L.x(band(0, .08, .1, .18, .3, Math.PI - .3, 12)); },
+    crown(L) { L.a([[-.84, .44], [-.98, -.5], [-.46, -.08], [0, -.86], [.46, -.08], [.98, -.5], [.84, .44]]); L.b(rr(0, .66, .86, .14)); L.c(lozenge(0, -.1, .13, .19)); L.c(lozenge(-.56, .16, .09, .12), lozenge(.56, .16, .09, .12)); },
+    anvil(L) { L.a([[-1, -.46], [.82, -.46], [.82, -.08], [.34, .04], [.34, .3], [.62, .62], [-.54, .62], [-.26, .3], [-.26, .04], [-.62, -.08]]); L.b(rr(.04, .78, .72, .13)); L.c(SKEL.star(.1, -.86, .22, .08, 4, 0)); },
+    legion(L) { for (let i = 0; i < 6; i++) { const a = -HALF + i / 6 * TAU; L.b(disc(Math.cos(a) * .72, Math.sin(a) * .72, .22)); } L.a(SKEL.star(0, 0, .58, .25)); },
+    laureate(L) { L.a(SKEL.star(0, -.14, .56, .23)); for (const sd of [-1, 1]) for (let i = 0; i < 6; i++) { const a = HALF / 2 + sd * (.34 + i * .42); L.b(SKEL.feather(a + sd * .9, 0, .3, .09).map(([x, y]) => [x + Math.cos(a) * .76, y + Math.sin(a) * .76])); } },
+    hand(L) { L.a([[-.5, .18], [.5, .18], [.42, .92], [-.42, .92]]); for (let i = 0; i < 4; i++) { const x = -.37 + i * .25, t = [-.42, -.72, -.66, -.34][i]; L.a([...arcPts(x, t + .1, .1, Math.PI, TAU, 8), [x + .1, .3], [x - .1, .3]]); } L.a([[.46, .3], [.86, -.14], [.97, -.04], [.54, .6]]); L.x(band(0, .55, .22, .29, Math.PI + .3, TAU - .3, 10)); },
+    lantern(L) { L.b(band(0, -.66, .15, .25, Math.PI, TAU, 14), rr(0, -.56, .46, .08), rr(0, .84, .5, .1)); L.a([[-.4, -.46], [.4, -.46], [.54, .74], [-.54, .74]]); L.x([[-.25, -.34], [.25, -.34], [.34, .62], [-.34, .62]]); L.c([[0, -.26], [.2, .22], [.1, .54], [-.1, .54], [-.2, .22]]); },
+    chains(L) { const link = (x, y, a) => rot([...arcPts(0, -.24, .3, Math.PI, TAU, 10), ...arcPts(0, .24, .3, 0, Math.PI, 10)], a).map(([p, q]) => [p + x, q + y]), inner = (x, y, a) => rot([...arcPts(0, -.24, .15, Math.PI, TAU, 10), ...arcPts(0, .24, .15, 0, Math.PI, 10)], a).map(([p, q]) => [p + x, q + y]); L.a(link(-.46, .4, -.75), link(.46, -.4, -.75)); L.x(inner(-.46, .4, -.75), inner(.46, -.4, -.75)); L.c([[.08, -.14], [-.2, .02], [-.02, .05], [-.12, .3], [.2, .02], [.02, -.02]]); },
+    tower(L) { L.a([[-.5, -.44], [.5, -.44], [.4, .62], [-.4, .62]]); for (let i = 0; i < 3; i++) L.a(rr((i - 1) * .44, -.72, .16, .2)); L.b(rr(0, .78, .62, .13)); L.x([[-.13, .62], [-.13, .22], [0, .06], [.13, .22], [.13, .62]]); L.c(lozenge(0, -.22, .08, .13)); },
+    colossus(L) { L.b([[-.5, -.42], [-1, -.98], [-.84, -.2], [-.44, .08]], [[.5, -.42], [1, -.98], [.84, -.2], [.44, .08]]); L.a([[-.62, -.52], [.62, -.52], [.72, .1], [.36, .9], [-.36, .9], [-.72, .1]]); L.x([[-.48, -.2], [-.12, -.02], [-.14, .14], [-.46, .06]], [[.48, -.2], [.12, -.02], [.14, .14], [.46, .06]]); for (const x of [-.2, 0, .2]) L.x(rr(x, .62, .05, .16)); },
+    flag(L) { L.b(rr(-.56, 0, .07, 1)); L.a([[-.48, -.94], [.92, -.62], [.42, -.34], [.92, -.06], [-.48, .14]]); L.c(lozenge(-.56, -1, .1, .1)); L.b(rr(-.56, .9, .36, .08)); },
+    city(L) { L.a([...arcPts(0, -.06, .54, Math.PI, TAU, 24)]); L.a(rr(0, .36, .72, .36)); for (let i = 0; i < 5; i++) L.x(rr(-.48 + i * .24, .4, .07, .22)); L.b(rr(0, .82, .88, .1), rr(0, -.72, .04, .14)); L.c(lozenge(0, -.94, .09, .11)); },
+    phoenix(L) { for (let i = 0; i < 5; i++) { L.a(SKEL.feather(Math.PI + .08 + i * .29, .22, 1.02 - i * .04, .12)); L.a(SKEL.feather(-.08 - i * .29, .22, 1.02 - i * .04, .12)); } L.b([[0, -.52], [.2, -.26], [.14, .3], [0, .96], [-.14, .3], [-.2, -.26]]); L.c(lozenge(0, -.28, .07, .1)); for (const a of [HALF - .45, HALF + .45]) L.b(SKEL.feather(a, .3, .98, .1)); },
+    hourglass(L) { L.b(rr(0, -.88, .68, .11), rr(0, .88, .68, .11)); L.a([[-.54, -.72], [.54, -.72], [.08, 0], [.54, .72], [-.54, .72], [-.08, 0]]); L.x([[-.36, -.62], [.36, -.62], [.2, -.36], [-.2, -.36]], [[0, .22], [.36, .62], [-.36, .62]]); L.c([[-.02, .1], [.02, .1], [.02, .5], [-.02, .5]]); },
+    comeback(L) { L.b([[-.98, .78], [-.42, .14], [-.14, .42], [.08, .14], [.08, .46], [-.14, .78], [-.42, .5], [-.8, .94]]); L.a([[.08, .46], [.08, -.28], [-.2, -.28], [.34, -.98], [.88, -.28], [.6, -.28], [.6, .78], [.08, .78]]); L.c(SKEL.star(-.62, -.5, .26, .09, 4, 0)); },
+    lifeline(L) { L.a(SKEL.heart(0, -.04, .98)); L.x(SKEL.heart(0, -.04, .7)); L.c([[.16, -.56], [-.28, .06], [-.02, .06], [-.14, .6], [.3, -.1], [.04, -.1]]); },
+    eye(L) { L.a([...arcPts(0, .56, 1.08, -2.52, -.62, 16), ...arcPts(0, -.56, 1.08, .62, 2.52, 16)]); L.x(disc(0, 0, .42)); L.b(disc(0, 0, .3)); L.c(lozenge(0, 0, .08, .15)); },
+    fist(L) { for (let i = 0; i < 4; i++) L.a([[-.62 + i * .32, -.72], [-.34 + i * .32, -.72], [-.3 + i * .32, -.16], [-.66 + i * .32, -.16]]); L.a([[-.68, -.1], [.68, -.1], [.6, .54], [.3, .96], [-.3, .96], [-.6, .54]]); L.b([[-.7, .1], [.12, .1], [.22, .3], [-.5, .34]]); },
+    mask(L) { L.a([[-1, -.42], [-.42, -.6], [0, -.36], [.42, -.6], [1, -.42], [.86, .14], [.42, .34], [0, .06], [-.42, .34], [-.86, .14]]); L.x(lozenge(-.44, -.12, .25, .15), lozenge(.44, -.12, .25, .15)); L.b(disc(0, .68, .26)); L.x(disc(0, .68, .13)); L.c(lozenge(0, .68, .06, .08)); },
+    highroad(L) { L.a([[-1, .74], [-.44, -.36], [-.16, .1], [.24, -.76], [1, .74]]); L.x([[-.1, .76], [.1, -.1], [.17, -.1], [.3, .76]]); L.b([[.24, -.76], [.44, -.34], [.3, -.4], [.2, -.3], [.1, -.42], [.02, -.3]]); L.c(lozenge(-.72, -.7, .13, .17)); },
+    claws(L) { for (const x of [-.56, 0, .56]) L.a([[x - .08, -1], [x + .18, -.92], [x + .13, .16], [x - .24, 1], [x - .13, .14]]); L.c(lozenge(.62, -.56, .08, .12)); },
+    anchor(L) { L.a(rr(0, .08, .1, .84)); L.b(rr(0, -.44, .44, .09)); L.a(band(0, .02, .72, .9, .32, Math.PI - .32, 20)); L.b(lozenge(.74, .14, .2, .24), lozenge(-.74, .14, .2, .24)); L.b(band(0, -.86, .1, .2, 0, TAU, 18)); L.c(lozenge(0, .44, .06, .1)); },
+    pillar(L) { L.b(rr(0, -.72, .66, .12), rr(0, .84, .66, .12)); L.a(rr(0, .06, .42, .66)); for (const x of [-.22, 0, .22]) L.x(rr(x, .06, .05, .56)); L.c(SKEL.star(0, -.98, .18, .07, 4, 0)); },
+    star(L) { L.a(SKEL.star(0, 0, 1.02, .42)); L.c(lozenge(0, 0, .13, .17)); },
+  };
+  // Reads a medal's meaning from its id, then its category. Unknown ids still get a stable, sensible mark.
+  const MEDAL_RULES = [[/penta|quint|five|ace\b|wipe/, 'penta'], [/quad|four/, 'quad'], [/tri(ple)?|three/, 'triple'], [/doub|twin|two/, 'double'], [/reap|slay|execution|butcher/, 'reaper'], [/streak|spree|rampage|unstopp/, 'streak'],
+    [/flawless|perfect|immaculate/, 'flawless'], [/ghost|untouch|shadow/, 'ghost'], [/deathless|surviv|immortal|undying/, 'aegis'], [/phoenix|rise|reborn/, 'phoenix'], [/comeback|turn|revers/, 'comeback'], [/clutch|last.?stand|buzzer|hour|nick|late/, 'hourglass'], [/lifeline|heart|heal|medic|mend/, 'lifeline'],
+    [/rescue|save|hand|guardian/, 'hand'], [/lantern|beacon|hope|shelter/, 'lantern'], [/chain|free|liberat/, 'chains'], [/city|civic|town|site|ward/, 'city'],
+    [/tower|siege|raze|wreck|demoli/, 'tower'], [/boss|colossus|titan|giant|slayer/, 'colossus'], [/steal|flag|capture|objective|claim/, 'flag'],
+    [/marks|sniper|longshot/, 'vesper'], [/duel|fighter|blade/, 'kade'], [/mage|arcan|spell/, 'ione'], [/support|solace/, 'solenne'], [/assass/, 'sable'], [/tank|bulwark|wall|iron/, 'gravel'],
+    [/crown|king|legend|peer/, 'crown'], [/forge|anvil|smith|grind/, 'anvil'], [/legion|roster|every|all.?champ|versatil|polyglot/, 'legion'], [/master|veteran|laurel/, 'laureate'], [/eye|vision|watch|sight/, 'eye'], [/fist|brawl|bruis/, 'fist']];
+  const MEDAL_BY_CAT = { multi: ['double', 'triple', 'quad', 'penta', 'reaper', 'streak'], deathless: ['aegis', 'flawless', 'ghost', 'deathward'], mastery: ['laureate', 'crown', 'anvil', 'legion'], rescue: ['hand', 'lantern', 'chains', 'city'], objective: ['tower', 'colossus', 'flag', 'city'], clutch: ['comeback', 'phoenix', 'hourglass', 'lifeline'], role: ['eye', 'fist', 'star'] };
+  const hashStr = s => { let h = 2166136261; for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 16777619); } return h >>> 0; };
+  function medalMeta(id) {
+    let def; try { def = typeof Sim !== 'undefined' && Sim.MEDALS && Sim.MEDALS.find(m => m.id === id); } catch (e) { }
+    const key = String(id).toLowerCase(), cat = def ? def.cat : key;
+    let emb = null; if (MEDAL_ART[id]) emb = MEDAL_ART[id]; else for (const [re, e] of MEDAL_RULES) if (re.test(key)) { emb = e; break; }
+    const c = String(cat || '').toLowerCase(), catKey = /multi|kill|slay|combat/.test(c) ? 'multi' : /death|surviv|flawless/.test(c) ? 'deathless' : /champ|master/.test(c) ? 'mastery' : /rescue|civic|people|save/.test(c) ? 'rescue' : /obj|boss|tower|site/.test(c) ? 'objective' : /clutch|comeback/.test(c) ? 'clutch' : /role/.test(c) ? 'role' : 'mastery';
+    if (!emb) { const l = MEDAL_BY_CAT[catKey]; emb = l[hashStr(key) % l.length]; }
+    return { emb, dress: MEDAL_DRESS[catKey] };
+  }
+  // Hand-picked marks for ids whose names do not say enough. Filled from Sim.MEDALS.
+  const MEDAL_ART = { hat_trick: 'triple', clean_sweep: 'quad', rampage: 'penta', body_count: 'reaper', untouchable: 'aegis', ghost_run: 'ghost', long_life: 'streak', specialist: 'anvil', repertoire: 'legion', grand_master: 'crown', shepherd: 'hand', safe_passage: 'lantern', lifeline: 'lifeline', demolition: 'tower', big_game: 'flag', colossus_slayer: 'colossus', grand_theft: 'mask', never_over: 'comeback', long_way_back: 'phoenix', last_breath: 'hourglass', warden: 'highroad', stalker: 'claws', keeper: 'anchor', steadfast: 'pillar' };
+  function boxBlur(src, W, r) {
+    const tmp = new Float32Array(src.length), out = new Float32Array(src.length), n = 2 * r + 1;
+    for (let y = 0; y < W; y++) { let a = 0; const o = y * W; for (let x = -r; x <= r; x++) a += src[o + Math.max(0, x)]; for (let x = 0; x < W; x++) { tmp[o + x] = a / n; a += src[o + Math.min(W - 1, x + r + 1)] - src[o + Math.max(0, x - r)]; } }
+    for (let x = 0; x < W; x++) { let a = 0; for (let y = -r; y <= r; y++) a += tmp[x + Math.max(0, y) * W]; for (let y = 0; y < W; y++) { out[x + y * W] = a / n; a += tmp[x + Math.min(W - 1, y + r + 1) * W] - tmp[x + Math.max(0, y - r) * W]; } }
+    return out;
+  }
+  function mintMaster(id, tier, W) {
+    const t0 = nowMs(), U = W / 2, locked = tier < 0, T = locked ? 0 : Math.min(2, tier), meta = medalMeta(id), fine = W >= 280;
+    const H = new Float32Array(W * W), Mt = new Uint8Array(W * W);
+    const put = (draw, mat, h, bev, o = {}) => {
+      const raw = readMask(W, U, 1, draw); if (raw.bx1 < raw.bx0) return; const m = bin(raw), D = edt(m, W, W), bv = Math.max(1, bev * U), hp = h * U, b0 = (o.base || 0) * U, ch = o.chisel, add = o.add, M = locked && mat ? IRON : mat;
+      for (let y = raw.by0; y <= raw.by1; y++) for (let x = raw.bx0, i = x + y * W; x <= raw.bx1; x++, i++) if (m[i]) { const t = Math.min(1, D[i] / bv), p = t >= 1 ? 1 : ch ? t : t * (2 - t); H[i] = (add ? H[i] : b0) + hp * p; if (M) Mt[i] = M; }
+    };
+    const circle = r => g => { g.beginPath(); g.arc(0, 0, r, 0, TAU); g.fill(); };
+    const ringD = (r0, r1) => g => { g.beginPath(); g.arc(0, 0, r1, 0, TAU); g.arc(0, 0, r0, 0, TAU, true); g.fill(); };
+    const polys = (...L) => g => { for (const p of L) { g.beginPath(); p.forEach(([x, y], i) => g[i ? 'lineTo' : 'moveTo'](x, y)); g.closePath(); g.fill(); } };
+    const around = (n, f, a0 = 0) => g => { for (let i = 0; i < n; i++) { const a = a0 + i / n * TAU, r = f(a, i, g); if (Array.isArray(r)) polys(r)(g); } };
+    const dot = (x, y, r) => g => { g.beginPath(); g.arc(x, y, r, 0, TAU); g.fill(); };
+    const emblem = (scale, y, matA, matB, matC, h) => {
+      const A = [], B = [], C = [], X = [], L = { a: (...p) => A.push(...p), b: (...p) => B.push(...p), c: (...p) => C.push(...p), x: (...p) => X.push(...p), paint() { } };
+      const fn = MEDAL_EMB[meta.emb] || EMB[meta.emb] || MEDAL_EMB.star; try { fn(L, false); } catch (e) { }
+      const draw = list => g => { g.save(); g.translate(0, y); g.scale(scale, scale); for (const p of list) { if (typeof p === 'function') { g.beginPath(); p(g); g.fill(); } else if (Array.isArray(p)) { g.beginPath(); p.forEach(([a, b], i) => g[i ? 'lineTo' : 'moveTo'](a, b)); g.closePath(); g.fill(); } } g.restore(); };
+      const snapH = X.length ? H.slice() : null, snapM = X.length ? Mt.slice() : null;
+      if (B.length) put(draw(B), matB, h * .7, .03 * scale / .44, { add: true });
+      if (A.length) put(draw(A), matA, h, .034 * scale / .44, { add: true });
+      if (X.length) { const m = bin(readMask(W, U, 1, draw(X))); for (let i = 0; i < W * W; i++) if (m[i]) { H[i] = snapH[i]; Mt[i] = snapM[i]; } }
+      if (C.length) put(draw(C), matC, h * 1.2, .045 * scale / .44, { add: true });
+    };
+    const leaves = (r, n, span, w, len, mat, base, gapBottom = .2) => {
+      const ptsAll = [];
+      for (const sd of [-1, 1]) for (let i = 0; i < n; i++) { const a = HALF / 2 + sd * (gapBottom + i / (n - 1) * span), a2 = a + sd * (HALF / 2 - (i % 2 ? .62 : .1)); const r1 = r + (i % 2 ? .012 : -.012), x = Math.cos(a) * r1, y = Math.sin(a) * r1, dx = Math.cos(a2), dy = Math.sin(a2), nx = -dy, ny = dx; const flip = i % 2 ? 1 : -1, off = .018 * flip; ptsAll.push([[x + nx * off, y + ny * off], [x + dx * len * .45 + nx * (w + off), y + dy * len * .45 + ny * (w + off)], [x + dx * len, y + dy * len], [x + dx * len * .45 - nx * (w - off), y + dy * len * .45 - ny * (w - off)]]); }
+      put(polys(...ptsAll), mat, base, w * .9, { chisel: true, add: true });
+    };
+    if (T === 0) {
+      // Bronze: a plain struck piece. Heavy polished rim, reeded edge, sanded field gone green in the recesses.
+      put(circle(.8), BRZ, .1, .06);
+      put(around(56, a => band(0, 0, .745, .81, a - .017, a + .017, 2)), BRZD, -.024, .012, { add: true });
+      put(circle(.655), BRZD, .05, .012);
+      put(g => { const n = fine ? 40 : 28; for (let i = 0; i < n; i++) { const a = i / n * TAU; dot(Math.cos(a) * .617, Math.sin(a) * .617, fine ? .013 : .018)(g); } }, BRZ, .03, .012, { add: true });
+      emblem(.42, 0, BRZ, BRZ, BRZ, .13);
+    } else if (T === 1) {
+      // Silver: a stepped deco badge with an engine-turned enamel field under glass, a raised laurel and a sapphire keystone.
+      put(around(16, (a, i) => { const R = i % 2 ? .9 : .97, w = i % 2 ? .13 : .1; return [[Math.cos(a) * R, Math.sin(a) * R], [Math.cos(a + w) * .78, Math.sin(a + w) * .78], [Math.cos(a - w) * .78, Math.sin(a - w) * .78]]; }, -HALF / 2), SLVD, .1, .1, { chisel: true });
+      put(circle(.84), SLV, .15, .05);
+      put(ringD(.585, .655), SLVD, .1, .02);
+      put(ringD(.655, .79), SLVD, .13, .025);
+      put(around(48, a => band(0, 0, .768, .79, a - .02, a + .02, 2)), SLV, .03, .01, { add: true });
+      leaves(.68, 8, 2.16, .044, .15, SLV, .07, .16);
+      put(circle(.575), ENA, .05, .006);
+      put(ringD(.56, .59), SLV, .155, .012);
+      put(g => { for (let i = 0; i < 12; i++) { const a = i / 12 * TAU + HALF / 12; dot(Math.cos(a) * .625, Math.sin(a) * .625, .013)(g); } }, SLV, .025, .01, { add: true });
+      emblem(.4, .01, SLV, SLVD, SAPH, .16);
+      put(polys(lozenge(0, -.74, .125, .16)), SLV, .24, .03); put(polys(lozenge(0, -.74, .09, .12)), SAPH, .05, .085, { add: true, chisel: true });
+    } else {
+      // Gold: an order star. Two ranks of faceted rays, a jewelled black-enamel collar, a sunray enamel heart, a deco crown, rubies and a diamond.
+      const ray = (a, R, r, w) => [[Math.cos(a) * R, Math.sin(a) * R], [Math.cos(a + w) * r, Math.sin(a + w) * r], [Math.cos(a - w) * r, Math.sin(a - w) * r]];
+      put(around(16, a => ray(a, 1, .62, .185), HALF / 16), GLD, .13, .18, { chisel: true });
+      put(around(16, a => ray(a, .91, .62, .15), HALF / 16 + TAU / 32), ROSE, .2, .14, { chisel: true });
+      put(circle(.76), GLD, .2, .03);
+      put(g => { const n = fine ? 72 : 44; for (let i = 0; i < n; i++) { const a = i / n * TAU; dot(Math.cos(a) * .745, Math.sin(a) * .745, fine ? .016 : .022)(g); } }, GLD, .05, .016, { add: true });
+      put(ringD(.585, .715), ENB, .15, .006);
+      leaves(.6, 9, 2.25, .05, .17, GLD, .1, .13);
+      put(g => { for (const a of [-HALF / 2 + 1.05, -HALF / 2 - 1.05, -HALF / 2 + 2.1, -HALF / 2 - 2.1]) dot(Math.cos(a) * .65, Math.sin(a) * .65, .05)(g); }, GLD, .13, .012, { base: .16 });
+      put(g => { for (const a of [-HALF / 2 + 1.05, -HALF / 2 - 1.05, -HALF / 2 + 2.1, -HALF / 2 - 2.1]) dot(Math.cos(a) * .65, Math.sin(a) * .65, .04)(g); }, RUBY, .05, .042, { add: true });
+      put(ringD(.555, .6), GLD, .235, .016);
+      put(circle(.565), ENA, .06, .006);
+      emblem(.42, .02, GLD, ROSE, DIAM, .2);
+      const cw = .3, cy = -.83;
+      put(polys([[-cw * 1.04, cy + .14], [-cw * 1.28, cy - .17], [-cw * .55, cy - .02], [0, cy - .165], [cw * .55, cy - .02], [cw * 1.28, cy - .17], [cw * 1.04, cy + .14]], rr(0, cy + .17, cw * 1.08, .045)), GLD, .34, .04, { chisel: true });
+      put(polys(lozenge(0, cy + .02, .056, .07)), DIAM, .045, .06, { add: true, chisel: true }); put(g => { dot(-cw * .72, cy + .05, .03)(g); dot(cw * .72, cy + .05, .03)(g); }, RUBY, .035, .03, { add: true });
+    }
+    // A shallow dish so flat plates still read a gradient, then shade.
+    for (let y = 0, i = 0; y < W; y++) for (let x = 0; x < W; x++, i++) if (Mt[i]) { const u = (x + .5) / U - 1, v = (y + .5) / U - 1; H[i] += (1 - u * u - v * v) * U * .05; }
+    const c = cv(W, W), g = c.getContext('2d'), img = g.createImageData(W, W), d = img.data, MCv = matcap(), N = MCN, blurH = boxBlur(H, W, Math.max(2, Math.round(W * .018))), SH = Math.max(1, W / 360);
+    const dr = meta.dress, ramps = MINT_MAT.map(m => m && m.r ? MINT_RAMP[m.r]() : null), E = [[rgbF(dr[0]), rgbF(dr[1])], [rgbF(dr[2]), rgbF(dr[3])]];
+    if (locked) for (let k = 0; k < 2; k++) for (let j = 0; j < 2; j++) { const v = (E[k][j][0] + E[k][j][1] + E[k][j][2]) / 3 * .4; E[k][j] = [v, v * 1.02, v * 1.12]; }
+    for (let y = 1; y < W - 1; y++) for (let x = 1; x < W - 1; x++) {
+      const i = x + y * W, m = Mt[i]; if (!m) continue;
+      let nx = (H[i - 1] - H[i + 1]) * .5, ny = (H[i - W] - H[i + W]) * .5; const l = 1 / Math.sqrt(1 + nx * nx + ny * ny); nx *= l; ny *= l; const nz = l;
+      const mp = MINT_MAT[m], u = (x + .5) / U - 1, v = (y + .5) / U - 1, r = Math.sqrt(u * u + v * v), a = Math.atan2(v, u), cav = blurH[i] - H[i], ao = Math.max(.34, Math.min(1, 1 - cav / U / (T === 0 ? .05 : .08))), ix = Math.min(N - 1, ((nx * .5 + .5) * N) | 0), iy = Math.min(N - 1, ((ny * .5 + .5) * N) | 0);
+      let Lv = MCv[ix + iy * N], R, G, B;
+      if (mp.e !== undefined) {
+        const e = E[mp.e], p = mp.e ? .3 + .25 * (Math.sin(a * 72) > .2 ? 1 : 0) : (T === 2 ? Math.pow(Math.abs(Math.sin(a * 16 + HALF / 32 * 8)), .7) * .75 + .25 * (Math.sin(r * 90) * .5 + .5) : .32 + .36 * (.5 + .5 * Math.sin(a * 44 + 4.2 * Math.sin(r * 42)))), vign = 1.05 - r * (mp.e ? 0 : .7);
+        const mixV = i => (e[0][i] + (e[1][i] - e[0][i]) * p) * vign;
+        const gl = .34 * Math.exp(-Math.pow((u * .62 + v * .78 + .3) / .04, 2)) + .3 * Math.exp(-Math.pow((u * .62 + v * .78 + .42) / .012, 2)) + Math.max(0, -v - u * .4) * .16 + Math.max(0, Lv - 1.6) * .3;
+        R = mixV(0) * ao + gl * .9; G = mixV(1) * ao + gl * .93; B = mixV(2) * ao + gl;
+      } else {
+        const flat = nz > .985 ? 1 : 0, fan = mp.brush && flat ? Math.pow(Math.abs(Math.cos(2 * (a - .9))), 10) : 0;
+        if (flat && mp.brush) { const ring = Math.sin(r * W * .9 + Math.sin(a * 5) * 3) * .5 + .5; Lv += (ring - .5) * .05 * mp.brush; }
+        if (mp.grain) { const nn = Math.sin(x * 12.9898 + y * 78.233) * 43758.5453; Lv += (nn - Math.floor(nn) - .5) * mp.grain * 2; }
+        Lv += mp.gem ? .55 + 1.1 * Math.max(0, nx * .5 + ny * .7) : .22 + 1.5 * Math.max(0, -nx * .62 - ny * .78) + (u * -.1 + v * -.2);
+        Lv = (Lv + fan * mp.brush * 1.5) * ao * mp.g * (mp.gem ? 1 : 1);
+        const t = 1 - Math.exp(-Lv * .92), k = Math.min(255, Math.max(0, (t * 272) | 0)) * 3, rp = ramps[m]; R = rp[k] / 255; G = rp[k + 1] / 255; B = rp[k + 2] / 255;
+        if (mp.patina && !locked) { const pat = Math.min(.75, Math.max(0, cav / U * 22 + (Math.sin(a * 7 + r * 11) * .5 + .5) * .08)); R += (.2 - R) * pat; G += (.46 - G) * pat; B += (.4 - B) * pat; }
+      }
+      const j = i * 4; d[j] = Math.min(255, R * 255); d[j + 1] = Math.min(255, G * 255); d[j + 2] = Math.min(255, B * 255); d[j + 3] = 255;
+    }
+    g.putImageData(img, 0, 0);
+    STAT_MEDAL.ms += nowMs() - t0; STAT_MEDAL.n++; c.ms = nowMs() - t0;
+    return c;
+  }
+  const STAT_MEDAL = { n: 0, ms: 0 };
+  // A small LRU by bytes: phones get no more than ~40 MB of medal pixels.
+  const MEDAL_CACHE = new Map(); let medalBytes = 0;
+  const MEDAL_MAX = 40 << 20;
+  function mcGet(k) { const v = MEDAL_CACHE.get(k); if (v) { MEDAL_CACHE.delete(k); MEDAL_CACHE.set(k, v); } return v; }
+  function mcPut(k, v) { MEDAL_CACHE.set(k, v); medalBytes += v.width * v.height * 4; for (const [o, c] of MEDAL_CACHE) { if (medalBytes <= MEDAL_MAX) break; if (o === k) continue; MEDAL_CACHE.delete(o); medalBytes -= c.width * c.height * 4; } return v; }
+  const medalDpr = () => Math.min(2, typeof devicePixelRatio === 'number' && devicePixelRatio ? devicePixelRatio : 1);
+  const masterW = px => px <= 120 ? 240 : px <= 260 ? 400 : 640;
+  const masterOf = (id, t, W) => { const k = `m|${id}|${t}|${W}`; return mcGet(k) || mcPut(k, mintMaster(id, t, W)); };
+  function medalStar(g, x, y, r, a = 1, col = '255,244,214') { g.save(); g.translate(x, y); g.globalAlpha = a; g.globalCompositeOperation = 'lighter'; const q = g.createRadialGradient(0, 0, 0, 0, 0, r * .55); q.addColorStop(0, `rgba(${col},.95)`); q.addColorStop(1, `rgba(${col},0)`); g.fillStyle = q; g.beginPath(); g.arc(0, 0, r * .55, 0, TAU); g.fill(); g.fillStyle = `rgba(${col},.95)`; for (let i = 0; i < 4; i++) { g.rotate(HALF / 2); g.beginPath(); g.moveTo(0, -r); g.lineTo(r * .07, 0); g.lineTo(0, r); g.lineTo(-r * .07, 0); g.closePath(); g.fill(); } g.restore(); }
+  // Where the light catches, per tier. Unit coordinates.
+  const MEDAL_GLINTS = [[], [[-.4, -.62, .15]], [[-.5, -.66, .26], [.68, -.42, .14], [-.2, .78, .1]]];
+  function medalPaint(g, m, W, T, lit) {
+    g.save(); g.translate(W / 2, W / 2); const U = W / 2;
+    if (T === 2) {
+      let q = g.createRadialGradient(0, 0, U * .4, 0, 0, U); q.addColorStop(0, 'rgba(255,200,92,.62)'); q.addColorStop(.62, 'rgba(255,160,52,.22)'); q.addColorStop(1, 'rgba(255,140,40,0)'); g.fillStyle = q; g.fillRect(-U, -U, W, W);
+    } else if (T === 1) { const q = g.createRadialGradient(0, 0, U * .55, 0, 0, U); q.addColorStop(0, 'rgba(176,206,250,.3)'); q.addColorStop(1, 'rgba(176,206,250,0)'); g.fillStyle = q; g.fillRect(-U, -U, W, W); }
+    g.restore();
+    g.save(); g.shadowColor = 'rgba(0,0,0,.65)'; g.shadowBlur = U * .05; g.shadowOffsetY = U * .03; g.imageSmoothingEnabled = true; g.imageSmoothingQuality = 'high'; g.drawImage(m, 0, 0, W, W); g.restore();
+    if (lit && T > 0) for (const [x, y, r] of MEDAL_GLINTS[T]) medalStar(g, W / 2 + x * U, W / 2 + y * U, r * U, T === 2 ? 1 : .8, T === 2 ? '255,244,214' : '226,238,255');
+  }
+  function medal(id, tier, R = 48) {
+    const t = tierOf(tier), px = Math.max(8, Math.ceil(R * 2 * medalDpr())), k = `c|${id}|${t}|${px}`; let c = mcGet(k); if (c) return c;
+    c = cv(px, px); const g = c.getContext('2d'); medalPaint(g, masterOf(id, t, masterW(px)), px, t, true);
+    c.style.width = c.style.height = (R * 2) + 'px'; c.R = R; return mcPut(k, c);
+  }
+  // For long lists: runs one bake per slice, then paints a target canvas or img (or calls back with the medal). Cached medals are immediate.
+  const MEDAL_Q = []; let medalQOn = false;
+  function medalPump() { const j = MEDAL_Q.shift(); if (!j) { medalQOn = false; return; } j(); setTimeout(medalPump, 16); }
+  function medalReady(id, tier, R, cb) { const px = Math.ceil(R * 2 * medalDpr()), k = `c|${id}|${tierOf(tier)}|${px}`; const hit = mcGet(k); if (hit) { cb(hit); return; } MEDAL_Q.push(() => cb(medal(id, tier, R))); if (!medalQOn) { medalQOn = true; setTimeout(medalPump, 0); } }
+  function medalInto(el, id, tier, R) { el.dataset.medal = `${id}|${tier}`; medalReady(id, tier, R, c => { if (el.dataset.medal !== `${id}|${tier}`) return; if (el.getContext) { el.width = c.width; el.height = c.height; el.getContext('2d').drawImage(c, 0, 0); } else el.src = c.toDataURL(); }); }
+  // Live draw for the moment a medal is won: the cached medal, a sweeping light across it, and for Gold a turning halo and twinkling stars. time in seconds.
+  function medalDraw(ctx, id, tier, x, y, R, time = 0) {
+    const t = Math.max(0, tierOf(tier)), c = medal(id, tier, R), sweep = ((time * .32) % 1) * 3.2 - 1.1;
+    if (t === 2) { const gl = glow('#ffc860'); ctx.save(); ctx.globalCompositeOperation = 'lighter'; ctx.translate(x, y); ctx.rotate(time * .22); ctx.globalAlpha = .34 + .1 * Math.sin(time * 2.4); const B = R * 1.32; for (let i = 0; i < 8; i++) { ctx.rotate(TAU / 8); ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(Math.cos(-.1) * B, Math.sin(-.1) * B); ctx.lineTo(Math.cos(.1) * B, Math.sin(.1) * B); ctx.closePath(); const q = ctx.createRadialGradient(0, 0, R * .5, 0, 0, B); q.addColorStop(0, 'rgba(255,220,140,.5)'); q.addColorStop(1, 'rgba(255,220,140,0)'); ctx.fillStyle = q; ctx.fill(); } ctx.restore(); ctx.save(); ctx.globalCompositeOperation = 'lighter'; ctx.globalAlpha = .35; ctx.drawImage(gl, x - R * 1.5, y - R * 1.5, R * 3, R * 3); ctx.restore(); }
+    ctx.drawImage(c, x - R, y - R, R * 2, R * 2);
+    if (t > 0) { ctx.save(); ctx.beginPath(); ctx.arc(x, y, R * (t === 2 ? .76 : .84), 0, TAU); ctx.clip(); ctx.globalCompositeOperation = 'lighter'; const X = x + sweep * R, q = ctx.createLinearGradient(X - R * .3, y - R, X + R * .3, y + R); q.addColorStop(0, 'rgba(255,255,255,0)'); q.addColorStop(.5, t === 2 ? 'rgba(255,240,200,.5)' : 'rgba(225,238,255,.36)'); q.addColorStop(1, 'rgba(255,255,255,0)'); ctx.fillStyle = q; ctx.fillRect(x - R, y - R, R * 2, R * 2); ctx.restore(); }
+    if (t === 2) MEDAL_GLINTS[2].forEach(([u, v, r], i) => { const a = Math.pow(Math.max(0, Math.sin(time * 2 + i * 1.7)), 5); if (a > .02) medalStar(ctx, x + u * R, y + v * R, r * R * 1.5, a); });
+  }
+  const medalURL = (id, tier, R = 48) => { const c = medal(id, tier, R); return c.url || (c.url = c.toDataURL()); };
+  // ---------- end medals ----------
+
+  // ---------- 11.0 cards, comics, palette, presentation ----------
+  const DISP = '"Big Shoulders Display","Arial Narrow","Avenir Next Condensed","Roboto Condensed","DejaVu Sans Condensed",Impact,sans-serif', UI_F = '"Barlow Semi Condensed","Arial Narrow","Roboto Condensed","DejaVu Sans Condensed",system-ui,sans-serif';
+  const fontD = (px, w = 800) => `${w} ${px}px ${DISP}`, fontU = (px, w = 600) => `${w} ${px}px ${UI_F}`;
+  const GOLDL = '#e6d29a', GOLDM = '#b89c5e', PAPER = '#e9edf4', MUTE = '#94a1b5';
+  const lazyCanvas = (k, make) => mcGet(k) || mcPut(k, make());
+  function fitText(g, s, maxW, px, f = fontD) { let p = px; g.font = f(p); while (p > 8 && g.measureText(s).width > maxW) { p -= 1; g.font = f(p); } return p; }
+  function wrapLines(g, s, maxW) { const out = []; let l = ''; for (const w of String(s).split(/\s+/)) { const t = l ? l + ' ' + w : w; if (g.measureText(t).width > maxW && l) { out.push(l); l = w; } else l = t; } if (l) out.push(l); return out; }
+
+  // Card and banner grounds: flat deco drawing, no bake, cached per size.
+  const CARD_STYLE = {
+    plate(g, w, h, p) { const q = g.createLinearGradient(0, 0, w, h); q.addColorStop(0, p[1]); q.addColorStop(1, p[0]); g.fillStyle = q; g.fillRect(0, 0, w, h); g.strokeStyle = p[2]; g.globalAlpha = .16; g.lineWidth = 1; for (let i = -h; i < w; i += h / 7) { g.beginPath(); g.moveTo(i, h); g.lineTo(i + h, 0); g.stroke(); } g.globalAlpha = 1; },
+    sunburst(g, w, h, p) { CARD_STYLE.base(g, w, h, p); const cx = w / 2, cy = h * 1.06, R = Math.hypot(w, h) * 1.1; for (let i = 0; i < 26; i++) { if (i % 2) continue; const a0 = Math.PI + i / 26 * Math.PI, a1 = Math.PI + (i + 1) / 26 * Math.PI; g.fillStyle = p[1]; g.beginPath(); g.moveTo(cx, cy); g.lineTo(cx + Math.cos(a0) * R, cy + Math.sin(a0) * R); g.lineTo(cx + Math.cos(a1) * R, cy + Math.sin(a1) * R); g.closePath(); g.fill(); } g.strokeStyle = p[2]; g.lineWidth = Math.max(1, h * .012); for (const r of [.3, .46, .62]) { g.beginPath(); g.arc(cx, cy, h * r * 1.5, Math.PI, TAU); g.stroke(); } g.fillStyle = p[2]; g.beginPath(); g.arc(cx, cy, h * .3, Math.PI, TAU); g.fill(); },
+    chevron(g, w, h, p) { CARD_STYLE.base(g, w, h, p); const s = h * .34; for (let i = -1, c = 0; i * s < w + h; i++, c++) { g.fillStyle = c % 3 === 0 ? p[2] : p[1]; g.globalAlpha = c % 3 === 0 ? .85 : .6; const x = i * s - h * .3, t = c % 3 === 0 ? s * .16 : s * .5; g.beginPath(); g.moveTo(x, 0); g.lineTo(x + t, 0); g.lineTo(x + t + h * .5, h / 2); g.lineTo(x + t, h); g.lineTo(x, h); g.lineTo(x + h * .5, h / 2); g.closePath(); g.fill(); } g.globalAlpha = 1; },
+    skyline(g, w, h, p, r) { CARD_STYLE.base(g, w, h, p); for (let i = 0; i < 3; i++) { const q = g.createLinearGradient(0, 0, 0, h); q.addColorStop(0, p[2] + '40'); q.addColorStop(1, p[2] + '00'); g.fillStyle = q; const x = w * (.18 + i * .32); g.beginPath(); g.moveTo(x - h * .05, h); g.lineTo(x - h * .55 + i * h * .5, 0); g.lineTo(x - h * .25 + i * h * .5, 0); g.lineTo(x + h * .05, h); g.closePath(); g.fill(); } for (let lay = 0; lay < 2; lay++) { g.fillStyle = lay ? p[0] : p[1]; let x = -8; while (x < w + 8) { const bw = h * (.08 + r() * .14), bh = h * (lay ? .16 + r() * .36 : .36 + r() * .46), by = h - bh; g.beginPath(); g.moveTo(x, h); g.lineTo(x, by + bw * .4); g.lineTo(x + bw * .25, by + bw * .4); g.lineTo(x + bw * .25, by + bw * .15); g.lineTo(x + bw * .42, by + bw * .15); g.lineTo(x + bw / 2, by - bw * .7); g.lineTo(x + bw * .58, by + bw * .15); g.lineTo(x + bw * .75, by + bw * .15); g.lineTo(x + bw * .75, by + bw * .4); g.lineTo(x + bw, by + bw * .4); g.lineTo(x + bw, h); g.closePath(); g.fill(); x += bw + h * .012; } } },
+    fan(g, w, h, p) { CARD_STYLE.base(g, w, h, p); const s = h * .42; g.lineWidth = Math.max(1, h * .012); for (let row = 0, y = -s * .1; y < h + s; row++, y += s * .5) for (let x = (row % 2 ? s / 2 : 0) - s; x < w + s; x += s) { g.fillStyle = row % 2 ? p[1] : p[0]; g.strokeStyle = p[2]; g.beginPath(); g.arc(x, y, s / 2, Math.PI, TAU); g.lineTo(x + s / 2, y); g.closePath(); g.fill(); g.stroke(); for (let i = 1; i < 4; i++) { g.beginPath(); g.arc(x, y, s / 2 * (1 - i / 4), Math.PI, TAU); g.globalAlpha = .55; g.stroke(); g.globalAlpha = 1; } } },
+    mint(g, w, h, p) { CARD_STYLE.base(g, w, h, p); const s = h * .4; g.lineWidth = Math.max(1, h * .014); let row = 0; for (let y = 0; y < h + s; y += s * .86, row++) for (let x = row % 2 ? s / 2 : 0; x < w + s; x += s) { g.strokeStyle = p[1]; g.beginPath(); g.arc(x, y, s * .46, 0, TAU); g.stroke(); g.strokeStyle = p[2]; g.globalAlpha = .55; g.beginPath(); g.arc(x, y, s * .32, 0, TAU); g.stroke(); g.globalAlpha = 1; g.fillStyle = p[2]; g.save(); g.translate(x, y); g.rotate(HALF / 4); g.fillRect(-s * .08, -s * .08, s * .16, s * .16); g.restore(); } },
+    stripes(g, w, h, p) { CARD_STYLE.base(g, w, h, p); g.save(); g.transform(1, 0, -.6, 1, h * .6, 0); [[.08, .34, p[1]], [.42, .06, p[2]], [.54, .12, p[1]], [.72, .03, p[2]]].forEach(([x, wd, c]) => { g.fillStyle = c; g.fillRect(x * w, 0, wd * w, h); }); g.restore(); },
+    storm(g, w, h, p, r) { CARD_STYLE.base(g, w, h, p); g.fillStyle = p[1]; for (let i = 0; i < 7; i++) { g.beginPath(); g.ellipse(r() * w, r() * h * .3, h * (.3 + r() * .4), h * (.1 + r() * .1), 0, 0, TAU); g.fill(); } for (let k = 0; k < 3; k++) { let x = w * (.2 + k * .3), y = 0; g.strokeStyle = p[2]; g.lineWidth = Math.max(1.5, h * (.03 - k * .006)); g.lineJoin = 'miter'; g.beginPath(); g.moveTo(x, y); while (y < h) { y += h * (.12 + r() * .14); x += (r() - .5) * h * .4; g.lineTo(x, y); } g.stroke(); } },
+    tide(g, w, h, p) { CARD_STYLE.base(g, w, h, p); for (let i = 0; i < 6; i++) { const y = h * (.25 + i * .15), a = h * .07, l = h * .55; g.fillStyle = i % 2 ? p[1] : p[0]; g.strokeStyle = p[2]; g.lineWidth = Math.max(1, h * .012); g.beginPath(); g.moveTo(-l, h); g.lineTo(-l, y); for (let x = -l + (i % 2 ? l / 2 : 0); x < w + l; x += l) g.quadraticCurveTo(x + l / 4, y - a * 2, x + l / 2, y), g.quadraticCurveTo(x + l * .75, y + a * 2, x + l, y); g.lineTo(w + l, h); g.closePath(); g.fill(); g.stroke(); } },
+    crown(g, w, h, p) { CARD_STYLE.sunburst(g, w, h, p); const k = h * .5, cx = w / 2, y = h * .62; g.fillStyle = p[3] || p[2]; g.beginPath(); [[-.9, .4], [-1.05, -.45], [-.5, -.05], [0, -.8], [.5, -.05], [1.05, -.45], [.9, .4]].forEach(([a, b], i) => g[i ? 'lineTo' : 'moveTo'](cx + a * k, y + b * k)); g.closePath(); g.fill(); g.fillRect(cx - k * .92, y + k * .5, k * 1.84, k * .16); },
+    laurel(g, w, h, p) { CARD_STYLE.base(g, w, h, p); const cx = w / 2, cy = h * .56, R = h * .36; g.fillStyle = p[2]; for (const sd of [-1, 1]) for (let i = 0; i < 9; i++) { const a = HALF / 2 + sd * (.3 + i * .28), x = cx + Math.cos(a) * R, y = cy + Math.sin(a) * R; g.save(); g.translate(x, y); g.rotate(a + sd * 1.1); g.beginPath(); g.ellipse(0, 0, h * .075, h * .027, 0, 0, TAU); g.fill(); g.restore(); } g.strokeStyle = p[1]; g.lineWidth = Math.max(1, h * .01); g.beginPath(); g.moveTo(0, h * .9); g.lineTo(w, h * .9); g.moveTo(0, h * .1); g.lineTo(w, h * .1); g.stroke(); },
+    base(g, w, h, p) { g.fillStyle = p[0]; g.fillRect(0, 0, w, h); },
+  };
+  // id, name, kind, style, [ground, shape, line, extra]; cost = Marks to buy, earn = what the career must show.
+  // earn is one of { medals:n } any tier, { silvers:n }, { golds:n } counted at that tier or better, { mastery:tier } on any champion, { wins:n }.
+  const CARDS = [
+    ['graphite', 'Graphite', 'card', 'plate', ['#0d0f15', '#1d212c', '#39414f'], 0],
+    ['nightfall', 'Nightfall', 'card', 'sunburst', ['#0a1630', '#10264c', '#e6d29a'], 250], ['bloodline', 'Bloodline', 'card', 'chevron', ['#16070c', '#5e0f1e', '#ec3a52'], 250],
+    ['avenue', 'Avenue', 'card', 'skyline', ['#080b14', '#182440', '#ffd98a'], 400], ['seashell', 'Seashell', 'card', 'fan', ['#06201f', '#0c3a38', '#6fdcc4'], 400],
+    ['die_cut', 'Die Cut', 'card', 'mint', ['#101014', '#3d3a36', '#d9ab55'], 600], ['stormfront', 'Stormfront', 'card', 'storm', ['#0b0e1c', '#1e2540', '#a9d8ff'], 750], ['undertow', 'Undertow', 'card', 'tide', ['#04121f', '#0a2a44', '#7fdcff'], 750],
+    ['struck', 'Struck in Bronze', 'card', 'mint', ['#170d07', '#5a3218', '#d99a5e'], { medals: 8 }, 'Earn 8 medals of any tier.'],
+    ['sterling', 'Sterling', 'card', 'fan', ['#0d121c', '#2a3346', '#dde6f2'], { silvers: 8 }, 'Earn 8 Silver medals.'],
+    ['sovereign', 'Sovereign', 'card', 'crown', ['#120a02', '#3e2406', '#ffcf62', '#fff0ac'], { golds: 6 }, 'Earn 6 Gold medals.'],
+    ['apex', 'The Apex', 'card', 'crown', ['#0a0612', '#1e1438', '#ffd98a', '#ffffff'], { golds: 16 }, 'Earn 16 Gold medals.'],
+    ['bar_plain', 'Plain Bar', 'banner', 'plate', ['#0f1218', '#1d212c', '#39414f'], 0],
+    ['bar_chevron', 'Marching Chevron', 'banner', 'chevron', ['#0a1630', '#14305e', '#e6d29a'], 200], ['bar_skyline', 'Skyline', 'banner', 'skyline', ['#090c16', '#1a2640', '#ffd98a'], 300], ['bar_rush', 'Rush', 'banner', 'stripes', ['#14060a', '#7e1426', '#ff6a80'], 300],
+    ['bar_tide', 'Rising Tide', 'banner', 'tide', ['#04121f', '#0a2a44', '#7fdcff'], 450], ['bar_shell', 'Shell Court', 'banner', 'fan', ['#120d08', '#3a2a18', '#e6c98a'], 450],
+    ['bar_laurel', 'Laurel', 'banner', 'laurel', ['#0d1018', '#34405a', '#dde6f2'], { silvers: 4 }, 'Earn 4 Silver medals.'], ['bar_master', 'Master of the Mint', 'banner', 'mint', ['#100b04', '#4e3410', '#ffcf62'], { mastery: 5 }, 'Reach top mastery with any champion.'],
+    ['bar_crown', 'Crowned', 'banner', 'crown', ['#120a02', '#3e2406', '#ffcf62', '#fff0ac'], { golds: 3 }, 'Earn 3 Gold medals.'],
+  ].map(([id, name, kind, style, pal, price, d]) => ({ id, name, kind, style, pal, cost: typeof price === 'number' ? price : undefined, earn: typeof price === 'object' ? price : undefined, d: d || (price ? `${price} Marks` : 'Starter') }));
+  function cardArt(id, w = 340, h = 150) {
+    return lazyCanvas(`card|${id}|${w}|${h}`, () => {
+      const def = CARDS.find(c => c.id === id) || CARDS[0], c = cv(w, h), g = c.getContext('2d'), r = seeded(hashStr(def.id) % 2147483646 + 1);
+      CARD_STYLE[def.style](g, w, h, def.pal, r);
+      const v = g.createLinearGradient(0, 0, 0, h); v.addColorStop(0, 'rgba(4,5,9,.08)'); v.addColorStop(1, 'rgba(4,5,9,.55)'); g.fillStyle = v; g.fillRect(0, 0, w, h);
+      g.strokeStyle = def.pal[2]; g.globalAlpha = .75; g.lineWidth = Math.max(1, h * .012); g.strokeRect(g.lineWidth / 2, g.lineWidth / 2, w - g.lineWidth, h - g.lineWidth); g.globalAlpha = 1;
+      return c;
+    });
+  }
+  function drawSealDisc(g, kit, x, y, r, col, ring) { if (!EMB[kit]) kit = 'vesper'; g.save(); g.fillStyle = INK; g.beginPath(); g.arc(x, y, r, 0, TAU); g.fill(); g.strokeStyle = ring || col; g.lineWidth = Math.max(1.5, r * .07); g.beginPath(); g.arc(x, y, r - g.lineWidth / 2, 0, TAU); g.stroke(); const S = Math.min(384, Math.ceil(r * 3)); g.drawImage(seal(kit, col, S), x - r * .92, y - r * .92, r * 1.84, r * 1.84); g.restore(); }
+  // The player card: name, title, banner, champion and up to three pinned medals. o: { name, title, card, banner, champ, medals:[{id,tier}], stats:[[label,value],...] }
+  function playerCard(o = {}, W = 360) {
+    const dpr = medalDpr(), w = W * dpr, h = Math.round(W * .54) * dpr, c = cv(w, h), g = c.getContext('2d'); g.scale(dpr, dpr); const H = h / dpr;
+    g.drawImage(cardArt(o.card || 'graphite', w, h), 0, 0, W, H);
+    const bH = H * .36; g.drawImage(cardArt(o.banner || 'bar_plain', Math.round(W * dpr), Math.round(bH * dpr)), 0, 0, W, bH);
+    const R = H * .28, cx = R + W * .04, cy = H * .54; drawSealDisc(g, o.champ, cx, cy, R, GOLDL);
+    const tx = cx + R + W * .03; g.fillStyle = PAPER; g.textBaseline = 'alphabetic'; fitText(g, (o.name || 'Player').toUpperCase(), W - tx - W * .03, H * .15); g.shadowColor = 'rgba(0,0,0,.85)'; g.shadowBlur = 5; g.fillText((o.name || 'Player').toUpperCase(), tx, H * .19); g.shadowBlur = 0;
+    g.fillStyle = GOLDL; fitText(g, o.title || '', W - tx - W * .03, H * .095, fontU); g.fillText(o.title || '', tx, H * .31); g.shadowBlur = 0;
+    const m = (o.medals || []).slice(0, 3), mr = H * .15; m.forEach((e, i) => { const ms = medal(e.id, e.tier, mr); g.drawImage(ms, tx + i * mr * 2.08, H * .4, mr * 2, mr * 2); });
+    (o.stats || []).slice(0, 4).forEach(([l, v], i) => { const x = tx + i * (W - tx - W * .02) / Math.min(4, (o.stats || []).length); g.fillStyle = PAPER; g.font = fontD(H * .105); g.fillText(String(v), x, H * .86); g.fillStyle = MUTE; g.font = fontU(H * .06); g.fillText(String(l).toUpperCase(), x, H * .94); });
+    c.style.width = W + 'px'; c.style.height = H + 'px'; return c;
+  }
+  // The share image, 1200 wide. o: { name, title, card, banner, champ, result, line, k, d, a, medals:[{id,tier}], marks, tags:['MVP',...], mode }
+  function shareCard(o = {}, W = 1200) {
+    const H = Math.round(W * .525), c = cv(W, H), g = c.getContext('2d'), u = W / 1200, win = /vict|win/i.test(o.result || '');
+    g.drawImage(cardArt(o.card || 'nightfall', W, H), 0, 0);
+    const sh = g.createLinearGradient(0, 0, W, 0); sh.addColorStop(0, 'rgba(5,6,10,.9)'); sh.addColorStop(.62, 'rgba(5,6,10,.7)'); sh.addColorStop(1, 'rgba(5,6,10,.35)'); g.fillStyle = sh; g.fillRect(0, 0, W, H);
+    g.drawImage(cardArt(o.banner || 'bar_chevron', W, Math.round(26 * u)), 0, H - 26 * u);
+    drawSealDisc(g, o.champ, 168 * u, 200 * u, 124 * u, win ? '#ffd98a' : '#c9d2de', win ? '#ffd98a' : '#8fa5c2');
+    g.fillStyle = win ? '#ffd98a' : '#c9d2de'; const res = (o.result || 'Match complete').toUpperCase(); fitText(g, res, 760 * u, 118 * u); g.fillText(res, 332 * u, 158 * u);
+    g.fillStyle = PAPER; fitText(g, o.name || 'Player', 560 * u, 54 * u); g.fillText(o.name || 'Player', 332 * u, 222 * u);
+    g.fillStyle = GOLDM; g.font = fontU(30 * u); g.fillText(o.title || o.line || '', 332 * u, 264 * u);
+    if (o.k !== undefined) { g.fillStyle = PAPER; g.font = fontD(70 * u); g.fillText(`${o.k} / ${o.d} / ${o.a}`, 332 * u, 356 * u); }
+    (o.tags || []).slice(0, 3).forEach((t, i) => { const x = 332 * u + i * 186 * u, y = 390 * u; g.fillStyle = i ? 'rgba(230,210,154,.16)' : '#e6d29a'; g.fillRect(x, y, 174 * u, 56 * u); g.fillStyle = i ? GOLDL : INK; fitText(g, t.toUpperCase(), 150 * u, 34 * u); g.fillText(t.toUpperCase(), x + 12 * u, y + 41 * u); });
+    (o.medals || []).slice(0, 4).forEach((e, i) => g.drawImage(medal(e.id, e.tier, 56), 880 * u + (i % 2) * 150 * u, 60 * u + (i >> 1) * 150 * u, 140 * u, 140 * u));
+    if (o.marks) { g.fillStyle = GOLDL; g.font = fontD(46 * u); g.textAlign = 'right'; g.fillText(`+${o.marks} MARKS`, W - 42 * u, H - 62 * u); g.textAlign = 'left'; }
+    g.fillStyle = MUTE; g.font = fontU(22 * u); g.fillText(`FLIPSIDE${o.mode ? '  /  ' + String(o.mode).toUpperCase() : ''}`, 42 * u, H - 54 * u);
+    return c;
+  }
+
+  // ---------- origin comics: three panels per champion, flat ink and one accent ----------
+  const ORIGINS = {
+    vesper: [['rooftop', 'wide', 'From the clock tower Vesper counted the streetlights. Each night, fewer came back on.'], ['alley', 'mid', 'She learned why: the Kingpin was buying the dark, one block at a time.'], ['rooftop', 'close', 'So she took a long rifle and a longer view. Nobody buys the dark on her street.']],
+    kade: [['stage', 'mid', 'Captain Riposte was a fencing-hall joke: all flourish, no blood.'], ['alley', 'wide', 'Then six men came for the hall’s takings, and every one of them lunged first.'], ['stage', 'close', 'He still bows. The bow is now a warning.']],
+    ione: [['nave', 'wide', 'Ione catalogued the sealed archive under the old cathedral. One book read her back.'], ['storm', 'mid', 'It left a mark on her that would pass to anything she touched.'], ['nave', 'close', 'She has since learned which things to touch, and when to let the mark break.']],
+    solenne: [['ward', 'wide', 'In the blackout winter, Solenne ran the only lit ward in the Lower Mint.'], ['ward', 'mid', 'She ran out of medicine in a week. She did not run out of patients.'], ['nave', 'close', 'What she found instead has to be aimed. She has never once been allowed to miss.']],
+    sable: [['alley', 'mid', 'Sable took messages for whoever paid. Then a message named her sister.'], ['rooftop', 'wide', 'She delivered the reply in person, to all eleven addresses.'], ['alley', 'close', 'The Heroes offered her a badge. She took the work and left the badge.']],
+    gravel: [['foundry', 'wide', 'Gravel hauled ingots at the Great Press for thirty years, hook in hand.'], ['foundry', 'mid', 'When the Press came down, he held the gantry until the last shift got out.'], ['rooftop', 'close', 'They say his back never straightened. His hook never needed it to.']],
+    deadbolt: [['alley', 'wide', 'Deadbolt fitted locks for people who were afraid. The pay was excellent.'], ['ward', 'mid', 'He noticed fear pays better when you sell it twice.'], ['alley', 'close', 'Now the wire goes up first. The bill comes after.']],
+    duelist: [['stage', 'wide', 'The Duelist fought for the amusement of the Villains’ private clubs.'], ['stage', 'mid', 'Ninety-nine salutes. Ninety-nine bodies. The audience asked for more.'], ['alley', 'close', 'He stopped wondering who he was fighting for. Only how well.']],
+    hex: [['nave', 'mid', 'Hex was a clerk of debts, and she wrote very neatly.'], ['storm', 'wide', 'One ledger was written in something that was not ink. It balanced anyway.'], ['nave', 'close', 'Every curse is an entry. She collects with interest.']],
+    plague: [['ward', 'wide', 'He kept the charity ward clean. He kept excellent notes on who stayed sick.'], ['ward', 'mid', 'A patient who pays forever is better than one who gets well.'], ['alley', 'close', 'The mask is not to keep it out. It is so you cannot see him smile.']],
+    shiv: [['alley', 'wide', 'Nobody on Cutter’s Row ever remembered the girl who swept the steps.'], ['alley', 'mid', 'She remembered all of them, and everything they said in front of her.'], ['rooftop', 'close', 'If you see her now, it is because she wants the last thing you see to be a warning for someone else.']],
+    ironjaw: [['foundry', 'mid', 'The company fighter took a punch for a living. Then a press took his jaw.'], ['foundry', 'wide', 'They rebuilt it out of what was on the floor, and billed him for the iron.'], ['stage', 'close', 'He has been paying them back since. Every hit he takes goes on the account.']],
+    voltaic: [['storm', 'wide', 'A courier on the night run, racing the storm over Ampere Bridge.'], ['storm', 'mid', 'The storm won. Then it found it could not keep up with her.'], ['rooftop', 'close', 'She delivers everywhere now. Usually before the thunder.']],
+    tidecaller: [['harbor', 'wide', 'When the seawall failed, the harbormaster’s daughter stayed to ring the bell.'], ['harbor', 'mid', 'The water took the bell. It gave her back with a question.'], ['harbor', 'close', 'She answers for it now. The tide keeps its appointments.']],
+    paragon: [['rooftop', 'mid', 'The city’s first hero fell out of favour long before he fell out of the sky.'], ['storm', 'wide', 'He got up from the crater with the street watching and nothing to say.'], ['rooftop', 'close', 'He doesn’t give speeches now. He gives very short notice.']],
+    mirage: [['stage', 'wide', 'A sideshow marksman who never once showed the crowd her real hand.'], ['stage', 'mid', 'When the show folded, her reflections did not. They had grown accustomed to the work.'], ['alley', 'close', 'Aim wherever you like. She has already moved, several times.']],
+    cinder: [['foundry', 'wide', 'Cinder was cold every day of her childhood in the Soot Quarter.'], ['foundry', 'mid', 'The furnace that killed the shift only warmed her up.'], ['rooftop', 'close', 'The whole city is kindling, and she would so like to be comfortable.']],
+    ravager: [['harbor', 'mid', 'Something crawled out of the outflow pipes beneath the Mint, and it was hungry.'], ['alley', 'wide', 'The Villains put a collar on it. The collar is still around here somewhere.'], ['alley', 'close', 'It knows your scent. It learned it three blocks ago.']],
+    cataclysm: [['foundry', 'wide', 'The Press Works built a siege engine and forgot to leave anyone in charge.'], ['storm', 'mid', 'It woke to find walls in every direction, and an answer to all of them.'], ['rooftop', 'close', 'No one has yet explained to it that the war is over. No one has volunteered.']],
+    puppeteer: [['stage', 'wide', 'A grand theatre, an adoring crowd, and not one of the actors on the payroll.'], ['stage', 'mid', 'He found that people pull their own strings. One only has to hold the other end.'], ['nave', 'close', 'By the last act, everyone is dancing. Applause is mandatory.']],
+  };
+  const ORIGIN_SIDE = id => ['deadbolt', 'duelist', 'hex', 'plague', 'shiv', 'ironjaw', 'cinder', 'ravager', 'cataclysm', 'puppeteer'].includes(id) ? 1 : 0;
+  const shade2 = (g, W, H, y0, col) => { g.fillStyle = col; const s = 9; for (let y = y0, j = 0; y < H + s; y += s, j++) { const r = 1 + (y - y0) / (H - y0) * 3.3; for (let x = j % 2 ? s / 2 : 0; x < W + s; x += s) { g.beginPath(); g.arc(x, y, r, 0, TAU); g.fill(); } } };
+  const SCENES = {
+    rooftop(g, W, H, p, r) { const q = g.createLinearGradient(0, 0, 0, H); q.addColorStop(0, p.sky); q.addColorStop(1, p.far); g.fillStyle = q; g.fillRect(0, 0, W, H); g.fillStyle = p.moon; g.beginPath(); g.arc(W * (.14 + r() * .7), H * .22, H * .11, 0, TAU); g.fill(); CARD_STYLE.skyline(g, W, H * .72, ['rgba(0,0,0,0)', p.far2, p.acc], r); g.fillStyle = INK; g.beginPath(); g.moveTo(0, H); g.lineTo(0, H * .78); for (let x = 0; x <= W; x += W / 14) { g.lineTo(x, H * .78 - (Math.round(x / (W / 14)) % 2 ? 0 : H * .03)); } g.lineTo(W, H); g.closePath(); g.fill(); },
+    alley(g, W, H, p, r) { g.fillStyle = p.sky; g.fillRect(0, 0, W, H); g.fillStyle = p.far; g.beginPath(); g.moveTo(W * .36, H * .1); g.lineTo(W * .64, H * .1); g.lineTo(W * .64, H * .7); g.lineTo(W * .36, H * .7); g.closePath(); g.fill(); g.fillStyle = INK; g.beginPath(); g.moveTo(0, 0); g.lineTo(W * .36, H * .1); g.lineTo(W * .36, H * .7); g.lineTo(0, H); g.moveTo(W, 0); g.lineTo(W * .64, H * .1); g.lineTo(W * .64, H * .7); g.lineTo(W, H); g.fill(); g.strokeStyle = p.far2; g.lineWidth = 2; for (let i = 1; i < 6; i++) { const t = i / 6; g.beginPath(); g.moveTo(0, t * H); g.lineTo(W * .36, H * .1 + t * H * .6); g.moveTo(W, t * H); g.lineTo(W * .64, H * .1 + t * H * .6); g.stroke(); } const lx = W * .5; const lg = g.createRadialGradient(lx, H * .22, 2, lx, H * .22, H * .55); lg.addColorStop(0, p.acc + 'cc'); lg.addColorStop(1, p.acc + '00'); g.fillStyle = lg; g.fillRect(0, 0, W, H); g.fillStyle = p.acc; g.fillRect(lx - 7, H * .18, 14, 18); g.fillStyle = '#05060a'; g.fillRect(lx - 1, 0, 2, H * .18); g.fillRect(0, H * .9, W, H * .1); },
+    nave(g, W, H, p) { g.fillStyle = p.sky; g.fillRect(0, 0, W, H); for (let i = 0; i < 5; i++) { const cx = W * (.1 + i * .2), bw = W * .075; g.fillStyle = p.far; g.beginPath(); g.moveTo(cx - bw, H); g.lineTo(cx - bw, H * .36); g.quadraticCurveTo(cx - bw, H * .12, cx, H * .05); g.quadraticCurveTo(cx + bw, H * .12, cx + bw, H * .36); g.lineTo(cx + bw, H); g.closePath(); g.fill(); g.fillStyle = INK; g.fillRect(cx + bw, 0, W * .05, H); const q = g.createLinearGradient(cx, H * .1, cx - bw * 1.6, H); q.addColorStop(0, p.acc + '77'); q.addColorStop(1, p.acc + '00'); g.fillStyle = q; g.beginPath(); g.moveTo(cx - bw * .5, H * .12); g.lineTo(cx + bw * .5, H * .12); g.lineTo(cx - bw * .4, H); g.lineTo(cx - bw * 2.4, H); g.closePath(); g.fill(); } g.fillStyle = INK; g.fillRect(0, H * .9, W, H * .1); },
+    foundry(g, W, H, p, r) { g.fillStyle = p.sky; g.fillRect(0, 0, W, H); const q = g.createRadialGradient(W * .5, H * .82, 10, W * .5, H * .82, W * .55); q.addColorStop(0, p.acc + 'dd'); q.addColorStop(1, p.acc + '00'); g.fillStyle = q; g.fillRect(0, 0, W, H); g.fillStyle = INK; for (const x of [.04, .25, .69, .9]) { g.fillRect(W * x, H * .1, W * .1, H * .75); for (let y = .15; y < .82; y += .11) { g.fillStyle = p.far2; g.fillRect(W * x + 4, H * y, W * .1 - 8, 3); g.fillStyle = INK; } } g.fillRect(0, H * .06, W, H * .06); g.fillRect(0, H * .86, W, H * .14); g.fillStyle = p.acc; for (let i = 0; i < 26; i++) g.fillRect(W * (.25 + r() * .5), H * (.42 + r() * .44), 2.5, 2.5); },
+    ward(g, W, H, p, r) { g.fillStyle = p.sky; g.fillRect(0, 0, W, H); g.fillStyle = p.far; g.fillRect(0, H * .62, W, H * .38); g.strokeStyle = p.far2; g.lineWidth = 1.5; for (let x = -W; x < W * 2; x += W / 8) { g.beginPath(); g.moveTo(W / 2 + (x - W / 2) * .4, H * .62); g.lineTo(x, H); g.stroke(); } for (let i = 0; i < 3; i++) { const cx = W * (.22 + i * .28); const lg = g.createRadialGradient(cx, H * .12, 2, cx, H * .12, H * .5); lg.addColorStop(0, p.acc + '99'); lg.addColorStop(1, p.acc + '00'); g.fillStyle = lg; g.fillRect(cx - H * .5, 0, H, H * .7); g.fillStyle = INK; g.fillRect(cx - 18, H * .58, 36, 10); g.fillRect(cx - W * .1, H * .62, W * .2, H * .05); g.fillRect(cx - W * .1, H * .66, 5, H * .09); g.fillRect(cx + W * .1 - 5, H * .66, 5, H * .09); g.fillStyle = p.acc; g.fillRect(cx - 8, H * .1, 16, 4); g.fillRect(cx - 2, H * .1 - 6, 4, 16); } },
+    storm(g, W, H, p, r) { const q = g.createLinearGradient(0, 0, 0, H); q.addColorStop(0, INK); q.addColorStop(1, p.far); g.fillStyle = q; g.fillRect(0, 0, W, H); CARD_STYLE.storm(g, W, H, [p.far, p.far2, p.acc].map((c, i) => i ? c : c), r); g.fillStyle = 'rgba(5,6,10,.45)'; g.fillRect(0, 0, W, H); g.strokeStyle = p.far2; g.lineWidth = 1.4; for (let i = 0; i < 70; i++) { const x = r() * W, y = r() * H; g.beginPath(); g.moveTo(x, y); g.lineTo(x - 7, y + 20); g.stroke(); } g.fillStyle = INK; g.fillRect(0, H * .88, W, H * .12); },
+    harbor(g, W, H, p) { const q = g.createLinearGradient(0, 0, 0, H * .6); q.addColorStop(0, p.sky); q.addColorStop(1, p.far); g.fillStyle = q; g.fillRect(0, 0, W, H); g.fillStyle = p.moon; g.beginPath(); g.arc(W * .74, H * .24, H * .13, 0, TAU); g.fill(); g.fillStyle = INK; for (const x of [.1, .36]) { g.fillRect(W * x, H * .24, 9, H * .4); g.beginPath(); g.moveTo(W * x - 26, H * .28); g.lineTo(W * x + W * .17, H * .2); g.lineTo(W * x + W * .17, H * .24); g.lineTo(W * x - 26, H * .32); g.closePath(); g.fill(); } CARD_STYLE.tide({ fillRect() { }, set fillStyle(v) { g.fillStyle = v; }, set strokeStyle(v) { g.strokeStyle = v; }, set lineWidth(v) { g.lineWidth = v; }, beginPath: () => g.beginPath(), moveTo: (a, b) => g.moveTo(a, b + H * .3), lineTo: (a, b) => g.lineTo(a, b + H * .3), quadraticCurveTo: (a, b, c, d) => g.quadraticCurveTo(a, b + H * .3, c, d + H * .3), closePath: () => g.closePath(), fill: () => g.fill(), stroke: () => g.stroke() }, W, H * .7, [p.far, p.far2, p.far2]); },
+    stage(g, W, H, p) { g.fillStyle = INK; g.fillRect(0, 0, W, H); const sp = g.createLinearGradient(W / 2, 0, W / 2, H); sp.addColorStop(0, p.acc + 'aa'); sp.addColorStop(1, p.acc + '10'); g.fillStyle = sp; g.beginPath(); g.moveTo(W * .44, 0); g.lineTo(W * .56, 0); g.lineTo(W * .82, H * .9); g.lineTo(W * .18, H * .9); g.closePath(); g.fill(); g.fillStyle = p.far2; for (const sd of [0, 1]) for (let i = 0; i < 5; i++) { const x = sd ? W - W * (.04 + i * .05) : W * (.04 + i * .05), w0 = W * .022; g.beginPath(); g.moveTo(x - w0, 0); g.lineTo(x + w0, 0); g.quadraticCurveTo(x + w0 + (sd ? -10 : 10), H / 2, x + w0, H); g.lineTo(x - w0, H); g.closePath(); g.fill(); g.fillStyle = i % 2 ? p.far2 : p.far; } g.fillStyle = p.far; g.fillRect(0, H * .9, W, H * .1); g.fillStyle = p.acc; g.fillRect(0, H * .9, W, 2.5); },
+  };
+  function origin(kit, i = 0) {
+    const list = ORIGINS[kit], n = list ? ((i % list.length) + list.length) % list.length : 0;
+    return lazyCanvas(`origin|${kit}|${n}`, () => {
+      const W = 640, H = 400, c = cv(W, H), g = c.getContext('2d'), m = list ? list[n] : ['rooftop', 'wide', ''], side = ORIGIN_SIDE(kit), r = seeded((hashStr(kit) + n * 991) % 2147483646 + 1), metal = METAL[kit] || (side ? ['#ff8a90', '#7a1c2a'] : ['#e6d29a', '#8a6a34']);
+      const acc = side ? '#ec3a52' : '#e6d29a', p = side ? { sky: '#180a12', far: '#2a111c', far2: '#4a1a2a', moon: '#c9a8a0', acc } : { sky: '#091630', far: '#132a52', far2: '#233c68', moon: '#ecdcae', acc };
+      g.save(); g.beginPath(); g.rect(0, 0, W, H); g.clip();
+      (SCENES[m[0]] || SCENES.rooftop)(g, W, H, p, r);
+      const shot = m[1];
+      const pos = shot === 'close' ? { x: W * (.62 + r() * .1), y: H * .68, R: 196 } : shot === 'mid' ? { x: W * (.3 + r() * .4), y: H * .62, R: 86 } : { x: W * (.2 + r() * .6), y: H * .68, R: 38 };
+      g.fillStyle = 'rgba(4,5,9,.46)'; g.beginPath(); g.ellipse(pos.x + pos.R * .1, pos.y + pos.R * .93, pos.R, pos.R * .2, 0, 0, TAU); g.fill();
+      if (shot !== 'wide') { const q = g.createRadialGradient(pos.x, pos.y, pos.R, pos.x, pos.y, pos.R * 1.6); q.addColorStop(0, acc + '55'); q.addColorStop(1, acc + '00'); g.fillStyle = q; g.fillRect(0, 0, W, H); }
+      drawSealDisc(g, kit, pos.x, pos.y, pos.R, metal[0], acc);
+      shade2(g, W, H, H * .7, 'rgba(4,5,9,.32)');
+      g.font = fontD(26, 700); const lines = wrapLines(g, m[2], W * .58 - 40), lh = 29, bw = W * .58, bh = lines.length * lh + 26, bx = 18, by = 18;
+      g.fillStyle = 'rgba(7,9,14,.92)'; g.fillRect(bx, by, bw, bh); g.strokeStyle = acc; g.lineWidth = 2; g.strokeRect(bx + 4, by + 4, bw - 8, bh - 8);
+      g.fillStyle = '#f0ece0'; g.textBaseline = 'alphabetic'; lines.forEach((l, k) => g.fillText(l, bx + 18, by + 34 + k * lh));
+      g.restore();
+      g.strokeStyle = INK; g.lineWidth = 12; g.strokeRect(0, 0, W, H); g.strokeStyle = acc; g.lineWidth = 2; g.strokeRect(9, 9, W - 18, H - 18);
+      return c;
+    });
+  }
+  const originCount = kit => ORIGINS[kit] ? ORIGINS[kit].length : 0;
+  const originText = (kit, i) => ORIGINS[kit] && ORIGINS[kit][i] ? ORIGINS[kit][i][2] : '';
+
+  // ---------- colorblind palette: Okabe-Ito based ----------
+  // Art.PAL is one live object. setCB rewrites it and TEAM in place, so anyone holding a reference sees the change.
+  const PAL_STD = { team: ['#58a6e6', '#e4573f'], teamDark: ['#1f4f7d', '#7e2a1e'], ally: '#6ea4ee', enemy: '#d9273f', danger: { out: '#d81f24', mid: '#ff5a44', core: '#ffe9d8', aim: '255,62,40' }, hp: '#62d26f', hpEnemy: '#e0434f', mana: '#58a6e6', ok: '#7fd6a4', warn: '#ffb24a', accent: '#e6d29a', towerLight: ['#ffdf9e', '#ff4a5c'] };
+  const PAL_CB = { team: ['#56b4e9', '#f2b90f'], teamDark: ['#0d4f80', '#8a6300'], ally: '#56b4e9', enemy: '#f2b90f', danger: { out: '#a73f00', mid: '#e0520c', core: '#fff0e0', aim: '224,82,12' }, hp: '#3fa7f0', hpEnemy: '#f2b90f', mana: '#b48fe0', ok: '#56b4e9', warn: '#f2b90f', accent: '#f0e6c4', towerLight: ['#bfe3ff', '#f2b90f'] };
+  const PAL = JSON.parse(JSON.stringify(PAL_STD)), CB_HOOKS = []; let cbNow = false;
+  const CB_CSS = ':root.cb{--crim:#f2b90f;--crim2:#8a6300;--acid:#56b4e9}:root.cb .s1{--acc:#f2b90f;--acc3:#b88a10;--acc2:#56b4e9;--on:#14100a}';
+  function setCB(on) {
+    on = !!on; if (on === cbNow) return; cbNow = on; const src = on ? PAL_CB : PAL_STD;
+    for (const k in src) if (typeof src[k] !== 'object' || Array.isArray(src[k])) PAL[k] = Array.isArray(src[k]) ? src[k].slice() : src[k]; else Object.assign(PAL[k], src[k]);
+    TEAM[0] = src.team[0]; TEAM[1] = src.team[1]; TEAM_DARK[0] = src.teamDark[0]; TEAM_DARK[1] = src.teamDark[1];
+    if (typeof document !== 'undefined') { let st = document.getElementById('cbcss'); if (!st) { st = document.createElement('style'); st.id = 'cbcss'; st.textContent = CB_CSS; document.head.appendChild(st); } document.documentElement.classList.toggle('cb', on); }
+    for (const f of CB_HOOKS) { try { f(on, PAL); } catch (e) { } }
+  }
+  const setPalette = setCB;
+  const onCB = f => { CB_HOOKS.push(f); if (cbNow) f(true, PAL); };
+
+  // ---------- Play of the Game presentation: a card-wipe in, letterbox, a nameplate, a shutter out ----------
+  // Call every frame over the replay. o: { t seconds since start, dur, name, champ, team, label }
+  function potg(ctx, W, H, o) {
+    const t = o.t || 0, dur = o.dur || 8, inT = Math.min(1, t / .5), outT = Math.max(0, (t - dur + .55) / .55), ease = x => 1 - Math.pow(1 - x, 3), barH = Math.round(H * .105), bars = barH * ease(inT);
+    ctx.save(); ctx.textBaseline = 'alphabetic'; ctx.textAlign = 'left';
+    ctx.fillStyle = '#05060a'; ctx.fillRect(0, 0, W, bars); ctx.fillRect(0, H - bars, W, bars);
+    ctx.fillStyle = '#e6d29a'; ctx.globalAlpha = .9; ctx.fillRect(0, bars, W, 1.5); ctx.fillRect(0, H - bars - 1.5, W, 1.5); ctx.globalAlpha = 1;
+    const prog = Math.max(0, Math.min(1, t / dur)); ctx.fillStyle = '#ffd98a'; ctx.fillRect(0, H - 3, W * prog, 3);
+    const tag = barH * .5; ctx.font = fontD(tag); ctx.fillStyle = '#e6d29a'; ctx.fillText('PLAY OF THE GAME', 18, bars - barH * .28);
+    // The opening slash: a gold blade of light with the title riding it, gone within a second.
+    if (t < 1.25) { const k = Math.min(1, t / .34), f = t > .85 ? (1.25 - t) / .4 : 1, cy = H * .46, h0 = H * .2; ctx.save(); ctx.globalAlpha = f; ctx.fillStyle = 'rgba(5,6,10,.82)'; ctx.fillRect(0, cy - h0, W * ease(k), h0 * 2); ctx.fillStyle = '#ffd98a'; ctx.fillRect(0, cy - h0, W * ease(k), 3); ctx.fillRect(W - W * ease(k), cy + h0 - 3, W * ease(k), 3); ctx.beginPath(); ctx.rect(0, cy - h0, W * ease(k), h0 * 2); ctx.clip(); ctx.textAlign = 'center'; const px = fitText(ctx, 'PLAY OF THE GAME', W * .86, H * .19); ctx.fillStyle = '#ffffff'; ctx.fillText('PLAY OF THE GAME', W / 2, cy + px * .34); ctx.restore(); }
+    // Nameplate, sliding in after the title and leaving with the shutter.
+    const pIn = ease(Math.max(0, Math.min(1, (t - .95) / .35))); if (pIn > 0) { const ph = H * .16, pw = Math.min(W * .54, 380), x = 18 - (1 - pIn) * (pw + 30), y = H - bars - ph - 12, teamCol = TEAM[o.team] || GOLDL; ctx.fillStyle = 'rgba(7,9,14,.92)'; ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x + pw, y); ctx.lineTo(x + pw - ph * .3, y + ph); ctx.lineTo(x, y + ph); ctx.closePath(); ctx.fill(); ctx.fillStyle = teamCol; ctx.fillRect(x, y, 5, ph); drawSealDisc(ctx, o.champ, x + ph * .62, y + ph / 2, ph * .4, GOLDL); const tx = x + ph * 1.14, tw = pw - ph * 1.5; ctx.fillStyle = PAPER; fitText(ctx, String(o.name || '').toUpperCase(), tw, ph * .44); ctx.fillText(String(o.name || '').toUpperCase(), tx, y + ph * .5); ctx.fillStyle = '#e6d29a'; fitText(ctx, String(o.label || ''), tw, ph * .26, fontU); ctx.fillText(String(o.label || ''), tx, y + ph * .84); }
+    if (outT > 0) { const h = H / 2 * ease(Math.min(1, outT)); ctx.fillStyle = '#05060a'; ctx.fillRect(0, 0, W, h); ctx.fillRect(0, H - h, W, h); }
+    ctx.restore();
+  }
+  // ---------- end 11.0 art ----------
+
+  return { medal, medalInto, medalReady, medalDraw, medalURL, medalMeta, MEDAL_EMB, CARDS, cardArt, playerCard, shareCard, origin, originCount, originText, ORIGINS, PAL, setCB, onCB, get cb() { return cbNow; }, setPalette, potg, flare, minionGear, bossCoin, bossTurn, BOSS_COL, seal, shock, bountyMark, TEAM, TEAM_DARK, METAL, TILT, TAU, INK, COSMETICS, champCoin, champTurn, minionCoin, minionTurn, monsterCoin, monsterTurn, civCoin, coin, glow, shadow, drawEmblemIcon, abilityCoin, iconURL, sheen, vignette, seeded, mix, mixH, cv, reed, puff, leaf, shardsOf, impact, speedLines, sparkSp, dustCel, chip, glint, pillar, hazard, koCoin, pump, defer, frameAt, ensure, sigil, spikeBall, stats, buildFace, shade, canvasFrom, reliefStack, FINISH };
 })();
 
 // The map: painted once in a dark-deco style (deep shadow shapes, a few rich tones, thin metal inlay), plus sprites for raised scenery.
@@ -8273,6 +8692,7 @@ function frame(now) {
 
 // The world renderer: ground, water, weather, fog of war, scenery, units, ambient life, intro and outro.
 // Private helpers stay inside the closure so nothing collides with the other client files.
+Art.setPalette(!!save.cb); // save.cb: colorblind palette, applied before the first sprite is drawn
 let shX = 0, shY = 0;
 const sx = x => (x - G.cam.x) * Z + VW / 2 + shX;
 const sy = y => (y - G.cam.y) * TILT * Z + VH / 2 + shY;
@@ -8281,10 +8701,11 @@ const onScreen = (x, y, m = 90) => { const X = sx(x), Y = sy(y); return X > -m &
 const WP = { x: 0, y: 0 };
 function posNow(u, a) { const px = u.px === undefined ? u.x : u.px, py = u.py === undefined ? u.y : u.py; WP.x = px + (u.x - px) * a; WP.y = py + (u.y - py) * a; return WP; }
 const isUp = u => u.alive !== false;
-const seesU = c => { try { return Sim.canSee(G.s, G.me.team, c); } catch (e) { return true; } };
+const seesU = c => { if (G.spectator) return true; try { return Sim.canSee(G.s, G.me.team, c); } catch (e) { return true; } };
 const towerOpenU = t => { try { return Sim.towerOpen(G.s, t); } catch (e) { return true; } };
 // Read by relation, never by side: you are gold, friends are blue, enemies are red.
 const REL_COL = { me: '#ffe08a', ally: '#58b0ff', enemy: '#ff3f3a', allyName: '#a9d0f2', enemyName: '#ff9c92' };
+Art.onCB(on => Object.assign(REL_COL, on ? { ally: Art.PAL.ally, enemy: Art.PAL.enemy, enemyName: '#ffe08a' } : { ally: '#58b0ff', enemy: '#ff3f3a', enemyName: '#ff9c92' }));
 const EMPTY_LIST = [];
 // A seat's cosmetics travel in cfg; the sim may also put them on the unit. Yours can fall back to your saved choices.
 function cosOf(u, key) {
@@ -8302,7 +8723,7 @@ const typeOf = u => u.type || (u.heavy ? 'heavy' : u.ranged ? 'ranged' : 'melee'
 const artR = u => u.kind === 'champ' ? Math.max(24, (u.r || 26) * 1.04) : u.kind === 'minion' ? (u.r || 15) * 1.02 : u.boss ? (u.r || 58) * 1.08 : (u.r || 22) * 1.06;
 // Vision circles for this frame, and a quick test for whether a world point is lit. Used to hide enemy effects in the dark.
 let VIS_SRC = EMPTY_LIST;
-function litAt(x, y, m = 0) { for (let i = 0; i < VIS_SRC.length; i++) { const v = VIS_SRC[i], dx = v.x - x, dy = v.y - y, R = v.r + m; if (dx * dx + dy * dy < R * R) return true; } return false; }
+function litAt(x, y, m = 0) { if (G.spectator) return true; for (let i = 0; i < VIS_SRC.length; i++) { const v = VIS_SRC[i], dx = v.x - x, dy = v.y - y, R = v.r + m; if (dx * dx + dy * dy < R * R) return true; } return false; }
 
 const { initWorld, render, introTick, outroStart, outroTick, drawCoin, visOf, worldSprite } = (() => {
   const clamp01 = v => v < 0 ? 0 : v > 1 ? 1 : v;
@@ -8342,7 +8763,7 @@ const { initWorld, render, introTick, outroStart, outroTick, drawCoin, visOf, wo
     const lampCol = g.villain ? '#ffc0a0' : '#ffe0a8', pools = [];
     for (const d of g.decor) if (d.light) pools.push({ x: d.x, y: d.y, r: d.light.r, col: d.light.col, a: d.light.a });
     for (const a of map.arenas || []) pools.push({ x: a.x, y: a.y, r: (a.r || 240) * 1.2, col: Art.BOSS_COL[a.kind] || '#ffb04a', a: .05 });
-    for (const t of s.towers) pools.push({ x: t.x, y: t.y, r: t.sub === 'core' ? 340 : 260, col: t.team ? '#d83048' : '#f0d8a0', a: .17 });
+    for (const t of s.towers) pools.push({ x: t.x, y: t.y, r: t.sub === 'core' ? 340 : 260, col: t.team ? (Art.cb ? Art.PAL.towerLight[1] : '#d83048') : '#f0d8a0', a: .17 });
     if (map.center) pools.push({ x: map.center.x, y: map.center.y, r: 460, col: lampCol, a: .12 });
     for (const f of map.fountains || []) pools.push({ x: f.x, y: f.y, r: 420, col: f.x > Sim.W / 2 ? '#ff4a5c' : '#ffdf9e', a: .12 });
     const mirrors = g.decor.filter(d => d.kind === 2 || d.kind === 3).map(d => ({ x: d.x, y: d.y, spr: d.spr, a: d.kind === 3 ? .9 : .5 }));
@@ -8654,6 +9075,7 @@ const { initWorld, render, introTick, outroStart, outroTick, drawCoin, visOf, wo
   }
   function resetFog() { fogC = edgeC = null; fogKNow = 0; exC = Art.cv(Math.ceil(Sim.W / EX), Math.ceil(Sim.H * TILT / EX)); exG = exC.getContext('2d'); exT = 0; VIS_SRC = EMPTY_LIST; }
   function drawFog(dt) {
+    if (G.spectator) return; // a spectator holds no seat and sees the whole map
     const s = G.s, me = G.me, team = me.team, k = quality >= 2 ? 3 : quality === 1 ? 4 : 6, w = Math.ceil(VW / k) + 2, h = Math.ceil(VH / k) + 2;
     if (!HOLE) HOLE = makeHole();
     if (!fogC || fogKNow !== k || fogC.width !== w || fogC.height !== h) { fogC = Art.cv(w, h); fogG = fogC.getContext('2d'); edgeC = Art.cv(w, h); edgeG = edgeC.getContext('2d'); fogKNow = k; }
@@ -8913,7 +9335,7 @@ const { initWorld, render, introTick, outroStart, outroTick, drawCoin, visOf, wo
     const X = sx(px + v.rx + (v.ox || 0)), Y = sy(py + v.ry + (v.oy || 0)), sp = Math.hypot(c.vx || 0, c.vy || 0), moving = sp > 20, hopH = moving ? 4 : 1, mine = c === me, ally = c.team === me.team;
     const izf = introZ(c), air = Math.abs(Math.sin(v.hop)), knockZ = c.knockT > 0 && !c.z ? Math.sin(Math.min(1, 1 - c.knockT / (c.knockMax || c.knockT)) * Math.PI) * 54 : 0, z = 9 + air * hopH + (c.z || 0) + izf + (v.oz || 0) + knockZ, R = artR(c);
     const spinAng = v.spin > 0 ? v.spin * TAU : 0, ringR = (R + 6) * Z, Rp = R * Z;
-    spotlight(X, Y, R * Z, mine ? '#fff0c8' : ally ? '#8ec2f2' : '#ff6a5a', mine ? .42 : .3);
+    spotlight(X, Y, R * Z, mine ? '#fff0c8' : ally ? '#8ec2f2' : (Art.cb ? Art.PAL.enemy : '#ff6a5a'), mine ? .42 : .3);
     if (mine) meMarker(X, Y, ringR); else teamRing(X, Y, ringR, ally);
     if (c.tier >= 3 && mine) { const gl = Art.glow(AURA[c.tier]), r = (40 + (c.tier - 3) * 5) * Z; ctx.globalCompositeOperation = 'lighter'; ctx.globalAlpha = .18 + Math.sin(G.t * 3 + v.phase) * .05; ctx.drawImage(gl, X - r, Y - z * Z - r, r * 2, r * 2); ctx.globalCompositeOperation = 'source-over'; ctx.globalAlpha = 1; }
     // Stealth: you and your friends see a shimmer of the coin; enemies have nothing to see unless the sim says so.
@@ -8947,7 +9369,7 @@ const { initWorld, render, introTick, outroStart, outroTick, drawCoin, visOf, wo
     ctx.setTransform(dpr * k, 0, -dpr * k * lean * 1.1, dpr * k, dpr * (X + (shown - 1) * step * lean), dpr * (topY - d.cy * .16 * k + bob * .4)); ctx.drawImage(crown.c, -crown.ax, -crown.ay, crown.w, crown.h); ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     ctx.globalAlpha = 1;
     if (v.flash > 0) { ctx.globalCompositeOperation = 'lighter'; ctx.globalAlpha = v.flash * .4 * al; ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.ellipse(X, Y - shown * step * .5, R * k, (shown * step + R * k * .7) * .55, 0, 0, TAU); ctx.fill(); ctx.globalCompositeOperation = 'source-over'; ctx.globalAlpha = 1; }
-    if (open) { const gl = Art.glow(t.team ? '#ff4a5c' : '#ffdf9e'), gr = (core ? 44 : 32) * k, gy = topY - (core ? 74 : 54) * k, X_ = X + (shown - 1) * step * lean; ctx.globalCompositeOperation = 'lighter'; ctx.globalAlpha = (.32 + Math.sin(G.t * 3) * .08) * al; ctx.drawImage(gl, X_ - gr, gy - gr, gr * 2, gr * 2); ctx.globalCompositeOperation = 'source-over'; ctx.globalAlpha = 1; }
+    if (open) { const gl = Art.glow(Art.PAL.towerLight[t.team ? 1 : 0]), gr = (core ? 44 : 32) * k, gy = topY - (core ? 74 : 54) * k, X_ = X + (shown - 1) * step * lean; ctx.globalCompositeOperation = 'lighter'; ctx.globalAlpha = (.32 + Math.sin(G.t * 3) * .08) * al; ctx.drawImage(gl, X_ - gr, gy - gr, gr * 2, gr * 2); ctx.globalCompositeOperation = 'source-over'; ctx.globalAlpha = 1; }
     if (core) drawCoin(v.coreS || (v.coreS = Art.coin('corecoin' + t.team, 56, 'boss', Art.METAL['minion' + t.team], t.team, 3)), X + (shown - 1) * step * lean, topY - 96 * k, 0, 24, coinOpt(Math.cos(G.t * 1.3), 0, 0, 0, undefined, al, undefined, '#6a5428', true));
   }
   // What's left of a tower. While it falls the stack sinks into its own footing; after that there's only flat rubble on the ground layer.
@@ -9032,7 +9454,7 @@ const { initWorld, render, introTick, outroStart, outroTick, drawCoin, visOf, wo
         const art = artOf(u), open = towerOpenU(u), y = Y - (art.n * art.R * STEP + art.crown) * Z - 6;
         if (u.hp < u.maxHp || open) bar(X - 34 * Z, y, 68 * Z, 5, f, open ? (ally ? REL_COL.ally : REL_COL.enemy) : 'rgba(150,158,170,.7)');
       } else if (u.hp < u.maxHp) {
-        if (u.kind === 'minion') { const w = 22 * Z, x = X - w / 2, y = Y - (artR(u) * 1.9 + 7) * Z; ctx.fillStyle = 'rgba(4,6,10,.85)'; ctx.fillRect(x - .5, y - .5, w + 1, 3); ctx.fillStyle = ally ? '#58b0ff' : '#ff4a44'; ctx.fillRect(x, y, w * f, 2); }
+        if (u.kind === 'minion') { const w = 22 * Z, x = X - w / 2, y = Y - (artR(u) * 1.9 + 7) * Z; ctx.fillStyle = 'rgba(4,6,10,.85)'; ctx.fillRect(x - .5, y - .5, w + 1, 3); ctx.fillStyle = ally ? '#58b0ff' : (Art.cb ? Art.PAL.enemy : '#ff4a44'); ctx.fillRect(x, y, w * f, 2); }
         else { const r = artR(u); bar(X - r * Z, Y - (r * 1.9 + 8) * Z, r * 2 * Z, u.boss ? 6 : 3.5, f, '#d9b86a'); }
       }
     }
@@ -9056,7 +9478,7 @@ const { initWorld, render, introTick, outroStart, outroTick, drawCoin, visOf, wo
     ctx.strokeStyle = col + '.8)'; ctx.lineWidth = 1.4; ctx.beginPath(); ctx.ellipse(X, Y, R, R * TILT, 0, 0, TAU); ctx.stroke();
     const an = G.t * 1.6 + b.x * .01, sw = (R + 34 * Z); ctx.strokeStyle = col + '.5)'; ctx.lineWidth = 1.2; ctx.beginPath(); ctx.ellipse(X, Y, sw, sw * TILT, 0, an, an + .9); ctx.stroke();
     const spr = beaconSprite(b.team === 1 ? 1 : 0); ctx.drawImage(spr, X - 22 * Z, Y - 68 * Z, 44 * Z, 76 * Z);
-    const gl = Art.glow(ally ? '#bfe0ff' : '#ff8070'), r = (14 + Math.sin(G.t * 3 + b.x) * 2) * Z; ctx.globalCompositeOperation = 'lighter'; ctx.globalAlpha = fade * .7; ctx.drawImage(gl, X - r, Y - 60 * Z - r, r * 2, r * 2); ctx.globalCompositeOperation = 'source-over'; ctx.globalAlpha = 1;
+    const gl = Art.glow(ally ? '#bfe0ff' : Art.cb ? Art.PAL.enemy : '#ff8070'), r = (14 + Math.sin(G.t * 3 + b.x) * 2) * Z; ctx.globalCompositeOperation = 'lighter'; ctx.globalAlpha = fade * .7; ctx.drawImage(gl, X - r, Y - 60 * Z - r, r * 2, r * 2); ctx.globalCompositeOperation = 'source-over'; ctx.globalAlpha = 1;
     if (b.hp !== undefined && b.maxHp && b.hp < b.maxHp) bar(X - 14 * Z, Y - 78 * Z, 28 * Z, 3, b.hp / b.maxHp, ally ? REL_COL.ally : REL_COL.enemy);
   }
 
@@ -9276,6 +9698,7 @@ const { initWorld, render, introTick, outroStart, outroTick, drawCoin, visOf, wo
     FX.textLayer(dt);
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0); ctx.globalAlpha = 1; ctx.globalCompositeOperation = 'source-over';
     hudDraw(dt);
+    if (G.replay) { const R = G.replay, I = R.info || {}; Art.potg(ctx, VW, VH, { t: R.t, dur: R.dur, name: I.name, champ: I.kit, team: I.team, label: I.label }); }
   }
 
   return { initWorld, render, introTick, outroStart, outroTick, drawCoin, visOf, worldSprite };
@@ -9305,6 +9728,9 @@ const { FX, fxEvent } = (() => {
   const palFx = (fx, t) => KIT_PAL[FX_KIT[fx]] || palT(t);
   // Anything aimed at you is drawn in this palette, whichever side threw it.
   const DANGER = { out: '#d81f24', mid: '#ff5a44', core: '#ffe9d8', aim: '255,62,40' };
+  // Colorblind mode swaps the villain palette and the danger colour in place; everything here reads them live.
+  const VILL_STD = { ...VILL }, VILL_CB = { out: '#8a6300', mid: '#f2b90f', core: '#fff4d0', spark: '#f2b90f', spark2: '#fff0a0', chip: '#d89e08', ring: '#f2b90f', dots: '#f2b90f', lines: '#fff0c0', imp: '#f2b90f', imp2: '#fff4d0' };
+  Art.onCB((on, P) => { Object.assign(VILL, on ? VILL_CB : VILL_STD); Object.assign(DANGER, P.danger); });
   const GOLD = '#f0d38a', SPARKY = '#fff4d8', INK = Art.INK, HEAL = '#b6e5a8';
   const SPARK = 0, PUFF = 1, SHARD = 2, COIN = 3, RING = 4, SLASH = 5, GHOST = 6, LEAF = 7, RISE = 8, DROP = 9, DISC = 10, CIV = 11, CHIP = 12, PILLAR = 13, BEAMK = 14, SIGILK = 15, BOLTK = 16, CUTK = 17, IMP = 18, GATH = 19, FLARE = 20;
   const LEAVES = ['#2d6a56', '#3f7a64', '#245a4a'];
@@ -10656,7 +11082,7 @@ const { FX, fxEvent } = (() => {
         const t = teamOfBoom(e), pal = palFx(e.fx, t), huge = e.r >= 150, own = ownBlast(e, t), R = BOOM[e.fx];
         if (R) R(e, t, pal, own, huge);
         else if (own) { ring(e.x, e.y, e.r, pal.ring, .4); ring(e.x, e.y, e.r * .62, pal.core, .24, 6); spark(e.x, e.y, huge ? 12 : 6, pal.spark, e.r * 2.2, .42, 16, 16); chips(e.x, e.y, huge ? 4 : 2, pal.chip, e.r * 2, 20); dustRing(e.x, e.y, e.r * .7, huge ? 6 : 3); if (huge) burst(e.x, e.y, 20, pal, 1, true); G.shake = Math.max(G.shake, huge ? 6 : 2.5); G.punch = Math.max(G.punch, huge ? .03 : .012); }
-        else ring(e.x, e.y, e.r, t === me.team ? '#7fb6e6' : '#ff5a3c', .3);
+        else ring(e.x, e.y, e.r, t === me.team ? '#7fb6e6' : (Art.cb ? Art.PAL.enemy : '#ff5a3c'), .3);
         break;
       }
       case 'phit': {
@@ -10664,7 +11090,7 @@ const { FX, fxEvent } = (() => {
         const hit = trailNear(e), t = hit ? hit.team : teamOfPhit(e), pal = palFx(e.fx, t), ult = e.fx === 'deadeye', own = hit ? hit.cls === 2 : (t === me.team && PHIT_KIT[e.fx] && PHIT_KIT[e.fx].includes(me.champ)), R = PHIT[e.fx];
         if (R) R(e, t, pal, own);
         else if (own) { spark(e.x, e.y, ult ? 10 : 4, pal.spark, ult ? 420 : 220, .26, ult ? 18 : 12, 24); if (ult) { ring(e.x, e.y, 130, pal.ring, .3, 16); burst(e.x, e.y, 22, pal, 1.2, true); G.shake = Math.max(G.shake, 5); } else if (e.fx === 'snipeFull') ring(e.x, e.y, 84, pal.ring, .22, 16); }
-        else if (ult) ring(e.x, e.y, 120, t === me.team ? '#7fb6e6' : '#ff5a3c', .28, 16);
+        else if (ult) ring(e.x, e.y, 120, t === me.team ? '#7fb6e6' : (Art.cb ? Art.PAL.enemy : '#ff5a3c'), .28, 16);
         break;
       }
       case 'blink': { if (onScreen(e.x, e.y, 120) && litAt(e.x, e.y, 40)) { const t = teamNear(e.x, e.y), pal = palT(t), near = Math.hypot(e.x - me.x, e.y - me.y) < 40; if (near) { ring(e.x, e.y, 90, pal.ring, .3); spark(e.x, e.y, 6, pal.spark, 240, .3, 13, 22); overlay(2, e.x, e.y, 22, .18, { spr: Art.speedLines(pal.lines, 3), r: 120, ink: null }); } else ring(e.x, e.y, 56, t === me.team ? '#7fb6e6' : '#ff5a3c', .22); } break; }

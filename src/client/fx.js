@@ -22,6 +22,9 @@ const { FX, fxEvent } = (() => {
   const palFx = (fx, t) => KIT_PAL[FX_KIT[fx]] || palT(t);
   // Anything aimed at you is drawn in this palette, whichever side threw it.
   const DANGER = { out: '#d81f24', mid: '#ff5a44', core: '#ffe9d8', aim: '255,62,40' };
+  // Colorblind mode swaps the villain palette and the danger colour in place; everything here reads them live.
+  const VILL_STD = { ...VILL }, VILL_CB = { out: '#8a6300', mid: '#f2b90f', core: '#fff4d0', spark: '#f2b90f', spark2: '#fff0a0', chip: '#d89e08', ring: '#f2b90f', dots: '#f2b90f', lines: '#fff0c0', imp: '#f2b90f', imp2: '#fff4d0' };
+  Art.onCB((on, P) => { Object.assign(VILL, on ? VILL_CB : VILL_STD); Object.assign(DANGER, P.danger); });
   const GOLD = '#f0d38a', SPARKY = '#fff4d8', INK = Art.INK, HEAL = '#b6e5a8';
   const SPARK = 0, PUFF = 1, SHARD = 2, COIN = 3, RING = 4, SLASH = 5, GHOST = 6, LEAF = 7, RISE = 8, DROP = 9, DISC = 10, CIV = 11, CHIP = 12, PILLAR = 13, BEAMK = 14, SIGILK = 15, BOLTK = 16, CUTK = 17, IMP = 18, GATH = 19, FLARE = 20;
   const LEAVES = ['#2d6a56', '#3f7a64', '#245a4a'];
@@ -1373,7 +1376,7 @@ const { FX, fxEvent } = (() => {
         const t = teamOfBoom(e), pal = palFx(e.fx, t), huge = e.r >= 150, own = ownBlast(e, t), R = BOOM[e.fx];
         if (R) R(e, t, pal, own, huge);
         else if (own) { ring(e.x, e.y, e.r, pal.ring, .4); ring(e.x, e.y, e.r * .62, pal.core, .24, 6); spark(e.x, e.y, huge ? 12 : 6, pal.spark, e.r * 2.2, .42, 16, 16); chips(e.x, e.y, huge ? 4 : 2, pal.chip, e.r * 2, 20); dustRing(e.x, e.y, e.r * .7, huge ? 6 : 3); if (huge) burst(e.x, e.y, 20, pal, 1, true); G.shake = Math.max(G.shake, huge ? 6 : 2.5); G.punch = Math.max(G.punch, huge ? .03 : .012); }
-        else ring(e.x, e.y, e.r, t === me.team ? '#7fb6e6' : '#ff5a3c', .3);
+        else ring(e.x, e.y, e.r, t === me.team ? '#7fb6e6' : (Art.cb ? Art.PAL.enemy : '#ff5a3c'), .3);
         break;
       }
       case 'phit': {
@@ -1381,7 +1384,7 @@ const { FX, fxEvent } = (() => {
         const hit = trailNear(e), t = hit ? hit.team : teamOfPhit(e), pal = palFx(e.fx, t), ult = e.fx === 'deadeye', own = hit ? hit.cls === 2 : (t === me.team && PHIT_KIT[e.fx] && PHIT_KIT[e.fx].includes(me.champ)), R = PHIT[e.fx];
         if (R) R(e, t, pal, own);
         else if (own) { spark(e.x, e.y, ult ? 10 : 4, pal.spark, ult ? 420 : 220, .26, ult ? 18 : 12, 24); if (ult) { ring(e.x, e.y, 130, pal.ring, .3, 16); burst(e.x, e.y, 22, pal, 1.2, true); G.shake = Math.max(G.shake, 5); } else if (e.fx === 'snipeFull') ring(e.x, e.y, 84, pal.ring, .22, 16); }
-        else if (ult) ring(e.x, e.y, 120, t === me.team ? '#7fb6e6' : '#ff5a3c', .28, 16);
+        else if (ult) ring(e.x, e.y, 120, t === me.team ? '#7fb6e6' : (Art.cb ? Art.PAL.enemy : '#ff5a3c'), .28, 16);
         break;
       }
       case 'blink': { if (onScreen(e.x, e.y, 120) && litAt(e.x, e.y, 40)) { const t = teamNear(e.x, e.y), pal = palT(t), near = Math.hypot(e.x - me.x, e.y - me.y) < 40; if (near) { ring(e.x, e.y, 90, pal.ring, .3); spark(e.x, e.y, 6, pal.spark, 240, .3, 13, 22); overlay(2, e.x, e.y, 22, .18, { spr: Art.speedLines(pal.lines, 3), r: 120, ink: null }); } else ring(e.x, e.y, 56, t === me.team ? '#7fb6e6' : '#ff5a3c', .22); } break; }

@@ -1,5 +1,6 @@
 // The world renderer: ground, water, weather, fog of war, scenery, units, ambient life, intro and outro.
 // Private helpers stay inside the closure so nothing collides with the other client files.
+Art.setPalette(!!save.cb); // save.cb: colorblind palette, applied before the first sprite is drawn
 let shX = 0, shY = 0;
 const sx = x => (x - G.cam.x) * Z + VW / 2 + shX;
 const sy = y => (y - G.cam.y) * TILT * Z + VH / 2 + shY;
@@ -8,10 +9,11 @@ const onScreen = (x, y, m = 90) => { const X = sx(x), Y = sy(y); return X > -m &
 const WP = { x: 0, y: 0 };
 function posNow(u, a) { const px = u.px === undefined ? u.x : u.px, py = u.py === undefined ? u.y : u.py; WP.x = px + (u.x - px) * a; WP.y = py + (u.y - py) * a; return WP; }
 const isUp = u => u.alive !== false;
-const seesU = c => { try { return Sim.canSee(G.s, G.me.team, c); } catch (e) { return true; } };
+const seesU = c => { if (G.spectator) return true; try { return Sim.canSee(G.s, G.me.team, c); } catch (e) { return true; } };
 const towerOpenU = t => { try { return Sim.towerOpen(G.s, t); } catch (e) { return true; } };
 // Read by relation, never by side: you are gold, friends are blue, enemies are red.
 const REL_COL = { me: '#ffe08a', ally: '#58b0ff', enemy: '#ff3f3a', allyName: '#a9d0f2', enemyName: '#ff9c92' };
+Art.onCB(on => Object.assign(REL_COL, on ? { ally: Art.PAL.ally, enemy: Art.PAL.enemy, enemyName: '#ffe08a' } : { ally: '#58b0ff', enemy: '#ff3f3a', enemyName: '#ff9c92' }));
 const EMPTY_LIST = [];
 // A seat's cosmetics travel in cfg; the sim may also put them on the unit. Yours can fall back to your saved choices.
 function cosOf(u, key) {
@@ -29,7 +31,7 @@ const typeOf = u => u.type || (u.heavy ? 'heavy' : u.ranged ? 'ranged' : 'melee'
 const artR = u => u.kind === 'champ' ? Math.max(24, (u.r || 26) * 1.04) : u.kind === 'minion' ? (u.r || 15) * 1.02 : u.boss ? (u.r || 58) * 1.08 : (u.r || 22) * 1.06;
 // Vision circles for this frame, and a quick test for whether a world point is lit. Used to hide enemy effects in the dark.
 let VIS_SRC = EMPTY_LIST;
-function litAt(x, y, m = 0) { for (let i = 0; i < VIS_SRC.length; i++) { const v = VIS_SRC[i], dx = v.x - x, dy = v.y - y, R = v.r + m; if (dx * dx + dy * dy < R * R) return true; } return false; }
+function litAt(x, y, m = 0) { if (G.spectator) return true; for (let i = 0; i < VIS_SRC.length; i++) { const v = VIS_SRC[i], dx = v.x - x, dy = v.y - y, R = v.r + m; if (dx * dx + dy * dy < R * R) return true; } return false; }
 
 const { initWorld, render, introTick, outroStart, outroTick, drawCoin, visOf, worldSprite } = (() => {
   const clamp01 = v => v < 0 ? 0 : v > 1 ? 1 : v;
@@ -69,7 +71,7 @@ const { initWorld, render, introTick, outroStart, outroTick, drawCoin, visOf, wo
     const lampCol = g.villain ? '#ffc0a0' : '#ffe0a8', pools = [];
     for (const d of g.decor) if (d.light) pools.push({ x: d.x, y: d.y, r: d.light.r, col: d.light.col, a: d.light.a });
     for (const a of map.arenas || []) pools.push({ x: a.x, y: a.y, r: (a.r || 240) * 1.2, col: Art.BOSS_COL[a.kind] || '#ffb04a', a: .05 });
-    for (const t of s.towers) pools.push({ x: t.x, y: t.y, r: t.sub === 'core' ? 340 : 260, col: t.team ? '#d83048' : '#f0d8a0', a: .17 });
+    for (const t of s.towers) pools.push({ x: t.x, y: t.y, r: t.sub === 'core' ? 340 : 260, col: t.team ? (Art.cb ? Art.PAL.towerLight[1] : '#d83048') : '#f0d8a0', a: .17 });
     if (map.center) pools.push({ x: map.center.x, y: map.center.y, r: 460, col: lampCol, a: .12 });
     for (const f of map.fountains || []) pools.push({ x: f.x, y: f.y, r: 420, col: f.x > Sim.W / 2 ? '#ff4a5c' : '#ffdf9e', a: .12 });
     const mirrors = g.decor.filter(d => d.kind === 2 || d.kind === 3).map(d => ({ x: d.x, y: d.y, spr: d.spr, a: d.kind === 3 ? .9 : .5 }));
@@ -381,6 +383,7 @@ const { initWorld, render, introTick, outroStart, outroTick, drawCoin, visOf, wo
   }
   function resetFog() { fogC = edgeC = null; fogKNow = 0; exC = Art.cv(Math.ceil(Sim.W / EX), Math.ceil(Sim.H * TILT / EX)); exG = exC.getContext('2d'); exT = 0; VIS_SRC = EMPTY_LIST; }
   function drawFog(dt) {
+    if (G.spectator) return; // a spectator holds no seat and sees the whole map
     const s = G.s, me = G.me, team = me.team, k = quality >= 2 ? 3 : quality === 1 ? 4 : 6, w = Math.ceil(VW / k) + 2, h = Math.ceil(VH / k) + 2;
     if (!HOLE) HOLE = makeHole();
     if (!fogC || fogKNow !== k || fogC.width !== w || fogC.height !== h) { fogC = Art.cv(w, h); fogG = fogC.getContext('2d'); edgeC = Art.cv(w, h); edgeG = edgeC.getContext('2d'); fogKNow = k; }
@@ -640,7 +643,7 @@ const { initWorld, render, introTick, outroStart, outroTick, drawCoin, visOf, wo
     const X = sx(px + v.rx + (v.ox || 0)), Y = sy(py + v.ry + (v.oy || 0)), sp = Math.hypot(c.vx || 0, c.vy || 0), moving = sp > 20, hopH = moving ? 4 : 1, mine = c === me, ally = c.team === me.team;
     const izf = introZ(c), air = Math.abs(Math.sin(v.hop)), knockZ = c.knockT > 0 && !c.z ? Math.sin(Math.min(1, 1 - c.knockT / (c.knockMax || c.knockT)) * Math.PI) * 54 : 0, z = 9 + air * hopH + (c.z || 0) + izf + (v.oz || 0) + knockZ, R = artR(c);
     const spinAng = v.spin > 0 ? v.spin * TAU : 0, ringR = (R + 6) * Z, Rp = R * Z;
-    spotlight(X, Y, R * Z, mine ? '#fff0c8' : ally ? '#8ec2f2' : '#ff6a5a', mine ? .42 : .3);
+    spotlight(X, Y, R * Z, mine ? '#fff0c8' : ally ? '#8ec2f2' : (Art.cb ? Art.PAL.enemy : '#ff6a5a'), mine ? .42 : .3);
     if (mine) meMarker(X, Y, ringR); else teamRing(X, Y, ringR, ally);
     if (c.tier >= 3 && mine) { const gl = Art.glow(AURA[c.tier]), r = (40 + (c.tier - 3) * 5) * Z; ctx.globalCompositeOperation = 'lighter'; ctx.globalAlpha = .18 + Math.sin(G.t * 3 + v.phase) * .05; ctx.drawImage(gl, X - r, Y - z * Z - r, r * 2, r * 2); ctx.globalCompositeOperation = 'source-over'; ctx.globalAlpha = 1; }
     // Stealth: you and your friends see a shimmer of the coin; enemies have nothing to see unless the sim says so.
@@ -674,7 +677,7 @@ const { initWorld, render, introTick, outroStart, outroTick, drawCoin, visOf, wo
     ctx.setTransform(dpr * k, 0, -dpr * k * lean * 1.1, dpr * k, dpr * (X + (shown - 1) * step * lean), dpr * (topY - d.cy * .16 * k + bob * .4)); ctx.drawImage(crown.c, -crown.ax, -crown.ay, crown.w, crown.h); ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     ctx.globalAlpha = 1;
     if (v.flash > 0) { ctx.globalCompositeOperation = 'lighter'; ctx.globalAlpha = v.flash * .4 * al; ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.ellipse(X, Y - shown * step * .5, R * k, (shown * step + R * k * .7) * .55, 0, 0, TAU); ctx.fill(); ctx.globalCompositeOperation = 'source-over'; ctx.globalAlpha = 1; }
-    if (open) { const gl = Art.glow(t.team ? '#ff4a5c' : '#ffdf9e'), gr = (core ? 44 : 32) * k, gy = topY - (core ? 74 : 54) * k, X_ = X + (shown - 1) * step * lean; ctx.globalCompositeOperation = 'lighter'; ctx.globalAlpha = (.32 + Math.sin(G.t * 3) * .08) * al; ctx.drawImage(gl, X_ - gr, gy - gr, gr * 2, gr * 2); ctx.globalCompositeOperation = 'source-over'; ctx.globalAlpha = 1; }
+    if (open) { const gl = Art.glow(Art.PAL.towerLight[t.team ? 1 : 0]), gr = (core ? 44 : 32) * k, gy = topY - (core ? 74 : 54) * k, X_ = X + (shown - 1) * step * lean; ctx.globalCompositeOperation = 'lighter'; ctx.globalAlpha = (.32 + Math.sin(G.t * 3) * .08) * al; ctx.drawImage(gl, X_ - gr, gy - gr, gr * 2, gr * 2); ctx.globalCompositeOperation = 'source-over'; ctx.globalAlpha = 1; }
     if (core) drawCoin(v.coreS || (v.coreS = Art.coin('corecoin' + t.team, 56, 'boss', Art.METAL['minion' + t.team], t.team, 3)), X + (shown - 1) * step * lean, topY - 96 * k, 0, 24, coinOpt(Math.cos(G.t * 1.3), 0, 0, 0, undefined, al, undefined, '#6a5428', true));
   }
   // What's left of a tower. While it falls the stack sinks into its own footing; after that there's only flat rubble on the ground layer.
@@ -759,7 +762,7 @@ const { initWorld, render, introTick, outroStart, outroTick, drawCoin, visOf, wo
         const art = artOf(u), open = towerOpenU(u), y = Y - (art.n * art.R * STEP + art.crown) * Z - 6;
         if (u.hp < u.maxHp || open) bar(X - 34 * Z, y, 68 * Z, 5, f, open ? (ally ? REL_COL.ally : REL_COL.enemy) : 'rgba(150,158,170,.7)');
       } else if (u.hp < u.maxHp) {
-        if (u.kind === 'minion') { const w = 22 * Z, x = X - w / 2, y = Y - (artR(u) * 1.9 + 7) * Z; ctx.fillStyle = 'rgba(4,6,10,.85)'; ctx.fillRect(x - .5, y - .5, w + 1, 3); ctx.fillStyle = ally ? '#58b0ff' : '#ff4a44'; ctx.fillRect(x, y, w * f, 2); }
+        if (u.kind === 'minion') { const w = 22 * Z, x = X - w / 2, y = Y - (artR(u) * 1.9 + 7) * Z; ctx.fillStyle = 'rgba(4,6,10,.85)'; ctx.fillRect(x - .5, y - .5, w + 1, 3); ctx.fillStyle = ally ? '#58b0ff' : (Art.cb ? Art.PAL.enemy : '#ff4a44'); ctx.fillRect(x, y, w * f, 2); }
         else { const r = artR(u); bar(X - r * Z, Y - (r * 1.9 + 8) * Z, r * 2 * Z, u.boss ? 6 : 3.5, f, '#d9b86a'); }
       }
     }
@@ -783,7 +786,7 @@ const { initWorld, render, introTick, outroStart, outroTick, drawCoin, visOf, wo
     ctx.strokeStyle = col + '.8)'; ctx.lineWidth = 1.4; ctx.beginPath(); ctx.ellipse(X, Y, R, R * TILT, 0, 0, TAU); ctx.stroke();
     const an = G.t * 1.6 + b.x * .01, sw = (R + 34 * Z); ctx.strokeStyle = col + '.5)'; ctx.lineWidth = 1.2; ctx.beginPath(); ctx.ellipse(X, Y, sw, sw * TILT, 0, an, an + .9); ctx.stroke();
     const spr = beaconSprite(b.team === 1 ? 1 : 0); ctx.drawImage(spr, X - 22 * Z, Y - 68 * Z, 44 * Z, 76 * Z);
-    const gl = Art.glow(ally ? '#bfe0ff' : '#ff8070'), r = (14 + Math.sin(G.t * 3 + b.x) * 2) * Z; ctx.globalCompositeOperation = 'lighter'; ctx.globalAlpha = fade * .7; ctx.drawImage(gl, X - r, Y - 60 * Z - r, r * 2, r * 2); ctx.globalCompositeOperation = 'source-over'; ctx.globalAlpha = 1;
+    const gl = Art.glow(ally ? '#bfe0ff' : Art.cb ? Art.PAL.enemy : '#ff8070'), r = (14 + Math.sin(G.t * 3 + b.x) * 2) * Z; ctx.globalCompositeOperation = 'lighter'; ctx.globalAlpha = fade * .7; ctx.drawImage(gl, X - r, Y - 60 * Z - r, r * 2, r * 2); ctx.globalCompositeOperation = 'source-over'; ctx.globalAlpha = 1;
     if (b.hp !== undefined && b.maxHp && b.hp < b.maxHp) bar(X - 14 * Z, Y - 78 * Z, 28 * Z, 3, b.hp / b.maxHp, ally ? REL_COL.ally : REL_COL.enemy);
   }
 
@@ -1003,6 +1006,7 @@ const { initWorld, render, introTick, outroStart, outroTick, drawCoin, visOf, wo
     FX.textLayer(dt);
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0); ctx.globalAlpha = 1; ctx.globalCompositeOperation = 'source-over';
     hudDraw(dt);
+    if (G.replay) { const R = G.replay, I = R.info || {}; Art.potg(ctx, VW, VH, { t: R.t, dur: R.dur, name: I.name, champ: I.kit, team: I.team, label: I.label }); }
   }
 
   return { initWorld, render, introTick, outroStart, outroTick, drawCoin, visOf, worldSprite };
