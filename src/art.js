@@ -38,11 +38,12 @@ const Art = (() => {
   // L.a / L.b / L.c add a raised plate in the primary metal, secondary metal or glowing accent. L.x cuts straight through to the field.
   // `s` is true when the coin is small on screen and hairline detail must give way to one big silhouette.
   const EMB = {
-    // Longshot: a sight picture. One long lance through a broken ring.
+    // Longshot: a broken sight ring, one long lance through it.
     vesper(L, s) {
-      L.b(band(0, 0, s ? .52 : .56, s ? .78 : .74, -.62, .62), band(0, 0, s ? .52 : .56, s ? .78 : .74, HALF - .62, HALF + .62));
-      if (!s) L.b([[-.98, -.045], [-.76, -.045], [-.76, .045], [-.98, .045]], [[.98, -.045], [.76, -.045], [.76, .045], [.98, .045]]);
-      L.a([[0, -1.08], [.19, -.2], [.075, -.02], [.075, .62], [.23, .98], [0, .8], [-.23, .98], [-.075, .62], [-.075, -.02], [-.19, -.2]], { chisel: .5, axis: 0 });
+      const r0 = s ? .56 : .62;
+      for (let i = 0; i < 4; i++) { const a = i * HALF / 2 + HALF / 4; L.b(band(0, 0, r0, .94, a - .5, a + .5, 14), { axis: a }); }
+      L.a([[0, -1.02], [.26, -.32], [.1, -.24], [.1, .6], [.3, .98], [0, .8], [-.3, .98], [-.1, .6], [-.1, -.24], [-.26, -.32]], { chisel: .5, axis: 0 });
+      L.c(lozenge(0, .16, .07, .13));
     },
     // Captain Riposte: one upright rapier over a swept cup guard.
     kade(L, s) {
@@ -54,16 +55,17 @@ const Art = (() => {
     },
     // Starling: a falling star on a comet's arc.
     ione(L, s) {
-      L.b([...arcPts(0, -.04, .92, -.32, 2.05, 22), ...arcPts(.14, -.2, .68, 2.05, -.32, 22)], { axis: 2 });
-      if (!s) L.b([...arcPts(0, -.04, .6, .2, 1.65, 14), ...arcPts(.08, -.14, .5, 1.65, .2, 14)]);
-      const R = s ? .86 : .78, r = s ? .17 : .13, cx = .16, cy = -.16;
-      L.a([[cx, cy - R * 1.08], [cx + r, cy - r], [cx + R * .86, cy], [cx + r, cy + r], [cx, cy + R * .98], [cx - r, cy + r], [cx - R * .86, cy], [cx - r, cy - r]], { chisel: .55, axis: .78, cx, cy });
+      L.b([...arcPts(0, -.04, .96, -.32, 2.05, 22), ...arcPts(.14, -.2, .66, 2.05, -.32, 22)], { axis: 2 });
+      if (!s) L.b([...arcPts(0, -.04, .56, .2, 1.65, 14), ...arcPts(.08, -.14, .48, 1.65, .2, 14)]);
+      const R = .86, r = s ? .2 : .15, cx = .16, cy = -.16;
+      L.a([[cx, cy - R * 1.02], [cx + r, cy - r], [cx + R * .86, cy], [cx + r, cy + r], [cx, cy + R * .98], [cx - r, cy + r], [cx - R * .86, cy], [cx - r, cy - r]], { chisel: .55, axis: .78, cx, cy });
+      L.c(lozenge(cx, cy, .1, .1));
     },
     // Dawnbringer: a sun clearing a level horizon, seven blades of light.
     solenne(L, s) {
       const cy = .32;
-      for (let i = 0; i < 7; i++) { if (s && i % 2) continue; const a = HALF + (i + .5) / 7 * HALF, w = s ? .13 : .085, lg = i % 2 ? .98 : 1.18; L.a([[Math.cos(a - w) * .6, cy + Math.sin(a - w) * .6], [Math.cos(a) * lg, cy + Math.sin(a) * lg], [Math.cos(a + w) * .6, cy + Math.sin(a + w) * .6]], { chisel: .6, split: 0 }); }
-      L.a([...arcPts(0, cy, .46, HALF, TAU, 18)], { axis: 0, chisel: .3 });
+      for (let i = 0; i < 7; i++) { if (s && i % 2) continue; const a = HALF + (i + .5) / 7 * HALF, w = s ? .16 : .11, lg = i % 2 ? .98 : 1.2; L.a([[Math.cos(a - w) * .6, cy + Math.sin(a - w) * .6], [Math.cos(a) * lg, cy + Math.sin(a) * lg], [Math.cos(a + w) * .6, cy + Math.sin(a + w) * .6]], { chisel: .6, split: 0 }); }
+      L.c([...arcPts(0, cy, .48, HALF, TAU, 18)], { axis: 0, chisel: .3 });
       L.b([[-1, cy + .08], [1, cy + .08], [.82, cy + .24], [-.82, cy + .24]]);
       L.b([[-.56, cy + .33], [.56, cy + .33], [.4, cy + .47], [-.4, cy + .47]]);
       if (!s) L.b([[-.22, cy + .55], [.22, cy + .55], [.12, cy + .65], [-.12, cy + .65]]);
@@ -84,18 +86,20 @@ const Art = (() => {
     // Deadbolt: a lock plate, the keyhole punched out, two bolts driven home.
     deadbolt(L, s) {
       for (const k of [1, -1]) L.a([[k * 1.04, -.2], [k * .62, -.2], [k * .52, 0], [k * .62, .2], [k * 1.04, .2]], { axis: 0 });
-      L.b(ngon(0, 0, .74, 8), { axis: .8, chisel: .2 });
-      L.x(g => { g.moveTo(.27, -.2); g.arc(0, -.2, .27, 0, TAU); g.closePath(); });
-      L.x([[-.13, -.14], [.13, -.14], [.3, .56], [-.3, .56]]);
+      L.b(ngon(0, 0, .84, 8), { axis: .8, chisel: .2 });
+      L.x(g => { g.moveTo(.32, -.22); g.arc(0, -.22, .32, 0, TAU); g.closePath(); });
+      L.x([[-.16, -.14], [.16, -.14], [.36, .62], [-.36, .62]]);
       if (!s) L.c(lozenge(0, -.2, .08, .1));
     },
-    // The Duelist: an inverted sabre, snapped at the middle and not yet fallen.
+    // The Duelist: two rapiers crossed, and the blood between them.
     duelist(L, s) {
-      L.b([[0, -1.04], [.17, -.86], [0, -.66], [-.17, -.86]], { axis: 0 });
-      L.b([[-.82, -.7], [0, -.42], [.82, -.7], [.54, -.3], [0, -.08], [-.54, -.3]], { axis: 0 });
-      L.a([[-.15, -.04], [.15, -.04], [.14, .3], [.03, .44], [.16, .54], [-.13, .52]], { axis: 0, chisel: .36 });
-      L.a([[-.13, .64], [.12, .6], [.17, .72], [0, 1.08], [-.15, .76]], { axis: 0, chisel: .4 });
-      if (!s) L.c(lozenge(.34, .42, .05, .13), lozenge(-.33, .54, .04, .09));
+      for (const a of [-.64, .64]) {
+        const P = q => rot(q, a, 0, .1);
+        L.a(P([[0, -1.12], [.13, -.8], [.1, .52], [-.1, .52], [-.13, -.8]]), { axis: a, chisel: .4 });
+        L.b(P([[-.36, .5], [.36, .5], [.28, .66], [-.28, .66]]), P([[-.08, .66], [.08, .66], [.07, .98], [-.07, .98]]), { axis: a });
+      }
+      L.x(lozenge(0, .1, .3, .38));
+      L.c(lozenge(0, .1, .21, .3), { axis: 0, chisel: .55 });
     },
     // Madame Hex: six cut plates around a slit of cold light.
     hex(L, s) {
@@ -125,6 +129,68 @@ const Art = (() => {
       L.b([[-.66, .86], [.66, .86], [.94, .62], [.94, .44], [.66, .18], [.46, .44], [.23, .18], [0, .44], [-.23, .18], [-.46, .44], [-.66, .18], [-.94, .44], [-.94, .62]], { axis: 0, chisel: .2 });
       if (!s) for (const x of [-.62, -.31, 0, .31, .62]) L.x(lozenge(x, -.54, .05, .05));
     },
+    // Voltaic: one forked bolt, already past you.
+    voltaic(L, s) {
+      for (const [y, x1] of [[-.66, -.19], [-.36, -.35], [-.06, -.5]]) L.b([[-1, y], [x1, y], [x1 - .08, y + .16], [-.9, y + .16]]);
+      for (const [y, x1] of [[.12, .55], [.42, .3]]) L.b([[x1, y], [.98 - (y - .12) * .5, y], [.9 - (y - .12) * .5, y + .16], [x1 - .08, y + .16]]);
+      L.a([[.12, -1.04], [.66, -1.04], [.28, -.22], [.68, -.22], [-.34, 1.06], [-.04, .16], [-.48, .16]], { chisel: .3, axis: .5 });
+      if (!s) L.c([[.28, -.92], [.46, -.92], [.1, -.1], [.42, -.1], [-.1, .56], [.04, .02], [-.26, .02]]);
+    },
+    // Tidecaller: a drop that holds the wave, and the swell that answers.
+    tidecaller(L, s) {
+      L.b(band(0, .14, s ? .72 : .76, .98, -.75, .95, 16), band(0, .14, s ? .72 : .76, .98, HALF - .95, HALF + .75, 16));
+      L.a([[0, -1.04], ...arcPts(0, .3, .58, -.62, HALF + .62, 26)], { chisel: .4, axis: 0 });
+      L.x([[-.44, .28], [-.22, .1], [0, .28], [.22, .1], [.44, .28], [.4, .48], [.22, .3], [0, .48], [-.22, .3], [-.4, .48]]);
+      L.c(lozenge(0, -.3, .1, .26), { chisel: .5, axis: 0 });
+    },
+    // Paragon: wings at full stretch and one rising spear of light.
+    paragon(L, s) {
+      for (const k of [1, -1]) for (let i = 0; i < (s ? 3 : 4); i++) { const st = s ? .32 : .25; L.b([[k * .14, -.04 + i * st * .5], [k * (1.04 - st * .62 * i), -.66 + i * st * 1.05], [k * (.94 - st * .62 * i), -.42 + i * st * 1.05 - (s ? 0 : .04)], [k * .14, .15 + i * st * .5]], { axis: 0 }); }
+      L.a([[0, -1.06], [.3, -.32], [.2, .36], [0, 1], [-.2, .36], [-.3, -.32]], { chisel: .6, axis: 0 });
+      L.c(lozenge(0, -.12, .1, .24), { chisel: .5, axis: 0 });
+    },
+    // Mirage: one eye, half solid, half the lie it tells.
+    mirage(L, s) {
+      const lens = (k, sc) => { const o = []; for (let i = 0; i <= 16; i++) { const x = i / 16; o.push([k * x * sc, -.62 * (1 - x * x) * sc]); } for (let i = 16; i >= 0; i--) { const x = i / 16; o.push([k * x * sc, .62 * (1 - x * x) * sc]); } return o; };
+      L.a([...lens(-1, 1.04)].reverse(), { axis: 0, chisel: .24 });
+      L.b(lens(1, 1.04), { axis: 0, chisel: .24 });
+      L.x(lens(1, .72));
+      L.x(disc(0, 0, .36));
+      L.c(lozenge(0, 0, .2, .3), { chisel: .55, axis: 0 });
+      for (const k of [1, -1]) L.b([[-.5, k * .76], [0, k * 1.02], [.5, k * .76], [.4, k * .66], [0, k * .86], [-.4, k * .66]]);
+    },
+    // Cinder: a crown of flame, burning hotter the deeper you look.
+    cinder(L, s) {
+      const F = [[0, -1.06], [.2, -.5], [.47, -.8], [.53, -.28], [.8, -.44], [.76, .2], [.52, .68], [0, .98], [-.52, .68], [-.76, .2], [-.8, -.44], [-.53, -.28], [-.47, -.8], [-.2, -.5]], sc = (k, dy) => F.map(([x, y]) => [x * k, y * k + dy]);
+      L.a(F, { chisel: .22, axis: 0 });
+      L.x(sc(.72, .2));
+      L.b(sc(.58, .28), { chisel: .3, axis: 0 });
+      L.c(sc(.3, .46), { chisel: .5, axis: 0 });
+    },
+    // Ravager: the head of the thing that hunts you, eyes open.
+    ravager(L, s) {
+      L.a([[-.9, -1.02], [-.38, -.56], [.38, -.56], [.9, -1.02], [.86, -.18], [.58, .24], [.32, .54], [.15, 1.02], [-.15, 1.02], [-.32, .54], [-.58, .24], [-.86, -.18]], { axis: 0, chisel: .2 });
+      for (const k of [1, -1]) { L.x([[k * .1, -.14], [k * .66, -.46], [k * .56, -.02], [k * .18, .08]]); L.c([[k * .17, -.13], [k * .58, -.36], [k * .5, -.07], [k * .22, .01]]); }
+      L.b([[-.2, .2], [.2, .2], [.09, .68], [-.09, .68]], { axis: 0, chisel: .4 });
+      if (!s) for (const k of [1, -1]) L.x([[k * .28, -.86 + .46], [k * .34, -.82 + .46], [k * .24, -.68 + .46]]);
+    },
+    // Cataclysm: the world, split, with the fire showing through.
+    cataclysm(L, s) {
+      L.c([[-.05, -1], [.07, -1], [.15, -.58], [-.13, -.24], [.19, .14], [-.07, .5], [.07, .98], [-.05, .98], [-.19, .5], [.07, .14], [-.25, -.24], [.03, -.58]], { chisel: .5, axis: 0 });
+      L.a([[-.12, -1.02], [-.68, -.78], [-1, -.18], [-.88, .54], [-.42, .98], [-.12, 1], [-.28, .5], [.0, .14], [-.34, -.24], [-.04, -.58]], { chisel: .2, axis: -.6 });
+      L.a([[.14, -1.02], [.72, -.76], [1, -.16], [.88, .54], [.44, .98], [.14, 1], [.02, .5], [.27, .14], [-.05, -.24], [.23, -.58]], { chisel: .2, axis: .6 });
+      if (!s) { L.x([[-.72, -.3], [-.46, -.2], [-.54, .02], [-.74, -.06]], [[.56, .3], [.78, .2], [.74, .46], [.54, .52]]); }
+    },
+    // The Puppeteer: the control bar, and whoever hangs from it.
+    puppeteer(L, s) {
+      const t = s ? .07 : .04;
+      for (const [x0, x1] of [[-.72, -.66], [.72, .66]]) L.b([[x0 - t, -.72], [x0 + t, -.72], [x1 + t, .18], [x1 - t, .18]]);
+      L.b([[-t, -.5], [t, -.5], [t, -.12], [-t, -.12]]);
+      L.a([[-.9, -.86], [.9, -.86], [.8, -.66], [-.8, -.66]], [[-.11, -1.04], [.11, -1.04], [.11, -.42], [-.11, -.42]], [[-.5, -.56], [.5, -.56], [.42, -.4], [-.42, -.4]], { axis: 0, chisel: .3 });
+      L.a([[0, -.16], [.4, .22], [.3, .72], [0, 1.02], [-.3, .72], [-.4, .22]], { axis: 0, chisel: .24 });
+      for (const k of [1, -1]) { L.x([[k * .07, .2], [k * .28, .14], [k * .24, .36], [k * .09, .38]]); L.c(lozenge(k * .68, .34, .15, .2)); }
+      L.c(lozenge(0, .66, .06, .14));
+    },
   };
   // Old villain seats used the shared kit ids; keep them drawing the right mark.
   const VILLAIN_OF = { vesper: 'deadbolt', kade: 'duelist', ione: 'hex', solenne: 'plague', sable: 'shiv', gravel: 'ironjaw' };
@@ -132,17 +198,22 @@ const Art = (() => {
 
   // ---------- materials: tints are 0..1. m = how metallic, an = brushed sheen, sp = lacquer gloss ----------
   const M = (col, m = 1, an = .55, sp = .2, em = 0) => ({ t: rgbF(col), m, an, sp, em });
-  const FIELD_HERO = M('#0c2250', 0, .4, .12), FIELD_VILL = M('#101016', 0, .45, .14), FIELD_CIV = M('#c8c2b4', 0, .15, .2), FIELD_BEAST = M('#16100c', 0, .3, .24), FIELD_BOSS = M('#1a0d0a', 0, .3, .26);
+  const FIELD_HERO = M('#0c2250', 0, .4, .22), FIELD_VILL = M('#0d0d13', 0, .45, .2), FIELD_CIV = M('#c8c2b4', 0, .15, .2), FIELD_BEAST = M('#16100c', 0, .3, .24), FIELD_BOSS = M('#1a0d0a', 0, .3, .26);
+  const EN = c => M(c, 0, .3, .13);
   const GOLD = M('#ffc95a', 1, .9), SILVER = M('#dfe9f6', 1, .85), GUN = M('#868c9a', 1, .75), BRASS = M('#d9ab55', 1, .8);
   const ACID = M('#a4e01c', .7, .6, .12, .35), CRIM = M('#dd1c32', .7, .6, .12, .3), TOXIC = M('#a8f020', .4, .3, .1, .75), BLOOD = M('#ff3a20', .4, .3, .1, .75), ICE = M('#7fdcff', .35, .4, .1, .7), SUN = M('#ffd77a', .4, .4, .12, .7);
   const STEEL = M('#a8b4c4', 1, .8), DARKIRON = M('#565c68', 1, .6), COPPER = M('#c98a5e', 1, .75), INKM = M('#22242c', .7, .3);
   const SKIN = {
-    vesper: { a: GOLD, b: SILVER, c: SUN, f: FIELD_HERO, glow: '#ffe6a8' }, kade: { a: SILVER, b: GOLD, c: SUN, f: FIELD_HERO, glow: '#ffe6a8' },
-    ione: { a: GOLD, b: SILVER, c: ICE, f: FIELD_HERO, glow: '#bfe8ff' }, solenne: { a: GOLD, b: SILVER, c: SUN, f: FIELD_HERO, glow: '#ffe6a8' },
-    sable: { a: SILVER, b: GOLD, c: ICE, f: FIELD_HERO, glow: '#bfd8ff' }, gravel: { a: GOLD, b: SILVER, c: SUN, f: FIELD_HERO, glow: '#ffe6a8' },
-    deadbolt: { a: ACID, b: GUN, c: TOXIC, f: FIELD_VILL, glow: '#c8ff4d' }, duelist: { a: CRIM, b: GUN, c: BLOOD, f: FIELD_VILL, glow: '#ff6a58' },
-    hex: { a: ACID, b: GUN, c: TOXIC, f: FIELD_VILL, glow: '#c8ff4d' }, plague: { a: ACID, b: GUN, c: TOXIC, f: FIELD_VILL, glow: '#c8ff4d' },
-    shiv: { a: STEEL, b: DARKIRON, c: BLOOD, f: FIELD_VILL, glow: '#ff6a58' }, ironjaw: { a: CRIM, b: GUN, c: BLOOD, f: FIELD_VILL, glow: '#ff6a58' },
+    vesper: { a: GOLD, b: M('#7f94b8', 1, .8), c: M('#ffffff', .3, .3, .3, 1.2), f: EN('#0d2358'), glow: '#ffe6a8' }, kade: { a: M('#eef4ff', 1, .95), b: GOLD, c: M('#ff5a58', .3, .3, .3, 1), f: EN('#123a8a'), glow: '#ffb0a8' },
+    ione: { a: M('#fff1c0', 1, .9), b: M('#a8d8ff', 1, .85), c: ICE, f: EN('#0a2b66'), glow: '#bfe8ff' }, solenne: { a: GOLD, b: M('#ffe4a8', 1, .85), c: SUN, f: EN('#16356e'), glow: '#ffe6a8' },
+    sable: { a: M('#e4dcff', 1, .95), b: GOLD, c: M('#b49aff', .35, .4, .1, 1.1), f: EN('#1b1658'), glow: '#c8b4ff' }, gravel: { a: GOLD, b: M('#eaf0f8', 1, .85), c: SUN, f: EN('#1c2e50'), glow: '#ffe6a8' },
+    voltaic: { a: M('#fff0a0', 1, .85), b: M('#8fe0ff', 1, .8), c: M('#ffffff', .2, .3, .3, 1.5), f: EN('#0b2d7c'), glow: '#9fe8ff' }, tidecaller: { a: M('#b4fff0', 1, .9), b: GOLD, c: M('#ffffff', .2, .3, .3, 1.3), f: EN('#063a5c'), glow: '#7ff0e0' },
+    paragon: { a: M('#ffffff', 1, .9), b: GOLD, c: M('#ff6a4a', .3, .3, .3, 1.1), f: EN('#173c9e'), glow: '#fff0c8' }, mirage: { a: M('#e6d8ff', 1, .95), b: M('#ffb4dc', 1, .9), c: M('#ff8ae0', .25, .3, .3, 1.5), f: EN('#261a6a'), glow: '#ff9ae8' },
+    deadbolt: { a: ACID, b: GUN, c: TOXIC, f: EN('#0d140e'), glow: '#c8ff4d' }, duelist: { a: M('#e8ecf2', 1, .95), b: CRIM, c: BLOOD, f: EN('#260a10'), glow: '#ff6a58' },
+    hex: { a: ACID, b: M('#8a70d8', 1, .85), c: TOXIC, f: EN('#170d2a'), glow: '#c8ff4d' }, plague: { a: M('#b8c0ca', 1, .85), b: M('#9aa2ae', 1, .85), c: TOXIC, f: EN('#10180a'), glow: '#c8ff4d' },
+    shiv: { a: STEEL, b: DARKIRON, c: BLOOD, f: EN('#140a0e'), glow: '#ff6a58' }, ironjaw: { a: CRIM, b: M('#b0b6c2', 1, .85), c: BLOOD, f: EN('#1a0e0a'), glow: '#ff6a58' },
+    cinder: { a: M('#ff9238', 1, .8), b: M('#ffcf5a', 1, .85), c: M('#fff6d0', .2, .3, .3, 1.8), f: EN('#220a06'), glow: '#ffb050' }, ravager: { a: M('#dcd0ba', 1, .75), b: M('#7a6658', 1, .7), c: M('#ff2a2a', .2, .3, .3, 1.8), f: EN('#180a0e'), glow: '#ff4040' },
+    cataclysm: { a: M('#8c7f78', 1, .6), b: M('#6a5f5a', 1, .6), c: M('#ff7a20', .2, .3, .3, 2), f: EN('#160e0c'), glow: '#ff8a30' }, puppeteer: { a: M('#d070d8', 1, .85), b: M('#e6dcd0', 1, .7), c: M('#ff8ae8', .25, .3, .3, 1.6), f: EN('#1c0a26'), glow: '#ff8ae8' },
   };
   const RIMM = [M('#c9834f', 1, .7), M('#b08a4e', 1, .75), M('#d9e2ee', 1, .9), M('#f4cc6a', 1, .95), M('#e2f0f7', 1, 1), M('#a79ee0', 1, 1)];
   const BEZEL = 1.0;
@@ -173,10 +244,18 @@ const Art = (() => {
     sig_hex: { fa: M('#b8ff70', .8, .7), fb: M('#7a60c8', 1, .9), fc: M('#f4ffb0', .2, .3, .3, 2), ff: M('#10082a', .4, .7, .55), fr: M('#6a50b8', 1, 1), film: .7, glow: '#b8ff70' },
     sig_plague: { fa: M('#dfff70', .7, .7), fb: M('#889098', 1, .85), fc: M('#f4ffb0', .2, .3, .3, 2), ff: M('#0c1408', .3, .6, .5), fr: M('#78a030', 1, 1), film: .3, glow: '#dfff70' },
     sig_shiv: { fa: M('#e8eef8', 1, 1), fb: M('#2a2d36', 1, .9), fc: M('#ff3e4e', .2, .3, .3, 2), ff: M('#0c0408', .3, .7, .6), fr: M('#a01c2c', 1, 1), film: .25, glow: '#ff3e4e' },
+    sig_voltaic: { fa: M('#ffffff', 1, 1), fb: M('#ffe060', 1, .9), fc: M('#a8f0ff', .2, .3, .3, 2), ff: M('#061a58', .4, .7, .55), fr: M('#60c8ff', 1, 1), film: .35, glow: '#a8f0ff', pat: 'facets' },
+    sig_tidecaller: { fa: M('#d8fff4', 1, 1), fb: M('#7ae8d8', 1, .9), fc: M('#ffffff', .2, .3, .3, 1.8), ff: M('#032838', .4, .7, .55), fr: M('#40c8b8', 1, 1), film: .75, glow: '#7ff0e0', pat: 'waves' },
+    sig_paragon: { fa: M('#fff8e0', 1, 1), fb: M('#f6c050', 1, 1), fc: M('#ff5a4a', .2, .3, .3, 1.7), ff: M('#10308c', .5, .7, .55), fr: M('#ffe0a0', 1, 1), film: .2, glow: '#fff0c8' },
+    sig_mirage: { fa: M('#f0e0ff', 1, 1), fb: M('#ff9ad0', 1, .95), fc: M('#ffffff', .2, .3, .3, 1.8), ff: M('#180e50', .5, .7, .6), fr: M('#d0a8ff', 1, 1), film: 1, glow: '#ff9ae8', pat: 'guilloche' },
+    sig_cinder: { fa: M('#ffb040', 1, 1), fb: M('#fff0a0', 1, .9), fc: M('#ffffff', .2, .3, .3, 2.2), ff: M('#180402', .4, .7, .55), fr: M('#d8501a', 1, 1), film: .2, glow: '#ffb050', pat: 'facets' },
+    sig_ravager: { fa: M('#f4e8d0', 1, .9), fb: M('#a02020', .9, .8), fc: M('#ff3030', .2, .3, .3, 2.2), ff: M('#0e0408', .4, .7, .55), fr: M('#7a1a1a', 1, 1), film: .1, glow: '#ff4040' },
+    sig_cataclysm: { fa: M('#40383a', 1, 1), fb: M('#2e282a', 1, 1), fc: M('#ffa030', .2, .3, .3, 2.6), ff: M('#0c0604', .4, .7, .55), fr: M('#ff7a20', 1, 1), glow: '#ff8a30', gloss: .5 },
+    sig_puppeteer: { fa: M('#f08af0', 1, 1), fb: M('#fff0e0', 1, .85), fc: M('#ffffff', .2, .3, .3, 2), ff: M('#12061c', .4, .7, .6), fr: M('#a040b0', 1, 1), film: .55, glow: '#ff8ae8', pat: 'guilloche' },
     sig_ironjaw: { fa: M('#ffa44a', 1, .9), fb: M('#aab0ba', 1, .9), fc: M('#ffe0b0', .2, .3, .3, 1.8), ff: M('#180c06', .3, .6, .5), fr: M('#c8702a', 1, 1), film: .2, glow: '#ff9a3c' },
   };
   // The store catalog. Mastery items unlock by Sim.TIERS tier on the champion that earns them.
-  const SIG_NAME = { vesper: 'Vanishing point', kade: 'Parry of dawn', ione: 'Comet tail', solenne: 'First light', sable: 'Moonless', gravel: 'Last wall', deadbolt: 'Live round', duelist: 'First blood', hex: 'Witch glass', plague: 'Patient zero', shiv: 'Quiet edge', ironjaw: 'Trap of the deep' };
+  const SIG_NAME = { vesper: 'Vanishing point', kade: 'Parry of dawn', ione: 'Comet tail', solenne: 'First light', sable: 'Moonless', gravel: 'Last wall', deadbolt: 'Live round', duelist: 'First blood', hex: 'Witch glass', plague: 'Patient zero', shiv: 'Quiet edge', ironjaw: 'Trap of the deep', voltaic: 'Ball lightning', tidecaller: 'Slack tide', paragon: 'Zenith', mirage: 'Second sight', cinder: 'Banked coals', ravager: 'Last meal', cataclysm: 'Fault line', puppeteer: 'Curtain call' };
   const COSMETICS = [
     { id: 'gunmetal', name: 'Gunmetal', kind: 'finish', cost: 300 }, { id: 'rosegold', name: 'Rose gold', kind: 'finish', cost: 450 }, { id: 'verdigris', name: 'Verdigris', kind: 'finish', cost: 450 },
     { id: 'obsidian', name: 'Obsidian', kind: 'finish', cost: 700 }, { id: 'pearl', name: 'Pearl', kind: 'finish', cost: 700 }, { id: 'neon', name: 'Cold neon', kind: 'finish', cost: 900 }, { id: 'chrome', name: 'Mirror chrome', kind: 'finish', cost: 1100 },
@@ -190,24 +269,25 @@ const Art = (() => {
 
   // ---------- the relief engine ----------
   // The light rig. One static matcap, indexed by a normal rotated to the camera: a big soft key high left, a strip light, a hard horizon and a cool kicker.
-  const MCN = 192; let MC = null;
+  const MCN = 192; let MC = null, MCC = null;
   function matcap() {
     if (MC) return MC;
-    MC = new Float32Array(MCN * MCN);
+    MC = new Float32Array(MCN * MCN); MCC = new Float32Array(MCN * MCN);
     const sm = (a, b, x) => { const t = Math.max(0, Math.min(1, (x - a) / (b - a))); return t * t * (3 - 2 * t); };
     const K = [-.5, -.66, .56], Kl = Math.hypot(...K); K[0] /= Kl; K[1] /= Kl; K[2] /= Kl;
     for (let j = 0; j < MCN; j++) for (let i = 0; i < MCN; i++) {
       const nx = (i + .5) / MCN * 2 - 1, ny = (j + .5) / MCN * 2 - 1, r2 = nx * nx + ny * ny, f = r2 > 1 ? 1 / Math.sqrt(r2) : 1, x = nx * f, y = ny * f, z = Math.sqrt(Math.max(0, 1 - x * x - y * y));
       const rx = 2 * z * x, ry = 2 * z * y, rz = 2 * z * z - 1;
-      let L = .12 + .24 * Math.max(0, -ry) * Math.max(0, -ry);
-      L += .78 * sm(.15, .95, rz) * (.7 + .3 * sm(.2, -.7, ry + rx * .5));                // the card: a broad soft fill, so a flat plate shows its colour
+      let L = .07 + .2 * Math.max(0, -ry) * Math.max(0, -ry);
+      L += .74 * sm(.2, .96, rz) * (.72 + .28 * sm(.2, -.7, ry + rx * .5));          // the card: a flat plate shows its colour
       const c = rx * K[0] + ry * K[1] + rz * K[2];
-      L += 1.9 * sm(.74, .97, c);                                                   // the key
-      L += .9 * Math.exp(-Math.pow((ry + .3 + rx * .24) / .055, 2)) * sm(-.6, .1, rz); // strip light
-      L *= .42 + .58 * sm(.02, .09, Math.abs(ry - .55));                             // the horizon: chrome's dark line
-      L += .5 * sm(.25, .9, rx) * sm(.0, .9, ry) * sm(.3, -.4, rz);                 // cool kicker from below right
-      L += .16 * sm(.1, .9, ry);                                                     // floor bounce
+      L += .5 * sm(.3, .86, c) + 2.5 * sm(.82, .985, c);                             // a soft lobe, then a key that blows out
+      L += 1.25 * Math.exp(-Math.pow((ry + .3 + rx * .24) / .045, 2)) * sm(-.6, .1, rz); // strip light: the hard line that says "polished"
+      L *= .26 + .74 * sm(.02, .075, Math.abs(ry - .55));                            // the horizon: chrome's dark line
+      L += .62 * sm(.25, .9, rx) * sm(.0, .9, ry) * sm(.3, -.4, rz);                 // kicker from below right
+      L += .1 * sm(.1, .9, ry);                                                      // floor bounce
       MC[i + j * MCN] = L;
+      MCC[i + j * MCN] = .34 * sm(.2, .9, rx) * sm(-.1, .9, ry) + .2 * sm(-.15, -.9, ry) * sm(.5, -.2, rz);  // the cool side of the room
     }
     return MC;
   }
@@ -255,32 +335,59 @@ const Art = (() => {
   function edge(tier, villain) {
     const out = [];
     if (villain) {
-      const n = tier >= 4 ? 16 : 12, R = .985, notch = tier >= 3 ? .05 : 0;
-      for (let i = 0; i < n; i++) { const a = (i + .5) / n * TAU - HALF / 2, st = TAU / n; out.push([a - st * .46, R]); if (notch) { out.push([a - st * .1, R - notch]); out.push([a + st * .1, R - notch]); } out.push([a + st * .46, R]); }
+      const n = tier >= 4 ? 16 : 12, R = .985, notch = tier >= 2 ? .05 : 0, spur = tier >= 4 ? (tier >= 5 ? 1.06 : 1.03) : 0;
+      for (let i = 0; i < n; i++) {
+        const a = (i + .5) / n * TAU - HALF / 2, st = TAU / n; out.push([a - st * .46, R]);
+        if (notch) { out.push([a - st * .12, R - notch]); if (spur && i % 2 === 0) out.push([a, spur]); else out.push([a, R - notch * .35]); out.push([a + st * .12, R - notch]); }
+        out.push([a + st * .46, R]);
+      }
       return out;
     }
-    const n = tier >= 4 ? 8 : 0;
+    const n = tier >= 3 ? (tier >= 4 ? 8 : 12) : 0;
     if (!n) { for (let i = 0; i < 96; i++) out.push([i / 96 * TAU, .985]); return out; }
-    for (let i = 0; i < n; i++) { const a = i / n * TAU - HALF / 2, st = TAU / n; for (let k = 0; k <= 8; k++) out.push([a + st * .14 + st * .72 * k / 8, .955]); out.push([a + st * .86, 1.03]); out.push([a + st * 1.14, 1.03]); }
+    const lo = tier >= 4 ? .95 : .975, hi = tier >= 5 ? 1.085 : tier >= 4 ? 1.04 : .995, w = tier >= 4 ? .13 : .22;
+    for (let i = 0; i < n; i++) {
+      const a = i / n * TAU - HALF / 2, st = TAU / n;
+      for (let k = 0; k <= 8; k++) out.push([a + st * w + st * (1 - 2 * w) * k / 8, lo]);
+      if (tier >= 5) { out.push([a + st * (1 - w * .9), hi - .05]); out.push([a + st, hi]); out.push([a + st * (1 + w * .9), hi - .05]); }
+      else { out.push([a + st * (1 - w * .55), hi]); out.push([a + st * (1 + w * .55), hi]); }
+    }
     return out;
   }
   const edgeT = e => g => { e.forEach(([a, r], i) => g[i ? 'lineTo' : 'moveTo'](Math.cos(a) * r, Math.sin(a) * r)); g.closePath(); };
   // Rim machining per mastery tier, as engraved lines.
-  function rimDetail(g, tier, mid) {
+  function rimDetail(g, tier, mid, small) {
     const each = (n, f, off = 0) => { for (let i = 0; i < n; i++) { g.save(); g.rotate((i + off) / n * TAU); f(i); g.restore(); } };
-    if (tier === 1) { g.beginPath(); g.arc(0, 0, mid + .012, 0, TAU); g.lineWidth = .022; g.stroke(); }
-    if (tier === 2) each(4, () => { g.fillRect(-.09, -mid - .045, .18, .035); g.fillRect(-.06, -mid + .012, .12, .025); }, .125);
-    if (tier === 3) each(12, () => { g.fillRect(-.012, -mid - .05, .024, .1); });
-    if (tier === 4) each(8, () => { g.beginPath(); g.moveTo(0, -mid - .06); g.lineTo(.05, -mid); g.lineTo(0, -mid + .06); g.lineTo(-.05, -mid); g.closePath(); g.fill(); }, .5);
-    if (tier === 5) { g.beginPath(); g.arc(0, 0, mid, 0, TAU); g.lineWidth = .05; g.stroke(); each(8, () => { g.beginPath(); g.moveTo(0, -mid - .07); g.lineTo(.04, -mid); g.lineTo(0, -mid + .07); g.lineTo(-.04, -mid); g.closePath(); g.fill(); }, .5); }
+    const dia = (r, w, h) => { g.beginPath(); g.moveTo(0, -r - h); g.lineTo(w, -r); g.lineTo(0, -r + h); g.lineTo(-w, -r); g.closePath(); g.fill(); };
+    if (tier === 1) { each(small ? 4 : 8, () => dia(mid, .028, .05), .5); }
+    if (tier === 2) each(4, () => { g.beginPath(); g.moveTo(-.16, -mid - .04); g.lineTo(0, -mid + .03); g.lineTo(.16, -mid - .04); g.lineTo(.16, -mid); g.lineTo(0, -mid + .07); g.lineTo(-.16, -mid); g.closePath(); g.fill(); }, .125);
+    if (tier === 3) each(12, () => { g.fillRect(-.016, -mid - .05, .032, .1); }, .5);
+    if (tier >= 4) each(16, i => { if (i % 2) g.fillRect(-.012, -mid - .05, .024, .1); }, .5);
+  }
+  // Set stones, seated in the rim at the two highest tiers of devotion.
+  function rimGems(g, tier, mid) {
+    const n = tier >= 5 ? 8 : 4;
+    for (let i = 0; i < n; i++) { const a = (i + .5) / 8 * TAU * (tier >= 5 ? 1 : 2) - HALF / 2 + (tier >= 5 ? 0 : TAU / 16 * 0), r = .068; g.beginPath(); g.moveTo(Math.cos(a) * (mid + r), Math.sin(a) * (mid + r)); g.lineTo(Math.cos(a + .1) * mid, Math.sin(a + .1) * mid); g.lineTo(Math.cos(a) * (mid - r), Math.sin(a) * (mid - r)); g.lineTo(Math.cos(a - .1) * mid, Math.sin(a - .1) * mid); g.closePath(); g.fill(); }
   }
   const BUFS = new Map(), NXB = new Map(), NYB = new Map();
   const NX_BUF = n => { let a = NXB.get(n); if (!a) { a = new Float32Array(n); NXB.set(n, a); } return a; }, NY_BUF = n => { let a = NYB.get(n); if (!a) { a = new Float32Array(n); NYB.set(n, a); } return a; };
   // Build the shading buffers for one face.
   // spec: { tier, villain, rIn, k, skin:{a,b,c,f,rim}, emblem(L, small), rimMat, metal, gem (colour of tier-4 stones), flat: skip the rim for plain tokens }
+  // Engine-turned patterns cut into the enamel, as height. Heroes get the sunburst, villains the knurl.
+  function fieldPat(kind, small) {
+    if (kind === 'none') return null;
+    const A = small ? .0014 : .0026;
+    if (kind === 'sunburst') { const N = small ? 24 : 40; return (u, v) => { const a = Math.atan2(v, u) * N, r = Math.sqrt(u * u + v * v); return (Math.sin(a) > 0 ? A : -A) * Math.min(1, r * 3); }; }
+    if (kind === 'knurl') { const f = small ? 15 : 24; return (u, v) => { const p = Math.sin((u + v) * f), q = Math.sin((u - v) * f); return (p * q > 0 ? -A : A) * .4; }; }
+    if (kind === 'guilloche') { const f = small ? 16 : 30; return (u, v) => { const r = Math.sqrt(u * u + v * v), a = Math.atan2(v, u); return Math.sin(r * f + Math.sin(a * 8) * 1.6) * A * 1.2; }; }
+    if (kind === 'waves') { const f = small ? 9 : 14; return (u, v) => Math.sin((v + Math.sin(u * 5) * .12) * f * 2) * A; }
+    if (kind === 'carbon') { const f = small ? 22 : 40; return (u, v) => { const i = Math.floor(u * f) & 1, j = Math.floor(v * f) & 1; return (i ^ j ? A : -A) * .7; }; }
+    if (kind === 'facets') { const N = 12; return (u, v) => { const a = Math.atan2(v, u), s = TAU / N, m = ((a % s) + s) % s - s / 2; return Math.abs(m) * Math.sqrt(u * u + v * v) * .09; }; }
+    return null;
+  }
   function buildFace(spec, R, pitch, ssIn) {
-    const ss = ssIn || (R < 60 ? 2 : R < 110 ? 1.3 : 1), Rh = R * ss, Ph = spec.pad === undefined ? Math.ceil(Rh * .14) + 4 : Math.ceil(Rh * spec.pad) + 2, Sh = Math.ceil(Rh * 2 + Ph * 2), small = R < 46;
-    const rIn = spec.rIn || (small ? .85 : .8), k = (spec.k || .8) * (small ? 1.14 : 1) * rIn / .8;
+    const ss = ssIn || (R < 60 ? 2 : R < 110 ? 1.3 : 1), Rh = R * ss, Ph = spec.pad === undefined ? Math.ceil(Rh * .14) + 4 : Math.ceil(Rh * spec.pad) + 2, Sh = Math.ceil(Rh * 2 + Ph * 2), small = spec.small === undefined ? R < 46 : spec.small, tiny = Rh < 34;
+    const rIn = spec.rIn || (small ? .83 : .79), k = (spec.k || .8) * (small ? 1.06 : 1) * rIn / .8;
     const T = edgeT(edge(Math.max(0, spec.tier), !!spec.villain));
     const aO = readMask(Sh, Rh, pitch, g => { g.beginPath(); T(g); g.fill(); });
     const aF = readMask(Sh, Rh, pitch, g => { g.beginPath(); g.arc(0, 0, rIn, 0, TAU); g.fill(); });
@@ -293,22 +400,31 @@ const Art = (() => {
     // Scratch buffers are pooled by size so a dozen bakes don't churn the garbage collector.
     let PB = BUFS.get(nP); if (!PB) { PB = Array.from({ length: 10 }, () => new Float32Array(nP)); BUFS.set(nP, PB); if (BUFS.size > 8) BUFS.delete(BUFS.keys().next().value); }
     const [H, mR, mG, mB, mM, mA, mS, mE, Hb0, emCov0] = PB;
-    const skin = spec.skin, Sq = Sh / 2;
+    const skin = spec.skin, Sq = Sh / 2, pat = tiny || spec.tier < 0 && !spec.pat ? null : fieldPat(spec.pat || (spec.villain ? 'knurl' : 'sunburst'), small);
     // the field: a shallow concave dish, so light rolls across it
     for (let j = 0; j < Sh; j++) for (let i = 0; i < Sh; i++) {
       const idx = i + j * Sh, u = (i + .5 - Sq) / Rh, v = (j + .5 - Sq) / (Rh * pitch), rr = u * u + v * v, a = aF[idx] / 255;
-      H[idx] = (rr * .05 - .05) * Rh;
-      const f = skin.f; mR[idx] = f.t[0]; mG[idx] = f.t[1]; mB[idx] = f.t[2]; mM[idx] = f.m; mA[idx] = f.an; mS[idx] = f.sp; mE[idx] = f.em || 0;
-      void a;
+      let fh = (rr * .05 - .05) * Rh;
+      if (pat && a > 0) fh += pat(u, v, rr) * Rh;
+      H[idx] = fh;
+      // Enamel pools darker toward the rim, so the emblem always sits in its own pool of light.
+      const f = skin.f, vg = 1.34 - .92 * Math.min(1, rr / (rIn * rIn)); mR[idx] = f.t[0] * vg; mG[idx] = f.t[1] * vg; mB[idx] = f.t[2] * vg; mM[idx] = f.m; mA[idx] = f.an; mS[idx] = f.sp; mE[idx] = f.em || 0;
     }
     // Rim plate.
     const rimM = skin.rim || RIMM[Math.max(0, spec.tier) | 0] || RIMM[0];
-    const det = spec.tier >= 1 ? readMask(Sh, Rh, pitch, g => rimDetail(g, spec.tier, (rIn + .97) / 2)) : null;
+    const rimMid = (rIn + .97) / 2, det = spec.tier >= 1 && !tiny ? readMask(Sh, Rh, pitch, g => rimDetail(g, spec.tier, rimMid, small)) : null;
+    const gems = spec.tier >= 4 && !tiny ? readMask(Sh, Rh, pitch, g => rimGems(g, spec.tier, rimMid)) : null, millN = tiny || spec.tier < 1 || spec.tier >= 3 ? 0 : small ? 40 : 72, sw = .985 - rIn;
     if (spec.tier >= 0 || spec.metal) {
       for (let i = 0; i < nP; i++) {
         const a = aO[i] > aF[i] ? (aO[i] - aF[i]) / 255 : 0; if (a <= 0) continue;
-        const t = Math.min(1, dRim[i] / bwR), h = hRim * bev01(t) + (det ? -hRim * .5 * det[i] / 255 : 0);
-        H[i] = H[i] * (1 - a) + h * a; mR[i] += (rimM.t[0] - mR[i]) * a; mG[i] += (rimM.t[1] - mG[i]) * a; mB[i] += (rimM.t[2] - mB[i]) * a; mM[i] += (rimM.m - mM[i]) * a; mA[i] += (rimM.an - mA[i]) * a; mS[i] += (rimM.sp - mS[i]) * a;
+        const iy = i / Sh | 0, u = ((i - iy * Sh) + .5 - Sq) / Rh, v = (iy + .5 - Sq) / (Rh * pitch), r = Math.sqrt(u * u + v * v), sr = (r - rIn) / sw, t = Math.min(1, dRim[i] / bwR);
+        // Two steps and a cut channel: the outer wire, the groove, the inner lip that holds the enamel.
+        let h = hRim * bev01(t), dark = 1;
+        if (!tiny) { const g0 = (sr - .34) / .13, gg = 1 - g0 * g0; if (gg > 0) { h -= hRim * .62 * gg; dark = 1 - .55 * gg; } if (sr > .42) h += hRim * .24 * Math.min(1, (sr - .42) / .08); }
+        if (millN && sr > .66) { const an = Math.atan2(v, u) * millN; if (Math.sin(an) > .3) h -= hRim * .3; }
+        if (det) h -= hRim * .55 * det[i] / 255;
+        H[i] = H[i] * (1 - a) + h * a; mR[i] += (rimM.t[0] * dark - mR[i]) * a; mG[i] += (rimM.t[1] * dark - mG[i]) * a; mB[i] += (rimM.t[2] * dark - mB[i]) * a; mM[i] += (rimM.m - mM[i]) * a; mA[i] += (rimM.an - mA[i]) * a; mS[i] += (rimM.sp - mS[i]) * a;
+        if (gems && gems[i] > 8) { const q = gems[i] / 255, gc = skin.c.t; H[i] += hRim * .5 * q; mR[i] += (gc[0] - mR[i]) * q; mG[i] += (gc[1] - mG[i]) * q; mB[i] += (gc[2] - mB[i]) * q; mM[i] += (.3 - mM[i]) * q; mE[i] += (1.5 - mE[i]) * q; mS[i] += (.5 - mS[i]) * q; }
       }
     }
     // Emblem plates, in the order they were drawn. Cuts reveal the field again.
@@ -331,10 +447,23 @@ const Art = (() => {
       const axis = gr.o.axis, ca = axis === undefined ? 0 : Math.cos(axis), sa = axis === undefined ? 0 : Math.sin(axis), cx = gr.o.cx || 0, cy = gr.o.cy || 0;
       for (let j = mask.by0; j <= mask.by1; j++) for (let i = mask.bx0; i <= mask.bx1; i++) {
         const idx = i + j * Sh, a = mask[idx] / 255; if (a <= 0) continue;
-        const d = Math.min(1, dd[idx] / bw); let h = bev01(d) * top * (chisel ? 1.45 : 1);
+        const d = Math.min(1, dd[idx] / bw); let h = (chisel ? d : bev01(d)) * top * (chisel ? 1.45 : 1) + Math.min(1, dd[idx] / (Rh * .3)) * Rh * .045;
         // a keen facet line along the axis makes each plate read as cut metal
         if (axis !== undefined && split && chisel) { const u = ((i + .5 - Sq) / (Rh * k) - cx), v = ((j + .5 - Sq) / (Rh * pitch * k) - cy), side = u * ca + v * sa; h += Math.max(-.04, Math.min(.04, side)) * Rh * .9; }
         H[idx] = H[idx] * (1 - a) + h * a; mR[idx] += (m.t[0] - mR[idx]) * a; mG[idx] += (m.t[1] - mG[idx]) * a; mB[idx] += (m.t[2] - mB[idx]) * a; mM[idx] += (m.m - mM[idx]) * a; mA[idx] += (m.an - mA[idx]) * a; mS[idx] += (m.sp - mS[idx]) * a; mE[idx] += ((m.em || 0) - mE[idx]) * a; emCov[idx] += (1 - emCov[idx]) * a;
+      }
+    }
+    // The moat: the enamel is cut away around the emblem and falls into shadow. This is what makes the silhouette at thumbnail size.
+    if (groups.length && !spec.noMoat) {
+      const mw = Rh * (small ? .13 : .1), pad = Math.ceil(mw) + 2; let bx0 = Sh, by0 = Sh, bx1 = -1, by1 = -1;
+      for (let j = 0, i = 0; j < Sh; j++) for (let x = 0; x < Sh; x++, i++) if (emCov[i] > .5) { if (x < bx0) bx0 = x; if (x > bx1) bx1 = x; if (j < by0) by0 = j; if (j > by1) by1 = j; }
+      if (bx1 >= 0) {
+        // Only the emblem's own neighbourhood: the far field never reaches the moat.
+        bx0 = Math.max(0, bx0 - pad); by0 = Math.max(0, by0 - pad); bx1 = Math.min(Sh - 1, bx1 + pad); by1 = Math.min(Sh - 1, by1 + pad);
+        const w2 = bx1 - bx0 + 1, h2 = by1 - by0 + 1, em = new Uint8Array(w2 * h2);
+        for (let j = 0; j < h2; j++) for (let x = 0; x < w2; x++) em[x + j * w2] = emCov[x + bx0 + (j + by0) * Sh] > .5 ? 0 : 1;
+        const out = edt(em, w2, h2);
+        for (let j = 0; j < h2; j++) for (let x = 0; x < w2; x++) { const i = x + bx0 + (j + by0) * Sh; if (emCov[i] > .5 || aF[i] < 8) continue; const t = out[x + j * w2] / mw; if (t >= 1) continue; const q = (1 - t) * (1 - t); H[i] -= q * Rh * .035; const km = 1 - .82 * q; mR[i] *= km; mG[i] *= km; mB[i] *= km; mS[i] *= km; mA[i] *= km; }
       }
     }
     // One light blur takes the staircase out of the distance field, so bevels shade as clean planes.
@@ -365,7 +494,7 @@ const Art = (() => {
   const HALFV = [LIGHT[0], LIGHT[1], LIGHT[2] + 1]; const Hl = Math.hypot(...HALFV); HALFV[0] /= Hl; HALFV[1] /= Hl; HALFV[2] /= Hl;
   // face: buffers from buildFace. yaw: radians about the vertical axis. thick: edge thickness in pixels. out: {ctx, W, x, y, id (ImageData), ...}
   function shade(F, yaw, thick, rimTint, emis, opt, target) {
-    const S = F.S, R = F.R, cs = Math.cos(yaw), sn = Math.sin(yaw), MCv = matcap(), FL = film(), filmK = opt.film || 0, ink = opt.ink !== false, data = target, N = MCN, half = S / 2, gloss = opt.gloss || 0, edgeC = opt.edge;
+    const S = F.S, R = F.R, cs = Math.cos(yaw), sn = Math.sin(yaw), MCv = matcap(), MCcv = MCC, FL = film(), sw = opt.sweep ? 1 : 0, bp = sw ? -1.8 + Math.min(1.1, Math.abs(yaw)) * 4.1 : 99, gyaw = sw ? Math.sign(yaw) * Math.min(Math.abs(yaw) * 1.75, .46 + Math.abs(yaw) * .42) : yaw, csg = Math.cos(gyaw), sng = Math.sin(gyaw), filmK = opt.film || 0, ink = opt.ink !== false, data = target, N = MCN, half = S / 2, gloss = opt.gloss || 0, edgeC = opt.edge;
     const ca = Math.max(.08, Math.abs(cs)), Rx = R * ca, Hx = HALFV[0] * cs - HALFV[2] * sn, Hy = HALFV[1], d0x = thick * sn, d0y = thick * Math.sqrt(1 - F.pitch * F.pitch), dmag = Math.hypot(d0x, d0y);
     const nx_a = F.nx, ny_a = F.ny, r_a = F.r, g_a = F.g, b_a = F.b, m_a = F.m, an_a = F.an, sp_a = F.sp, em_a = F.em, a_a = F.a, tx_a = F.tx, ty_a = F.ty;
     const px = opt.W || S;
@@ -382,16 +511,21 @@ const Art = (() => {
         let R8 = 0, G8 = 0, B8 = 0, A8 = 0;
         if (fA > .003) {
           const nx0 = nx_a[idx], ny0 = ny_a[idx], nz0 = Math.sqrt(Math.max(.01, 1 - nx0 * nx0 - ny0 * ny0));
-          const nx = nx0 * cs + nz0 * sn, nzr = -nx0 * sn + nz0 * cs;
-          const ii = (nx * .5 + .5) * N | 0, jj = (ny0 * .5 + .5) * N | 0, L0 = MCv[(ii < 0 ? 0 : ii >= N ? N - 1 : ii) + (jj < 0 ? 0 : jj >= N ? N - 1 : jj) * N], L = gloss ? L0 * (1 + gloss * L0) : L0;
+          const nx = nx0 * csg + nz0 * sng, nzr = -nx0 * sn + nz0 * cs;
+          const ii = (nx * .5 + .5) * N | 0, jj = (ny0 * .5 + .5) * N | 0, mi = (ii < 0 ? 0 : ii >= N ? N - 1 : ii) + (jj < 0 ? 0 : jj >= N ? N - 1 : jj) * N, L0 = MCv[mi], L = gloss ? L0 * (1 + gloss * L0) : L0, cool = MCcv[mi];
           const m = m_a[idx], rr = r_a[idx], gg = g_a[idx], bb = b_a[idx], sp = sp_a[idx] * (m < .6 ? .5 : 1);
           const dot = tx_a[idx] * Hx + ty_a[idx] * Hy; let aa = 1 - dot * dot; if (aa < 0) aa = 0; aa *= aa; aa *= aa; const A = aa * an_a[idx] * .62 * (.6 + L * .55);
           const dif = (1 - m) * (.34 + .16 * L);
-          let cr = rr * (dif + m * L) + sp * L + A * (rr * .6 + .4), cg = gg * (dif + m * L) + sp * L + A * (gg * .6 + .4), cb = bb * (dif + m * L) + sp * L + A * (bb * .6 + .4);
+          // Metal is tinted by its own reflection: shadows take the colour twice over and go deep and saturated; highlights run pale.
+          const sat = L >= 1 ? 0 : (1 - L) * .9 * m, tr = rr * (1 - sat + sat * rr), tg = gg * (1 - sat + sat * gg), tb = bb * (1 - sat + sat * bb);
+          let cr = tr * (dif + m * L) + sp * L + A * (rr * .6 + .4), cg = tg * (dif + m * L) + sp * L + A * (gg * .6 + .4), cb = tb * (dif + m * L) + sp * L + A * (bb * .6 + .4);
+          if (cool > 0) { cb += cool * (.3 + .5 * m); cg += cool * .22 * m; cr -= cool * .06 * m; }
+          // The sweep: a bar of light that travels with the turn. Free at run time, it's in the frames.
+          if (bp < 1.6) { const q = ((su - half) * .7 + (sv - half) * .714) / R - bp, b1 = 1 - q * q / .16, q2 = q + .46, b2 = 1 - q2 * q2 / .012; let bb2 = 0; if (b1 > 0) bb2 += b1 * b1; if (b2 > 0) bb2 += b2 * .7; if (bb2 > 0) { const g = bb2 * (.2 + .8 * m) * (.55 + L * .6) * 1.3; cr += g * (rr * .55 + .55); cg += g * (gg * .55 + .55); cb += g * (bb * .55 + .55); } }
           const e = em_a[idx]; if (e > 0) { cr += eR * e * .5; cg += eG * e * .5; cb += eB * e * .5; }
           if (filmK > 0 && m > .3) { const fi = (nzr * .5 + .5) * (FILMN - 1) | 0, ft = filmK * m; cr *= 1 - ft + ft * FL[fi * 3] * 1.05; cg *= 1 - ft + ft * FL[fi * 3 + 1] * 1.05; cb *= 1 - ft + ft * FL[fi * 3 + 2] * 1.05; }
           // Past white, colour bleeds toward white: a highlight that truly blows out.
-          const over = Math.max(cr, cg, cb) - 1; if (over > 0) { const q = over * .55; cr += q; cg += q; cb += q; }
+          const over = Math.max(cr, cg, cb) - 1; if (over > 0) { const q = over * .7; cr += q; cg += q; cb += q; }
           R8 = cr * 255; G8 = cg * 255; B8 = cb * 255; A8 = fA * 255;
         }
         // The edge: march back along the coin's axis looking for the face we would have hit.
@@ -430,11 +564,11 @@ const Art = (() => {
   function skinFor(key, finishId) {
     const base = SKIN[key] || SKIN.vesper, f = finishId ? FINISH[finishId] : null;
     if (!f) return { a: base.a, b: base.b, c: base.c, f: base.f, glow: base.glow };
-    return { a: f.fa || base.a, b: f.fb || base.b, c: f.fc || base.c, f: f.ff || base.f, rim: f.fr, glow: f.glow || base.glow, film: f.film, gloss: f.gloss || (f.mirror ? .4 : 0) };
+    return { a: f.fa || base.a, b: f.fb || base.b, c: f.fc || base.c, f: f.ff || base.f, rim: f.fr, glow: f.glow || base.glow, film: f.film, gloss: f.gloss || (f.mirror ? .4 : 0), pat: f.pat };
   }
   const gatherSpec = (kit, team, tier, finishId) => {
     const key = emblemKey(kit, team), skin = skinFor(key, finishId);
-    return { key, tier: tier === undefined ? 0 : tier, villain: team === 1, skin, emblem: EMB[key] || EMB.vesper, film: skin.film, gloss: skin.gloss, glow: skin.glow };
+    return { key, tier: tier === undefined ? 0 : tier, villain: team === 1, skin, emblem: EMB[key] || EMB.vesper, film: skin.film, gloss: skin.gloss, glow: skin.glow, pat: skin.pat };
   };
   function faceOf(id, spec, R, pitch, ss) { let F = faces.get(id); if (!F) { const t = nowMs(); F = buildFace(spec, R, pitch, ss); STAT.bakeMs += nowMs() - t; STAT.faces++; faces.set(id, F); } return F; }
   const rimTintOf = spec => (spec.skin.rim || (spec.tier >= 0 ? RIMM[spec.tier | 0] : spec.metal || RIMM[0])).t;
@@ -459,10 +593,12 @@ const Art = (() => {
     JOBS.sort((a, b) => a.k - b.k); STAT.queued = JOBS.length; STAT.peakQueue = Math.max(STAT.peakQueue, JOBS.length);
     return out;
   }
+  // Frames are packed around the resting angle, where the eye is, and spread out through the turn.
+  const YAWP = 1.4, QTR = Math.PI / 2, yawOf = (k, N) => Math.sign(k) * Math.pow(Math.abs(k) / (N / 2), YAWP) * QTR;
   function bakeFrame(T, i, spr) {
     if (T.f[i]) return;
-    const t = nowMs(), yaw = (i - T.mid) / T.N * Math.PI;
-    T.f[i] = canvasFrom(T.S, d => shade(T.F, yaw, T.thick, T.rimT, T.emis, { film: T.spec.film, gloss: T.spec.gloss }, d));
+    const t = nowMs(), yaw = yawOf(i - T.mid, T.N);
+    T.f[i] = canvasFrom(T.S, d => shade(T.F, yaw, T.thick, T.rimT, T.emis, { film: T.spec.film, gloss: T.spec.gloss, sweep: 1 }, d));
     if (i === T.mid && spr) { spr.c = T.f[i]; T.ready = true; }
     T.left--; STAT.bakeMs += nowMs() - t; STAT.frames++;
     if (T.left <= 0) T.F = null;
@@ -485,7 +621,8 @@ const Art = (() => {
   }
   // The nearest finished frame for an angle. Any yaw is fine: the coin's two faces match, so a half turn repeats.
   function frameAt(T, yaw) {
-    let i = Math.round(yaw / Math.PI * T.N) + T.mid; i = ((i % T.N) + T.N) % T.N;
+    let y = yaw % Math.PI; if (y > QTR) y -= Math.PI; else if (y < -QTR) y += Math.PI;
+    let i = Math.round(Math.pow(Math.abs(y) / QTR, 1 / YAWP) * T.N / 2); if (y < 0) i = -i; i = i + T.mid; i = ((i % T.N) + T.N) % T.N;
     if (T.f[i]) return T.f[i];
     for (let k = 1; k <= T.N / 2; k++) { const a = T.f[(i + k) % T.N], b = T.f[(i - k + T.N) % T.N]; if (a) return a; if (b) return b; }
     return null;
@@ -505,7 +642,7 @@ const Art = (() => {
   // Champion coin for the world, with its turntable. R is in device pixels.
   function champTurn(id, team, tier, R, finishId) {
     const side = team === 1 ? 'v' : 'h', spec = gatherSpec(id, team, tier === undefined ? 0 : tier, finishId), key = `ct${side}${spec.key}|${R}|${spec.tier}|${finishId || ''}`;
-    return turntable(key, spec, R, 20, R * .22);
+    spec.small = true; return turntable(key, spec, R, 20, R * .22);
   }
 
   // ---------- footsoldiers, civilians and beasts ----------
@@ -720,6 +857,48 @@ const Art = (() => {
       g => { poly(g, [[.15, -.72], [.74, -.42], [.86, .2], [.42, .72], [-.25, .66], [-.48, .1], [-.32, -.45]]); ln(g, -.95, -.34, -.58, -.34); ln(g, -1, .08, -.72, .08); ln(g, -.92, .5, -.62, .5); },
     ],
   };
+  Object.assign(ICON, {
+    voltaic: [
+      g => { poly(g, [[.18, -.95], [.72, -.95], [.34, -.2], [.72, -.2], [-.22, .95], [.02, .1], [-.34, .1]]); ln(g, -.95, -.5, -.3, -.5); ln(g, -.95, -.1, -.5, -.1); },
+      g => { dot(g, 0, 0, .3); for (let i = 0; i < 4; i++) { g.save(); g.rotate(i * HALF / 2 + HALF / 4); g.lineWidth = .13; ln(g, .42, 0, .6, -.16, .74, .1, .98, 0); g.restore(); } },
+      g => { poly(g, [[.02, -1], [.38, -1], [.14, -.44], [.4, -.44], [-.14, .34], [0, -.24], [-.24, -.24]]); ln(g, -.98, .62, .98, .62); ln(g, -.62, .92, .62, .92); },
+    ],
+    tidecaller: [
+      g => { g.beginPath(); g.moveTo(-.95, .4); g.bezierCurveTo(-.4, -.7, .3, -.7, .6, -.05); g.bezierCurveTo(.3, -.32, 0, -.2, -.18, .4); g.closePath(); g.fill(); ln(g, -.9, .78, .9, .78); },
+      g => { arc(g, 0, 0, .82); g.save(); g.lineWidth = .11; g.beginPath(); g.arc(-.24, -.26, .38, 3.2, 4.8); g.stroke(); g.restore(); dot(g, .32, .32, .12); },
+      g => { for (let i = 0; i < 3; i++) { const y = -.62 + i * .58, x = -.96 + i * .14; g.beginPath(); g.moveTo(x, y + .3); g.quadraticCurveTo(0, y - .55, -x, y + .3); g.quadraticCurveTo(0, y - .12, x, y + .3); g.closePath(); g.fill(); } },
+    ],
+    paragon: [
+      g => { poly(g, [[0, -1], [.42, -.36], [.16, -.36], [.16, .5], [-.16, .5], [-.16, -.36], [-.42, -.36]]); ln(g, -.6, .84, .6, .84); },
+      g => { g.lineWidth = .14; for (let i = 0; i < 6; i++) { const a = i / 6 * TAU + .26; ln(g, Math.cos(a) * .62, Math.sin(a) * .62, Math.cos(a) * .98, Math.sin(a) * .98); } poly(g, [[-.34, -.34], [.34, -.34], [.4, .3], [-.4, .3]]); },
+      g => { poly(g, [[.48, -.98], [.86, -.62], [.2, .3], [-.14, .02]]); poly(g, [[-.4, .36], [.18, .66], [-.1, .9], [-.72, .78]]); ln(g, -.98, .4, -.62, .1); },
+    ],
+    mirage: [
+      g => { poly(g, [[.96, 0], [.2, -.26], [.3, 0], [.2, .26]]); ln(g, -.96, -.72, .04, -.1); ln(g, -.96, .72, .04, .1); ln(g, -.98, 0, .1, 0); },
+      g => { dot(g, .42, 0, .34); g.setLineDash([.17, .13]); arc(g, -.42, 0, .34); g.setLineDash([]); ln(g, -.05, .72, .4, .72); },
+      g => { for (const [x, y] of [[-.62, -.62], [.62, -.62], [-.62, .62], [.62, .62]]) { g.save(); g.lineWidth = .12; g.strokeRect(x - .24, y - .3, .48, .6); g.restore(); } dot(g, 0, 0, .22); },
+    ],
+    cinder: [
+      g => { poly(g, [[-.9, .9], [-.5, .2], [-.34, .46], [.02, -.26], [.14, .04], [.92, -.9], [.5, .1], [.24, -.02], [-.08, .66], [-.28, .34]]); },
+      g => { g.save(); g.scale(1, .42); arc(g, 0, 1.2, .9); g.restore(); for (let i = -1; i <= 1; i++) poly(g, [[i * .46, -.6 + Math.abs(i) * .2], [i * .46 + .17, .3], [i * .46 - .17, .3]]); },
+      g => { poly(g, [[0, -1], [.22, -.42], [.5, -.68], [.54, -.2], [.82, -.36], [.74, .3], [.42, .86], [0, 1], [-.42, .86], [-.74, .3], [-.82, -.36], [-.54, -.2], [-.5, -.68], [-.22, -.42]]); },
+    ],
+    ravager: [
+      g => { for (const o of [-.54, 0, .54]) poly(g, [[o + .28, -.92], [o + .08, -.92], [o - .3, .92], [o - .1, .92]]); },
+      g => { poly(g, [[-.96, .84], [-.34, -.1], [.6, -.86], [.3, -.1], [.92, -.16], [.1, .3], [.24, .84], [-.3, .4]]); },
+      g => { g.lineWidth = .15; arc(g, 0, 0, .88, 0, 1.4); arc(g, 0, 0, .88, 2.1, 3.5); arc(g, 0, 0, .88, 4.2, 5.6); poly(g, [[-.36, -.5], [.42, -.5], [.3, .16], [0, .6], [-.3, .16]]); },
+    ],
+    cataclysm: [
+      g => { dot(g, .36, -.36, .34); ln(g, -.84, .84, .02, .04); g.setLineDash([.14, .14]); ln(g, -.96, .34, -.42, -.2); g.setLineDash([]); },
+      g => { poly(g, [[-.82, -.7], [.82, -.7], [.74, .14], [0, .92], [-.74, .14]]); },
+      g => { g.lineWidth = .15; ln(g, -.98, .1, -.44, -.26, -.12, .24, .32, -.34, .98, .08); poly(g, [[-.3, .5], [.14, .5], [.3, .98], [-.5, .98]]); },
+    ],
+    puppeteer: [
+      g => { g.lineWidth = .11; ln(g, -.96, .86, .96, -.86); dot(g, .96, -.86, .2); poly(g, [[-.96, .86], [-.5, .38], [-.3, .58]]); },
+      g => { poly(g, [[-.84, -.92], [.84, -.92], [.76, -.72], [-.76, -.72]]); g.lineWidth = .08; ln(g, -.68, -.72, -.5, .12); ln(g, .68, -.72, .5, .12); poly(g, [[0, -.2], [.44, .3], [.28, .92], [-.28, .92], [-.44, .3]]); },
+      g => { poly(g, [[-.5, -.26], [.5, -.26], [.42, -.06], [-.42, -.06]]); g.lineWidth = .1; ln(g, 0, -.98, 0, -.26); ln(g, -.46, -.06, -.8, .6); ln(g, .46, -.06, .8, .6); dot(g, -.8, .7, .17); dot(g, .8, .7, .17); dot(g, 0, .44, .28); },
+    ],
+  });
   function abilityCoin(champ, slot, on, R0 = 40, team = 0) {
     const id = `ab${champ}${slot}${on}${R0}${team}`; if (cache.has(id)) return cache.get(id).c;
     if (!on) { const src = abilityCoin(champ, slot, true, R0, team), c = cv(src.width, src.height), g = c.getContext('2d'); g.drawImage(src, 0, 0); g.globalCompositeOperation = 'saturation'; g.fillStyle = '#808080'; g.fillRect(0, 0, c.width, c.height); g.globalCompositeOperation = 'destination-in'; g.drawImage(src, 0, 0); g.globalCompositeOperation = 'source-atop'; g.fillStyle = 'rgba(8,10,16,.55)'; g.fillRect(0, 0, c.width, c.height); cache.set(id, { c }); return c; }
@@ -727,7 +906,7 @@ const Art = (() => {
     const glyph = dim ? M('#7f8590', 1, .4) : villain ? (key === 'shiv' || key === 'duelist' || key === 'ironjaw' ? M('#ff8a90', .55, .5, .3, .7) : M('#d6ff72', .55, .5, .3, .7)) : M('#fff0c4', 1, .7);
     const rim = dim ? M('#3f444e', 1, .5) : ult ? (villain ? M(mixH(rgb2hex(base.a.t), '#ffffff', .2), 1, .9) : GOLD) : SILVER;
     const icon = ICON[champ] && ICON[champ][slot] || ICON[key] && ICON[key][slot] || ICON.vesper[slot % 3];
-    const spr = faceSprite(id, { tier: ult && on ? 3 : 0, villain: false, rIn: .84, k: .74, pad: .075, skin: { a: glyph, b: glyph, c: glyph, f: dim ? M('#14161b', 0, .3, .2) : base.f, rim }, metal: rim, glow: villain ? base.glow : '#fff0c4',
+    const spr = faceSprite(id, { pat: 'none', tier: ult && on ? 3 : 0, villain: false, rIn: .84, k: .74, pad: .075, skin: { a: glyph, b: glyph, c: glyph, f: dim ? M('#14161b', 0, .3, .2) : base.f, rim }, metal: rim, glow: villain ? base.glow : '#fff0c4',
       emblem(L) { L.paint('a', g => { g.lineWidth = .17; g.lineCap = 'butt'; g.lineJoin = 'miter'; g.fillStyle = g.strokeStyle = '#fff'; icon(g); }, { chisel: .1 }); } }, R);
     cache.set(id, spr); return spr.c;
   }
@@ -824,6 +1003,16 @@ const Art = (() => {
     g.save(); g.beginPath(); P_.forEach(([x, y], i) => g[i ? 'lineTo' : 'moveTo'](x, y)); g.closePath(); g.clip(); g.fillStyle = 'rgba(255,255,255,.55)'; g.beginPath(); g.moveTo(P_[0][0], P_[0][1]); g.lineTo(P_[1][0], P_[1][1]); g.lineTo(12, 12); g.closePath(); g.fill(); g.restore();
     cache.set(id, c); return c;
   }
+  // A lens streak, baked once per colour. Long, thin, white at the heart.
+  function flare(col) {
+    const id = 'flr' + col; if (cache.has(id)) return cache.get(id);
+    const W = 256, H = 32, c = cv(W, H), g = c.getContext('2d');
+    let gr = g.createLinearGradient(0, 0, W, 0); gr.addColorStop(0, 'rgba(0,0,0,0)'); gr.addColorStop(.5, col); gr.addColorStop(1, 'rgba(0,0,0,0)');
+    g.fillStyle = gr; g.beginPath(); g.moveTo(0, H / 2); g.quadraticCurveTo(W / 2, -H * .12, W, H / 2); g.quadraticCurveTo(W / 2, H * 1.12, 0, H / 2); g.fill();
+    gr = g.createLinearGradient(W * .22, 0, W * .78, 0); gr.addColorStop(0, 'rgba(255,255,255,0)'); gr.addColorStop(.5, '#fff'); gr.addColorStop(1, 'rgba(255,255,255,0)');
+    g.fillStyle = gr; g.fillRect(W * .22, H * .42, W * .56, H * .16);
+    cache.set(id, c); return c;
+  }
   function glint(col) {
     const id = 'gl' + col; if (cache.has(id)) return cache.get(id);
     const c = cv(48, 48), g = c.getContext('2d'), t = (r, r2, f) => { g.fillStyle = f; g.beginPath(); for (let i = 0; i < 8; i++) { const a = i / 8 * TAU - Math.PI / 2, l = i % 2 ? r * r2 : r; g[i ? 'lineTo' : 'moveTo'](24 + Math.cos(a) * l, 24 + Math.sin(a) * l); } g.closePath(); g.fill(); };
@@ -861,9 +1050,9 @@ const Art = (() => {
   // ---------- big-moment sprites ----------
   // A champion's mark as one flat silhouette, for stamping huge at the kill point.
   function seal(kit, col, S = 192) {
-    const id = `seal${kit}${col}`; if (cache.has(id)) return cache.get(id);
+    const id = `seal${kit}${col}${S}`; if (cache.has(id)) return cache.get(id);
     const c = cv(S, S), g = c.getContext('2d'); g.translate(S / 2, S / 2); g.scale(S / 2.3, S / 2.3); g.fillStyle = col; g.lineJoin = 'miter';
-    const put = (kind, list) => { g.globalCompositeOperation = kind === 'x' ? 'destination-out' : 'source-over'; for (const p of list) { if (!Array.isArray(p)) continue; g.beginPath(); p.forEach(([x, y], i) => g[i ? 'lineTo' : 'moveTo'](x, y)); g.closePath(); g.fill(); } g.globalCompositeOperation = 'source-over'; };
+    const put = (kind, list) => { g.globalCompositeOperation = kind === 'x' ? 'destination-out' : 'source-over'; for (const p of list) { if (typeof p === 'function') { g.beginPath(); p(g); g.fill(); continue; } if (!Array.isArray(p)) continue; g.beginPath(); p.forEach(([x, y], i) => g[i ? 'lineTo' : 'moveTo'](x, y)); g.closePath(); g.fill(); } g.globalCompositeOperation = 'source-over'; };
     const L = { a: (...p) => put('a', p), b: (...p) => put('b', p), c: (...p) => put('c', p), x: (...p) => put('x', p), paint: (k, fn) => { g.save(); g.strokeStyle = g.fillStyle = col; fn(g); g.restore(); } };
     try { const e = EMB[kit]; if (e) e(L, true); } catch (err) { }
     cache.set(id, c); return c;
@@ -890,5 +1079,5 @@ const Art = (() => {
     const out = { c, w: W, h: W }; cache.set(id, out); return out;
   }
 
-  return { minionGear, bossCoin, bossTurn, BOSS_COL, seal, shock, bountyMark, TEAM, TEAM_DARK, METAL, TILT, TAU, INK, COSMETICS, champCoin, champTurn, minionCoin, minionTurn, monsterCoin, monsterTurn, civCoin, coin, glow, shadow, drawEmblemIcon, abilityCoin, iconURL, sheen, vignette, seeded, mix, mixH, cv, reed, puff, leaf, shardsOf, impact, speedLines, sparkSp, dustCel, chip, glint, pillar, hazard, koCoin, pump, defer, frameAt, ensure, sigil, spikeBall, stats, buildFace, shade, canvasFrom, reliefStack, FINISH };
+  return { flare, minionGear, bossCoin, bossTurn, BOSS_COL, seal, shock, bountyMark, TEAM, TEAM_DARK, METAL, TILT, TAU, INK, COSMETICS, champCoin, champTurn, minionCoin, minionTurn, monsterCoin, monsterTurn, civCoin, coin, glow, shadow, drawEmblemIcon, abilityCoin, iconURL, sheen, vignette, seeded, mix, mixH, cv, reed, puff, leaf, shardsOf, impact, speedLines, sparkSp, dustCel, chip, glint, pillar, hazard, koCoin, pump, defer, frameAt, ensure, sigil, spikeBall, stats, buildFace, shade, canvasFrom, reliefStack, FINISH };
 })();

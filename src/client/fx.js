@@ -13,17 +13,24 @@ const { FX, fxEvent } = (() => {
     vesper: kitTone(HERO, '#f4e4b8', '#b8934e', '#ffffff'), kade: kitTone(HERO, '#bfe0ff', '#3f6ea8', '#ffffff'), ione: kitTone(HERO, '#9fd8ff', '#2f6fb8', '#d8f0ff'), solenne: kitTone(HERO, '#ffd890', '#c8821f', '#fff3c8'), sable: kitTone(HERO, '#c8b4ff', '#5a3fb0', '#e8dcff'), gravel: kitTone(HERO, '#f0b478', '#9a5a2a', '#ffd8b0'),
     deadbolt: kitTone(VILL, '#c8ef5a', '#6a8a18', '#e8ff9a', '#f4ffd0'), duelist: kitTone(VILL, '#ff5a66', '#8e1224', '#ffb0b8'), hex: kitTone(VILL, '#b6ec3a', '#4a2a8a', '#d8a8ff', '#e8ffb0'), plague: kitTone(VILL, '#b6ec3a', '#4a6a14', '#dfff70'), shiv: kitTone(VILL, '#ff7a6a', '#7a1c2c', '#ffffff'), ironjaw: kitTone(VILL, '#ffa44a', '#8e4a14', '#ffd090'),
   };
+  Object.assign(KIT_PAL, {
+    voltaic: kitTone(HERO, '#ffe870', '#2a7ad8', '#a8f0ff', '#ffffff'), tidecaller: kitTone(HERO, '#6fe8e0', '#127a90', '#c8fff4'), paragon: kitTone(HERO, '#ffd890', '#c8451f', '#fff6e0'), mirage: kitTone(HERO, '#ff9ae8', '#5a3ad0', '#8ae0ff'),
+    cinder: kitTone(VILL, '#ff9238', '#a82a08', '#ffd46a', '#fff0c8'), ravager: kitTone(VILL, '#ff3a3a', '#6a0f18', '#ff9a8a'), cataclysm: kitTone(VILL, '#ff7a20', '#5a3020', '#ffc060', '#ffe8c8'), puppeteer: kitTone(VILL, '#e87ae8', '#6a1a80', '#ffc8f4'),
+  });
   const palK = u => (u && KIT_PAL[u.champ]) || palT(u ? u.team : -1);
   const FX_KIT = { rupture: 'ione', break: 'ione', crash: 'gravel', stomp: 'gravel', heal: 'solenne', tripwire: 'deadbolt', feint: 'duelist', coven: 'hex', demolish: 'ironjaw', orb: 'ione', ray: 'solenne', chain: 'gravel', ricochet: 'deadbolt', hexbolt: 'hex', polymorph: 'hex', snipe: 'vesper', snipeFull: 'vesper', deadeye: 'vesper', dome: 'solenne', lockdown: 'deadbolt' };
   const palFx = (fx, t) => KIT_PAL[FX_KIT[fx]] || palT(t);
   // Anything aimed at you is drawn in this palette, whichever side threw it.
   const DANGER = { out: '#d81f24', mid: '#ff5a44', core: '#ffe9d8', aim: '255,62,40' };
   const GOLD = '#f0d38a', SPARKY = '#fff4d8', INK = Art.INK, HEAL = '#b6e5a8';
-  const SPARK = 0, PUFF = 1, SHARD = 2, COIN = 3, RING = 4, SLASH = 5, GHOST = 6, LEAF = 7, RISE = 8, DROP = 9, DISC = 10, CIV = 11, CHIP = 12, PILLAR = 13, BEAMK = 14, SIGILK = 15, BOLTK = 16, CUTK = 17, IMP = 18;
+  const SPARK = 0, PUFF = 1, SHARD = 2, COIN = 3, RING = 4, SLASH = 5, GHOST = 6, LEAF = 7, RISE = 8, DROP = 9, DISC = 10, CIV = 11, CHIP = 12, PILLAR = 13, BEAMK = 14, SIGILK = 15, BOLTK = 16, CUTK = 17, IMP = 18, GATH = 19, FLARE = 20;
   const LEAVES = ['#2d6a56', '#3f7a64', '#245a4a'];
   // which kits make which area blast, for working out a blast's side when the event doesn't say
   const BOOM_KIT = { crash: ['kade', 'gravel'], stomp: ['gravel'], rupture: ['ione'], break: ['ione'], heal: ['solenne'] };
   const PHIT_KIT = { snipe: ['vesper'], snipeFull: ['vesper'], deadeye: ['vesper'], orb: ['ione'], ray: ['solenne'], chain: ['gravel'] };
+  Object.assign(FX_KIT, { arcdash: 'voltaic', overload: 'voltaic', thunder: 'voltaic', riptide: 'tidecaller', bubble: 'tidecaller', tsunami: 'tidecaller', skyward: 'paragon', solarfist: 'paragon', meteordrop: 'paragon', splitshot: 'mirage', phantom: 'mirage', mirrors: 'mirage', firebolt: 'cinder', scorch: 'cinder', inferno: 'cinder', maul: 'ravager', pounce: 'ravager', frenzy: 'ravager', bombard: 'cataclysm', entrench: 'cataclysm', earthbreak: 'cataclysm', thread: 'puppeteer', puppet: 'puppeteer', dance: 'puppeteer' });
+  Object.assign(BOOM_KIT, { thunder: ['voltaic'], bubble: ['tidecaller'], skyward: ['paragon'], meteordrop: ['paragon'], phantom: ['mirage'], scorch: ['cinder'], inferno: ['cinder'], pounce: ['ravager'], bombard: ['cataclysm'], earthbreak: ['cataclysm'], dance: ['puppeteer'] });
+  Object.assign(PHIT_KIT, { firebolt: ['cinder'], splitshot: ['mirage'], riptide: ['tidecaller'], thread: ['puppeteer'], mirrors: ['mirage'] });
   const OV_R = { champ: 44, minion: 26, monster: 34 };
 
   let P = [], cursor = 0, trails = new Map(), flyers = [], frameId = 0, OV = [], panel = null, readyFx = [], lastKill = -9, prevCd = [], zoneTeam = new Map(), falls = [], arrive = [], dustN = 0;
@@ -104,7 +111,17 @@ const { FX, fxEvent } = (() => {
   const later = (d, fn) => { if (LATER.length < 48) LATER.push({ d, fn }); };
   // Letterbox: two black bars slide in and the world holds its breath for a beat.
   function cine(life = .6, k = 1) { if (!calm) CINE = { t: 0, life, k }; }
+  // The kill frame: for a tenth of a second the world drops out and only the killer's mark exists.
+  let KF = null;
+  function impactFrame(kit, col, x, y) { if (!calm && kit) KF = { t: 0, kit, col, x, y }; }
+  function drawKF(dt) {
+    if (!KF) return; KF.t += dt; const a = KF.t / .17; if (a >= 1) { KF = null; return; }
+    const sz = Math.min(VW, VH) * (.62 + a * .2), X = Math.max(sz * .4, Math.min(VW - sz * .4, sx(KF.x))), Y = Math.max(sz * .4, Math.min(VH - sz * .4, sy(KF.y))), S = Art.seal(KF.kit, KF.col, 384);
+    ctx.globalAlpha = a < .35 ? .6 : .6 * (1 - (a - .35) / .65); ctx.fillStyle = '#04050b'; ctx.fillRect(0, 0, VW, VH);
+    ctx.globalAlpha = a < .4 ? 1 : 1 - (a - .4) / .6; ctx.drawImage(S, X - sz / 2, Y - sz / 2, sz, sz); ctx.globalAlpha = 1;
+  }
   function drawCine(dt) {
+    drawKF(dt);
     if (!CINE) return; CINE.t += dt; const a = CINE.t / CINE.life; if (a >= 1) { CINE = null; return; }
     const io = a < .18 ? outExpo(a / .18) : a > .78 ? 1 - outCub((a - .78) / .22) : 1, h = Math.round(Math.min(34, VH * .09) * CINE.k * io);
     if (a < .35) { ctx.globalAlpha = .26 * CINE.k * (1 - a / .35); ctx.fillStyle = '#02030a'; ctx.fillRect(0, 0, VW, VH); ctx.globalAlpha = 1; }
@@ -121,6 +138,13 @@ const { FX, fxEvent } = (() => {
     n = nq(n);
     for (let i = 0; i < n; i++) { const a = Math.random() * TAU, v = rnd(.35, 1) * sp, p = add(CHIP, x, y, z, rnd(.4, .7)); p.vx = Math.cos(a) * v; p.vy = Math.sin(a) * v; p.vz = rnd(180, 460); p.vr = rnd(-16, 16); p.rot = Math.random() * TAU; p.size = rnd(.5, 1.05); p.col = col; p.v = i; p.bounce = 1; }
   }
+  // Anticipation: light rushes in before the blow lands.
+  function gather(x, y, R, col, n = 8, life = .16, z = 20) { n = nq(n); for (let i = 0; i < n; i++) { const a = Math.random() * TAU, d = R * rnd(.7, 1.1), x0 = x + Math.cos(a) * d, y0 = y + Math.sin(a) * d * .8, p = add(GATH, x0, y0, z + rnd(-6, 14), life * rnd(.8, 1.1)); p.vx = (x - x0) / p.life * .5; p.vy = (y - y0) / p.life * .5; p.col = col; p.size = rnd(7, 12); } }
+  // A lens streak: the hard horizontal bar of a very bright thing.
+  function flare(x, y, z, col, len = 120, life = .16) { const p = add(FLARE, x, y, z, life); p.col = col; p.R = len; return p; }
+  const rays = (x, y, n, col, len, w, life, z = 24, off = 0) => { for (let i = 0; i < n; i++) { const a = off + i / n * TAU; beam(x + Math.cos(a) * len * .22, y + Math.sin(a) * len * .22, x + Math.cos(a) * len, y + Math.sin(a) * len, col, w, life, z); } };
+  const skyBolt = (x, y, col, life = .16) => arcs(x + rnd(-40, 40), y - 60, 460, x, y, 8, col, life, 30);
+  function flutter(x, y, n, col) { n = nq(n); for (let i = 0; i < n; i++) { const an = Math.random() * TAU, v = rnd(60, 220), q = add(LEAF, x, y, rnd(20, 50), rnd(.7, 1.2)); q.vx = Math.cos(an) * v; q.vy = Math.sin(an) * v; q.vz = rnd(120, 300); q.rot = Math.random() * TAU; q.vr = rnd(-9, 9); q.spr = Art.leaf(col); q.size = rnd(.9, 1.5); } }
   function ring(x, y, r, col = '#fff', life = .4, z = 0) { const p = add(RING, x, y, z, life); p.R = r; p.col = col; }
   function slash(x, y, dx, dy, r = 150, col = '#efe2ff', life = .2) { const p = add(SLASH, x, y, 16, life); p.dx = dx; p.dy = dy; p.R = r; p.col = col; }
   function ghost(spr, R, x, y, z = 14, life = .28, spin = 1) { const p = add(GHOST, x, y, z, life); p.spr = spr; p.R = R; p.alpha = .42; p.ph = spin; return p; }
@@ -218,6 +242,7 @@ const { FX, fxEvent } = (() => {
         case PUFF: p.vx *= .94; p.vy *= .94; p.vz *= .94; break;
         case CIV: p.ph += dt * (p.flip ? 22 : 13); p.z = 6 + Math.abs(Math.sin(p.ph)) * (p.flip ? 9 : 22); if (p.flip) { p.vx += Math.sin(p.ph * .6) * 900 * dt; p.vy += Math.cos(p.ph * .5) * 700 * dt; } break;
         case RISE: p.vz *= .98; break;
+        case GATH: p.vx *= 1 + dt * 8; p.vy *= 1 + dt * 8; break;
         case LEAF: p.vz -= 120 * dt; p.vx *= .985; p.vy *= .985; if (p.z < 2) p.life = Math.min(p.life, .14), p.vz = 0, p.vr = 0; break;
         case GHOST: if (p.flip) { p.vz -= 900 * dt; p.ph = Math.cos(p.rot); if (p.z < 2) { p.z = 2; p.vz = 0; p.vr *= .6; } } break;
         case SHARD: case COIN: case DISC: case CHIP:
@@ -248,7 +273,7 @@ const { FX, fxEvent } = (() => {
     const glow = Art.glow, m = 60;
     // normal blend first: inked, comic pieces
     for (const p of P) {
-      if (p.k === RISE || p.k === DROP) continue;
+      if (p.k === RISE || p.k === DROP || p.k === GATH || p.k === FLARE) continue;
       const X = sx(p.x), Y = sy(p.y) - p.z * Z, bigM = p.k === RING || p.k === SLASH || p.k === PILLAR || p.k === BEAMK || p.k === SIGILK || p.k === CUTK ? 500 : m;
       if (X < -bigM || X > VW + bigM || Y < -bigM || Y > VH + bigM) continue;
       const f = p.life / p.max, e = 1 - f;
@@ -289,7 +314,7 @@ const { FX, fxEvent } = (() => {
         }
         case SIGILK: {
           const R = p.R * Z * (e < .22 ? outBack(e / .22) : 1 + (e - .22) * .05), c = Math.cos(p.rot), sn = Math.sin(p.rot), Y0 = sy(p.y) - p.z * Z;
-          ctx.globalCompositeOperation = 'lighter'; ctx.globalAlpha = Math.min(p.R > 200 ? .42 : .8, f * 2.2); ctx.setTransform(dpr * c * R, dpr * sn * R * TILT, -dpr * sn * R, dpr * c * R * TILT, dpr * X, dpr * Y0); ctx.drawImage(p.spr, -1, -1, 2, 2); resetT(); ctx.globalCompositeOperation = 'source-over'; break;
+          ctx.globalCompositeOperation = 'lighter'; ctx.globalAlpha = Math.min(p.R > 200 ? .42 : .8, f * 2.2) * p.alpha; ctx.setTransform(dpr * c * R, dpr * sn * R * TILT, -dpr * sn * R, dpr * c * R * TILT, dpr * X, dpr * Y0); ctx.drawImage(p.spr, -1, -1, 2, 2); resetT(); ctx.globalCompositeOperation = 'source-over'; break;
         }
         case BOLTK: {
           if ((frameId + p.v) % 2) break; ctx.lineCap = 'round'; const pts = p.pts; ctx.beginPath(); for (let i = 0; i < pts.length; i += 3) { const px2 = sx(pts[i]), py2 = sy(pts[i + 1]) - pts[i + 2] * Z; if (i) ctx.lineTo(px2, py2); else ctx.moveTo(px2, py2); }
@@ -310,10 +335,12 @@ const { FX, fxEvent } = (() => {
     // additive layer: only the soft sparkle kinds
     ctx.globalCompositeOperation = 'lighter';
     for (const p of P) {
-      if (p.k !== RISE && p.k !== DROP) continue;
-      const X = sx(p.x), Y = sy(p.y) - p.z * Z;
-      if (X < -m || X > VW + m || Y < -m || Y > VH + m) continue;
+      if (p.k !== RISE && p.k !== DROP && p.k !== GATH && p.k !== FLARE) continue;
+      const X = sx(p.x), Y = sy(p.y) - p.z * Z, mm = p.k === FLARE ? 400 : m;
+      if (X < -mm || X > VW + mm || Y < -mm || Y > VH + mm) continue;
       const f = p.life / p.max;
+      if (p.k === GATH) { const r = p.size * Z * (1.1 - f * .5); ctx.globalAlpha = Math.min(1, (1 - f) * 3); ctx.drawImage(Art.glint(p.col), X - r, Y - r, r * 2, r * 2); continue; }
+      if (p.k === FLARE) { const e = 1 - f, L = p.R * Z * (.45 + .55 * outExpo(e)), h = (p.R * .07 + 3) * Z * (.4 + f * .6); ctx.globalAlpha = Math.min(1, f * 1.8); ctx.drawImage(Art.flare(p.col), X - L, Y - h, L * 2, h * 2); continue; }
       if (p.k === RISE) { const r = p.size * Z * (.55 + f * .6) * (.75 + .25 * Math.sin(p.ph + p.life * 14)); ctx.globalAlpha = Math.min(1, f * 2.5); ctx.drawImage(Art.glint(p.col), X - r, Y - r, r * 2, r * 2); }
       else { const r = p.size * Z * f; ctx.globalAlpha = Math.min(1, f * 1.6); ctx.drawImage(glow(p.col), X - r, Y - r, r * 2, r * 2); }
     }
@@ -323,7 +350,7 @@ const { FX, fxEvent } = (() => {
 
   // ---------- projectiles ----------
   // [ribbon life, width, alpha]. Minion shots have no trail at all.
-  const TRAIL = { ricochet: [.1, 7, .9], hexbolt: [.16, 9, .8], polymorph: [.14, 7, .8], snipe: [.13, 8, .95], snipeFull: [.2, 14, 1], deadeye: [.32, 22, 1], orb: [.2, 16, .8], ray: [.1, 9, .8], bolt: [.12, 5, .7], tower: [.2, 8, .8] };
+  const TRAIL = { firebolt: [.22, 14, .85], splitshot: [.12, 6, .9], riptide: [.2, 18, .7], thread: [.14, 3, 1], ricochet: [.1, 7, .9], hexbolt: [.16, 9, .8], polymorph: [.14, 7, .8], snipe: [.13, 8, .95], snipeFull: [.2, 14, 1], deadeye: [.32, 22, 1], orb: [.2, 16, .8], ray: [.1, 9, .8], bolt: [.12, 5, .7], tower: [.2, 8, .8] };
   const ROUTINE = { bolt: 1, mbolt: 1, tower: 1 };
   // Reads an owner or target that may be a live unit, a bare id or absent, as it can be on a guest.
   const unitRef = r => r === undefined || r === null ? null : typeof r === 'object' ? r : unitById(r);
@@ -459,6 +486,10 @@ const { FX, fxEvent } = (() => {
         const spr = coinSp(), r = (cls === 1 ? 10 : 13) * Z, cz = Math.max(.15, Math.abs(Math.cos((p.age || 0) * 15)));
         lighter(glow('#ffe6a8'), X, Y, r * 1.9, .55); ctx.drawImage(spr.c, X - r * cz * 1.2, Y - r * 1.2, r * 2.4 * cz, r * 2.4); break;
       }
+      case 'firebolt': { const R = 9 * Z; dart(R * 2.4, R * .85, pal.out); dart(R * 1.7, R * .46, pal.mid); dart(R, R * .24, pal.core); lighter(glow(pal.mid), X, Y, R * 2.4, .9); if (a === undefined || (frameId & 3) === 0) rise(x, y, 1, pal.spark, 6, .34, 7); break; }
+      case 'splitshot': { const R = 7 * Z, an = (p.age || 0) * 24; dart(R * 2.4, R * .36, '#ff8ae0'); dart(R * 1.9, R * .22, '#8ae0ff'); dart(R * 1.2, R * .12, '#ffffff'); if (hot) lighter(glow(pal.mid), X, Y, R * 1.8, .7); void an; break; }
+      case 'riptide': { const R = (p.w || 66) * .5 * Z, c = -uy, sn = ux; ctx.setTransform(dpr * ux, dpr * uy, dpr * c, dpr * sn, dpr * X, dpr * Y); ctx.fillStyle = pal.out; ctx.globalAlpha = .88; ctx.beginPath(); ctx.moveTo(-R * .4, -R); ctx.quadraticCurveTo(R * 1.3, 0, -R * .4, R); ctx.quadraticCurveTo(R * .4, 0, -R * .4, -R); ctx.fill(); ctx.fillStyle = pal.core; ctx.beginPath(); ctx.moveTo(0, -R * .8); ctx.quadraticCurveTo(R * 1.1, 0, 0, R * .8); ctx.quadraticCurveTo(R * .7, 0, 0, -R * .8); ctx.fill(); ctx.globalAlpha = 1; resetT(); if (hot) lighter(glow(pal.mid), X, Y, R * 1.3, .5); break; }
+      case 'thread': { const R = 8 * Z; dart(R * 3, R * .14, pal.core); blob(X, Y, R * .3, '#ffffff'); if (hot) lighter(glow(pal.mid), X, Y, R * 1.2, .7); break; }
       default: if (hot) lighter(glow(pal.mid), X, Y, (p.w || 30) * Z * .7, 1);
     }
   }
@@ -810,8 +841,9 @@ const { FX, fxEvent } = (() => {
     shank: pose(.2, .1, 6, 22, 2, .7, .6), vanish: pose(.26, .2, 0, 0, 6, TAU * .5, .3), cuts: pose(.4, .2, 0, 0, 12, TAU, .6),
     wrecking: pose(.32, .3, 0, 0, 6, TAU * .5, .8), grab: pose(.3, .22, 10, 22, 2, .3, .8), demolish: pose(.5, .44, 0, 0, 44, 0, 1.3),
   };
+  POSES.killspin = pose(.5, .08, 0, 0, 20, TAU, .8);
   const DEF_POSE = pose(.22, .2, 4, 6, 4, .3, .4);
-  function poseStart(v, fx, dx, dy, u) { const P_ = POSES[fx] || DEF_POSE; if (u.kind !== 'champ') return; v.pose = P_; v.poseT = 0; v.poseDx = dx; v.poseDy = dy; v.oyawD = P_.yaw; }
+  function poseStart(v, fx, dx, dy, u, slot) { const P_ = (slot !== undefined && SIG_POSE[u.champ] && SIG_POSE[u.champ][slot]) || POSES[fx] || DEF_POSE; if (u.kind !== 'champ') return; v.pose = P_; v.poseT = 0; v.poseDx = dx; v.poseDy = dy; v.oyawD = P_.yaw; }
   function poseTick(v, dt) {
     const P_ = v.pose; if (!P_) { v.ox = v.oy = v.oz = v.osq = v.oyaw = 0; return; }
     v.poseT += dt;
@@ -831,53 +863,123 @@ const { FX, fxEvent } = (() => {
   const lineAlong = (u, dx, dy, L, col, w, life) => beam(u.x + dx * 22, u.y + dy * 22, u.x + dx * L, u.y + dy * L, col, w, life, 22);
   // Each cast is one signature gesture. Heroes are bright metal and light; villains are toxic, ragged and red.
   const CASTFX = {
-    snipe(u, dx, dy, p, own, k) { muzzle(u, dx, dy, p, 30 * k); if (own) lineAlong(u, dx, dy, 110, p.mid, 7, .1); },
-    snipeFull(u, dx, dy, p, own, k) { muzzle(u, dx, dy, p, 44 * k); lineAlong(u, dx, dy, 170, p.mid, 11, .13); ring(u.x, u.y, 80, p.ring, .22); if (own) { G.shake = Math.max(G.shake, 3); G.punch = Math.max(G.punch, .014); } },
-    deadeye(u, dx, dy, p, own) { ring(u.x, u.y, 120, p.ring, .36, 18); overlay(2, u.x, u.y, 20, .3, { spr: Art.speedLines(p.lines, 2), r: 240, ink: null }); if (own) { G.shake = Math.max(G.shake, 5); G.punch = Math.max(G.punch, .036); hitStop(.04); } lineAlong(u, dx, dy, 280, p.mid, 16, .22); burst(u.x + dx * 40, u.y + dy * 40, 24, p, 1.1, true); },
-    orb(u, dx, dy, p, own, k) { sigil('mark', u.x, u.y, 58 * k + 18, p.mid, .3, 5); ring(u.x, u.y, 60, p.ring, .2, 14); spark(u.x, u.y, own ? 4 : 2, p.spark, 160, .26, 9, 24); },
-    rupture(u, dx, dy, p, own, k) { ring(u.x, u.y, 52, p.ring, .18, 12); spark(u.x, u.y, own ? 3 : 2, p.spark, 200, .24, 10, 18); },
-    ray(u, dx, dy, p, own, k) { muzzle(u, dx, dy, p, 28 * k); lineAlong(u, dx, dy, 90, p.mid, 8, .12); rise(u.x, u.y, own ? 5 : 2, HEAL, 26, .5, 9); },
-    dome(u, dx, dy, p, own) { ring(u.x, u.y, 100, p.ring, .3); rise(u.x, u.y, own ? 6 : 3, p.mid, 30, .5, 9); },
-    heal(u, dx, dy, p, own, k) { ring(u.x, u.y, 340, p.ring, .5); pillar(u.x, u.y, p.out, p.mid, .7); rise(u.x, u.y, nq(16), HEAL, 170, 1, 14); if (own) { G.punch = Math.max(G.punch, .03); G.shake = Math.max(G.shake, 3); } },
-    slash(u, dx, dy, p, own, k) { slash(u.x, u.y, dx, dy, 170, own ? p.mid : '#ff6a4a', .2); slash(u.x, u.y, dx, dy, 120, p.core, .13); if (own) G.shake = Math.max(G.shake, 1.8); },
-    blink(u, dx, dy, p, own) { burstOut(u, p, own); },
-    dash(u, dx, dy, p, own, k) { const dark = u.champ === 'vesper' || u.champ === 'sable'; if (u.champ === 'gravel') { chips(u.x, u.y, own ? 6 : 3, '#c6a78a', 260); dustRing(u.x, u.y, 70, 4); lineAlong(u, dx, dy, 160, p.out, 22, .18); if (own) G.shake = Math.max(G.shake, 4); return; } puff(u.x, u.y, own ? 6 : 3, dark ? 1 : 0, 26, .36, 12, 50); if (u.champ === 'kade') slash(u.x, u.y, dx, dy, 120, p.mid, .16); overlay(2, u.x, u.y, 18, .18, { spr: Art.speedLines(p.lines, 1), r: 170, ink: null }); if (own) G.shake = Math.max(G.shake, 1.6); },
-    parry(u, dx, dy, p, own) { ring(u.x, u.y, 80, p.core, .2, 18); sigil('dome', u.x, u.y, 56, p.mid, .36, 4, 14); if (own) G.punch = Math.max(G.punch, .012); },
-    crash(u, dx, dy, p, own) { pillar(u.x, u.y, p.out, p.mid, .4); ring(u.x, u.y, 120, p.ring, .3); if (own) G.punch = Math.max(G.punch, .02); },
-    stomp(u, dx, dy, p, own) { sigil('stomp', u.x, u.y, 170, p.mid, .36, 0); ring(u.x, u.y, 150, p.ring, .36); dustRing(u.x, u.y, 90, 5); if (own) G.shake = Math.max(G.shake, 3); },
-    chain(u, dx, dy, p, own, k) { muzzle(u, dx, dy, p, 26 * k); spark(u.x + dx * 30, u.y + dy * 30, own ? 4 : 2, '#d8d2c2', 200, .22, 9, 24); },
-    // ---- villains
-    tripwire(u, dx, dy, p, own) { spark(u.x, u.y, own ? 3 : 2, '#c8ef5a', 160, .22, 9, 18); },
-    ricochet(u, dx, dy, p, own, k) { muzzle(u, dx, dy, p, 26 * k); lineAlong(u, dx, dy, 90, '#c8ef5a', 6, .1); },
-    lockdown(u, dx, dy, p, own) { ring(u.x, u.y, 100, p.ring, .34, 18); overlay(2, u.x, u.y, 20, .24, { spr: Art.speedLines('#ff3a20', 2), r: 200, ink: null }); arcs(u.x, u.y, 28, u.x + dx * 110, u.y + dy * 110, 28, '#ff3a20', .16); if (own) { G.punch = Math.max(G.punch, .024); G.shake = Math.max(G.shake, 3); } },
-    flourish(u, dx, dy, p, own, k, v) { const now = G.t, n = v.floT && now - v.floT < 2.4 ? ((v.floN || 0) + 1) % 3 : 0; v.floT = now; v.floN = n; const an = Math.atan2(dy, dx); if (n === 0) { slash(u.x, u.y, dx, dy, 180, p.mid, .2); cut(u.x + dx * 80, u.y + dy * 80, an + 1.2, 90, p.core, .16); } else if (n === 1) { slash(u.x, u.y, dx, dy, 200, p.spark2, .2); cut(u.x + dx * 80, u.y + dy * 80, an - 1.2, 96, '#ffffff', .16); } else { slash(u.x, u.y, dx, dy, 230, p.mid, .24); cut(u.x + dx * 90, u.y + dy * 90, an, 150, p.core, .22); burst(u.x + dx * 90, u.y + dy * 90, 24, p, .8, true); spark(u.x, u.y, 8, p.spark, 300, .34, 14, 30); if (own) { G.shake = Math.max(G.shake, 3.5); G.punch = Math.max(G.punch, .018); } } },
-    feint(u, dx, dy, p, own) { puff(u.x, u.y, 5, 1, 28, .34, 18, 50); ring(u.x, u.y, 56, p.ring, .2); if (own) overlay(2, u.x, u.y, 18, .16, { spr: Art.speedLines(p.lines, 3), r: 140, ink: null }); },
-    salute(u, dx, dy, p, own) { cut(u.x + dx * 30, u.y + dy * 30, Math.atan2(dy, dx) + Math.PI / 2, 100, p.core, .2, 28); burst(u.x, u.y, 28, p, .7, false); if (own) { G.punch = Math.max(G.punch, .02); hitStop(.03); } },
-    hexbolt(u, dx, dy, p, own, k) { sigil('hex', u.x, u.y, 48, '#c8ef5a', .24, 6, 14); muzzle(u, dx, dy, p, 22 * k); },
-    polymorph(u, dx, dy, p, own, k) { sigil('hex', u.x, u.y, 56, '#ffd78a', .28, -6, 14); coins(u.x + dx * 26, u.y + dy * 26, own ? 2 : 1, { sp: 90, vz: 240, life: .5 }); },
-    coven(u, dx, dy, p, own) { pillar(u.x, u.y, '#2a5a10', '#c8ef5a', .55); sigil('coven', u.x, u.y, 80, '#c8ef5a', .4, -3, 14); if (own) G.punch = Math.max(G.punch, .02); },
-    miasma(u, dx, dy, p, own) { spark(u.x, u.y, own ? 3 : 2, '#b6ec3a', 120, .3, 9, 20); },
-    leech(u, dx, dy, p, own) { spark(u.x, u.y, own ? 3 : 2, '#ff5a44', 180, .22, 9, 20); },
-    quarantine(u, dx, dy, p, own) { ring(u.x, u.y, 100, p.ring, .3, 16); },
-    shank(u, dx, dy, p, own, k) { const an = Math.atan2(dy, dx); cut(u.x + dx * 40, u.y + dy * 40, an, 130, p.mid, .2); lineAlong(u, dx, dy, 140, p.out, 8, .18); if (own) { dust(u.x, u.y, 1.2); G.shake = Math.max(G.shake, 2); } },
-    vanish(u, dx, dy, p, own) { puff(u.x, u.y, 6, 1, 34, .42, 18, 80); sigil('mark', u.x, u.y, 70, p.mid, .3, 6, 12); },
-    cuts(u, dx, dy, p, own) { burst(u.x, u.y, 18, p, .7, false); },
-    wrecking(u, dx, dy, p, own) { ring(u.x, u.y, 170, p.ring, .26); dustRing(u.x, u.y, 70, 3); if (own) G.punch = Math.max(G.punch, .012); },
-    grab(u, dx, dy, p, own) { const an = Math.atan2(dy, dx); slash(u.x, u.y, dx, dy, 190, p.mid, .22); for (const s of [-.55, 0, .55]) cut(u.x + Math.cos(an + s) * 150, u.y + Math.sin(an + s) * 150, an + s, 60, p.spark2, .2); if (own) G.shake = Math.max(G.shake, 2.5); },
-    demolish(u, dx, dy, p, own) { dustRing(u.x, u.y, 110, 5); if (own) G.punch = Math.max(G.punch, .022); chips(u.x, u.y, 6, '#c8a080', 240); },
+    // ---- Longshot: a soldier's precision. Every shot throws brass; every shot is a straight line.
+    snipe(u, dx, dy, p, own, k) { muzzle(u, dx, dy, p, 30 * k); lineAlong(u, dx, dy, own ? 170 : 110, p.mid, 5, .1); flare(u.x + dx * 36, u.y + dy * 36, 24, p.mid, 90 * k, .1); if (own) { chips(u.x - dx * 12, u.y - dy * 12, 1, '#ffd98a', 240, 26); G.shake = Math.max(G.shake, 1.2); } },
+    snipeFull(u, dx, dy, p, own, k) { muzzle(u, dx, dy, p, 46 * k); lineAlong(u, dx, dy, 260, p.mid, 12, .15); flare(u.x + dx * 40, u.y + dy * 40, 24, p.core, 200 * k, .18); ring(u.x, u.y, 96, p.ring, .22); ring(u.x + dx * 60, u.y + dy * 60, 56, p.core, .16, 24); dustRing(u.x - dx * 18, u.y - dy * 18, 46, 3); if (own) { chips(u.x - dx * 12, u.y - dy * 12, 2, '#ffd98a', 300, 26); G.shake = Math.max(G.shake, 4); G.punch = Math.max(G.punch, .018); } },
+    deadeye(u, dx, dy, p, own) { gather(u.x + dx * 40, u.y + dy * 40, 170, p.core, 10, .16, 24); ring(u.x, u.y, 160, p.ring, .36, 18); overlay(2, u.x, u.y, 20, .3, { spr: Art.speedLines(p.lines, 2), r: 280, ink: null }); lineAlong(u, dx, dy, 460, p.mid, 22, .26); lineAlong(u, dx, dy, 300, '#ffffff', 8, .16); flare(u.x + dx * 46, u.y + dy * 46, 24, '#ffffff', 340, .28); burst(u.x + dx * 44, u.y + dy * 44, 24, p, 1.2, true); sigil('mark', u.x + dx * 70, u.y + dy * 70, 90, p.mid, .3, 8, 26); if (own) { G.shake = Math.max(G.shake, 7); G.punch = Math.max(G.punch, .05); hitStop(.05); cine(.42, .55); } },
+    dash(u, dx, dy, p, own, k, v) {
+      const trailSp = worldSprite(u), R0 = artR(u), L = 120, x1 = u.x + dx * L, y1 = u.y + dy * L;
+      if (u.champ === 'gravel') { chips(u.x, u.y, own ? 9 : 4, '#c6a78a', 320, 20); dustRing(u.x, u.y, 90, 5); lineAlong(u, dx, dy, 220, p.out, 30, .24); flare(u.x + dx * 30, u.y + dy * 30, 16, p.mid, 170 * k, .2); later(.1, () => dustRing(u.x, u.y, 70, 3)); if (own) { G.shake = Math.max(G.shake, 5); G.punch = Math.max(G.punch, .02); } return; }
+      if (u.champ === 'vesper') { puff(u.x, u.y, own ? 8 : 4, 1, 34, .42, 12, 70); ring(u.x, u.y, 66, p.ring, .2, 12); ghostLine(trailSp, R0, u.x, u.y, x1, y1); return; }
+      // Riposte's lunge: one thrust, whole body behind it.
+      cut(u.x + dx * 80, u.y + dy * 80, Math.atan2(dy, dx), 170, p.core, .18, 22); lineAlong(u, dx, dy, 220, p.mid, 9, .15); flare(u.x + dx * 110, u.y + dy * 110, 24, p.mid, 150 * k, .14); ghostLine(trailSp, R0, u.x, u.y, x1, y1); if (own) { puff(u.x, u.y, 3, 0, 24, .3, 10, 60); G.shake = Math.max(G.shake, 2); }
+    },
+    parry(u, dx, dy, p, own) { ring(u.x, u.y, 96, p.core, .2, 18); sigil('dome', u.x, u.y, 70, p.mid, .36, 4, 14); const a = Math.atan2(dy, dx); cut(u.x, u.y, a + .78, 90, '#ffffff', .16, 24); cut(u.x, u.y, a - .78, 90, p.mid, .16, 24); flare(u.x, u.y, 26, p.core, 130, .14); if (own) { G.punch = Math.max(G.punch, .016); hitStop(.02); } },
+    crash(u, dx, dy, p, own) { gather(u.x, u.y, 130, p.mid, 8, .18, 12); pillar(u.x, u.y, p.out, p.mid, .4); ring(u.x, u.y, 140, p.ring, .3); flare(u.x, u.y, 8, p.core, 240, .2); if (own) G.punch = Math.max(G.punch, .024); },
+    // ---- Starling: everything is a star. Slow, glittering, then very fast.
+    orb(u, dx, dy, p, own, k) { sigil('mark', u.x, u.y, 70 * k + 18, p.mid, .3, 5); ring(u.x, u.y, 66, p.ring, .2, 14); muzzle(u, dx, dy, p, 24 * k); flare(u.x, u.y, 28, p.core, 120 * k, .14); rise(u.x, u.y, own ? 4 : 2, p.spark, 44, .4, 8); },
+    rupture(u, dx, dy, p, own, k, v, e) { const ult = e && e.slot === 2; ring(u.x, u.y, ult ? 110 : 60, p.ring, .2, 12); spark(u.x, u.y, own ? 5 : 2, p.spark, 240, .26, 11, 18); if (ult) { gather(u.x, u.y, 180, p.core, 12, .22, 40); sigil('rupture', u.x, u.y, 160, p.mid, .4, 3, 8); overlay(2, u.x, u.y, 20, .22, { spr: Art.speedLines(p.lines, 2), r: 240, ink: null }); if (own) { cine(.5, .6); G.punch = Math.max(G.punch, .03); } } },
+    // ---- Dawnbringer: warm, vertical, slow to fade.
+    ray(u, dx, dy, p, own, k) { muzzle(u, dx, dy, p, 28 * k); lineAlong(u, dx, dy, 140, p.mid, 9, .14); flare(u.x + dx * 30, u.y + dy * 30, 26, p.core, 120 * k, .14); rise(u.x, u.y, own ? 6 : 2, HEAL, 30, .55, 9); },
+    dome(u, dx, dy, p, own) { ring(u.x, u.y, 120, p.ring, .3); sigil('dome', u.x, u.y, 90, p.mid, .4, 1.6, 10); rise(u.x, u.y, own ? 8 : 3, p.mid, 44, .6, 10); flare(u.x, u.y, 44, p.core, 130, .2); },
+    heal(u, dx, dy, p, own, k) { gather(u.x, u.y, 240, p.core, 12, .24, 24); later(.12, () => { ring(u.x, u.y, 380, p.ring, .6); ring(u.x, u.y, 220, p.core, .4, 6); pillar(u.x, u.y, p.out, p.mid, .85); sigil('heal', u.x, u.y, 280, p.mid, .8, .8, 4); rays(u.x, u.y, 8, p.mid, 260, 7, .4, 12, .2); flare(u.x, u.y, 60, '#fff3c8', 380, .36); rise(u.x, u.y, nq(20), HEAL, 200, 1.1, 14); }); if (own) { G.punch = Math.max(G.punch, .04); G.shake = Math.max(G.shake, 3.5); cine(.6, .6); } },
+    // ---- Nightfall: blades of dark with one white edge.
+    slash(u, dx, dy, p, own, k) { slash(u.x, u.y, dx, dy, 190, own ? p.mid : '#ff6a4a', .22); later(.05, () => slash(u.x, u.y, dx, dy, 130, p.core, .14)); cut(u.x + dx * 90, u.y + dy * 90, Math.atan2(dy, dx) + 1.57, 90, p.core, .14, 24); puff(u.x + dx * 40, u.y + dy * 40, own ? 3 : 1, 1, 22, .3, 16, 60); if (own) G.shake = Math.max(G.shake, 2.2); },
+    blink(u, dx, dy, p, own, k, v, e) { burstOut(u, p, own); if (e && e.slot === 2) { const a = Math.atan2(dy, dx); later(.08, () => { slash(u.x, u.y, dx, dy, 240, p.mid, .28); slash(u.x, u.y, -dx, -dy, 240, '#ffffff', .22); puff(u.x, u.y, 8, 1, 40, .5, 18, 130); ring(u.x, u.y, 180, p.ring, .3, 16); cut(u.x, u.y, a, 240, '#ffffff', .2, 26); if (own) { G.shake = Math.max(G.shake, 5); G.punch = Math.max(G.punch, .03); hitStop(.03); } }); } },
+    // ---- Bulwark: iron and masonry.
+    stomp(u, dx, dy, p, own) { sigil('stomp', u.x, u.y, 200, p.mid, .4, 0); ring(u.x, u.y, 170, p.ring, .34); dustRing(u.x, u.y, 110, 6); chips(u.x, u.y, own ? 6 : 3, p.chip, 300, 14); wave(u.x, u.y, 240, p.mid, .4); if (own) { G.shake = Math.max(G.shake, 4.5); G.punch = Math.max(G.punch, .02); } },
+    chain(u, dx, dy, p, own, k) { muzzle(u, dx, dy, p, 26 * k); lineAlong(u, dx, dy, 120, '#d8d2c2', 7, .14); spark(u.x + dx * 30, u.y + dy * 30, own ? 5 : 2, '#d8d2c2', 240, .24, 10, 24); chips(u.x + dx * 26, u.y + dy * 26, own ? 2 : 1, '#c6c0b0', 240, 24); },
+    // ---- Deadbolt: machine precision. Lines, locks and green fire.
+    tripwire(u, dx, dy, p, own) { spark(u.x, u.y, own ? 4 : 2, '#c8ef5a', 200, .24, 10, 18); flare(u.x, u.y, 16, '#c8ef5a', 100, .12); cut(u.x, u.y, Math.atan2(dy, dx) + 1.57, 90, '#c8ef5a', .14, 10); },
+    ricochet(u, dx, dy, p, own, k) { muzzle(u, dx, dy, p, 30 * k); lineAlong(u, dx, dy, 130, '#c8ef5a', 6, .1); flare(u.x + dx * 34, u.y + dy * 34, 24, '#e8ff9a', 110 * k, .1); if (own) chips(u.x - dx * 10, u.y - dy * 10, 1, '#c8ef5a', 240, 26); },
+    lockdown(u, dx, dy, p, own) { gather(u.x, u.y, 170, '#ff3a20', 10, .18, 26); ring(u.x, u.y, 140, p.ring, .34, 18); overlay(2, u.x, u.y, 20, .24, { spr: Art.speedLines('#ff3a20', 2), r: 240, ink: null }); arcs(u.x, u.y, 28, u.x + dx * 150, u.y + dy * 150, 28, '#ff3a20', .18); sigil('lockdown', u.x, u.y, 130, '#ff3a20', .4, 5, 12); flare(u.x, u.y, 30, '#ff8a70', 220, .2); if (own) { G.punch = Math.max(G.punch, .03); G.shake = Math.max(G.shake, 4); cine(.45, .55); } },
+    // ---- The Duelist: three strokes and a bow.
+    flourish(u, dx, dy, p, own, k, v) { const now = G.t, n = v.floT && now - v.floT < 2.4 ? ((v.floN || 0) + 1) % 3 : 0; v.floT = now; v.floN = n; const an = Math.atan2(dy, dx), X = u.x + dx * 80, Y = u.y + dy * 80; if (n === 0) { slash(u.x, u.y, dx, dy, 190, p.mid, .2); cut(X, Y, an + 1.2, 110, p.core, .16); } else if (n === 1) { slash(u.x, u.y, dx, dy, 210, p.spark2, .2); cut(X, Y, an - 1.2, 116, '#ffffff', .16); } else { later(.05, () => { slash(u.x, u.y, dx, dy, 240, p.core, .26); cut(X, Y, an, 190, '#ffffff', .2, 26); burst(X, Y, 26, p, .9, true); flare(X, Y, 26, '#ffd0d4', 220, .2); if (own) { G.shake = Math.max(G.shake, 4.5); G.punch = Math.max(G.punch, .03); hitStop(.03); } }); } },
+    feint(u, dx, dy, p, own) { puff(u.x, u.y, 6, 1, 30, .36, 18, 60); ring(u.x, u.y, 66, p.ring, .2); ghost(worldSprite(u), artR(u), u.x - dx * 26, u.y - dy * 26, 14, .4, 2); if (own) overlay(2, u.x, u.y, 18, .16, { spr: Art.speedLines(p.lines, 3), r: 150, ink: null }); },
+    salute(u, dx, dy, p, own) { const a = Math.atan2(dy, dx), X = u.x + dx * 40, Y = u.y + dy * 40; gather(X, Y, 130, p.core, 8, .16, 26); cut(X, Y, a + 1.57, 130, p.core, .22, 28); later(.06, () => { cut(X, Y, a + .78, 150, p.mid, .2, 28); cut(X, Y, a - .78, 150, '#ffffff', .2, 28); ring(X, Y, 130, p.ring, .3, 18); burst(X, Y, 28, p, .9, true); flare(X, Y, 28, '#ffd0d4', 260, .22); }); if (own) { G.punch = Math.max(G.punch, .03); hitStop(.04); cine(.45, .55); } },
+    // ---- Madame Hex: geometry that shouldn't exist.
+    hexbolt(u, dx, dy, p, own, k) { sigil('hex', u.x, u.y, 56, '#c8ef5a', .24, 6, 14); muzzle(u, dx, dy, p, 24 * k); flare(u.x + dx * 30, u.y + dy * 30, 22, '#d8a8ff', 90 * k, .12); },
+    polymorph(u, dx, dy, p, own, k) { sigil('hex', u.x, u.y, 66, '#ffd78a', .3, -6, 14); coins(u.x + dx * 26, u.y + dy * 26, own ? 3 : 1, { sp: 120, vz: 260, life: .55 }); flare(u.x + dx * 30, u.y + dy * 30, 24, '#ffd78a', 110 * k, .12); },
+    coven(u, dx, dy, p, own) { gather(u.x, u.y, 180, '#c8ef5a', 12, .22, 30); pillar(u.x, u.y, '#2a5a10', '#c8ef5a', .55); sigil('coven', u.x, u.y, 120, '#c8ef5a', .46, -3, 14); flare(u.x, u.y, 40, '#d8a8ff', 220, .2); if (own) { G.punch = Math.max(G.punch, .03); cine(.45, .55); } },
+    // ---- The Plague Doctor: wet, slow, unpleasant.
+    miasma(u, dx, dy, p, own) { spark(u.x, u.y, own ? 4 : 2, '#b6ec3a', 150, .34, 9, 20); puff(u.x + dx * 30, u.y + dy * 30, own ? 3 : 1, 2, 30, .5, 14, 40); chips(u.x + dx * 18, u.y + dy * 18, own ? 2 : 1, '#c8d0a0', 200, 24); },
+    leech(u, dx, dy, p, own) { spark(u.x, u.y, own ? 4 : 2, '#ff5a44', 200, .24, 9, 20); flare(u.x + dx * 24, u.y + dy * 24, 22, '#ff5a44', 90, .12); rise(u.x, u.y, own ? 3 : 1, '#ff8a70', 26, .5, 8); },
+    quarantine(u, dx, dy, p, own) { gather(u.x, u.y, 130, '#c8ef5a', 8, .2, 18); ring(u.x, u.y, 150, p.ring, .34, 16); sigil('quarantine', u.x, u.y, 120, p.mid, .46, 1.4, 8); puff(u.x, u.y, own ? 5 : 2, 2, 40, .6, 10, 90); if (own) { G.punch = Math.max(G.punch, .024); cine(.4, .5); } },
+    // ---- Shiv: you never see the blade, only where it was.
+    shank(u, dx, dy, p, own, k) { const an = Math.atan2(dy, dx); cut(u.x + dx * 50, u.y + dy * 50, an, 170, p.mid, .2); later(.04, () => cut(u.x + dx * 96, u.y + dy * 96, an + .3, 110, '#ffffff', .14, 22)); lineAlong(u, dx, dy, 190, p.out, 8, .18); flare(u.x + dx * 100, u.y + dy * 100, 22, p.spark, 130 * k, .12); if (own) { dust(u.x, u.y, 1.2); G.shake = Math.max(G.shake, 2.4); } },
+    vanish(u, dx, dy, p, own) { puff(u.x, u.y, 8, 1, 38, .46, 18, 90); sigil('mark', u.x, u.y, 80, p.mid, .3, 6, 12); ghost(worldSprite(u), artR(u), u.x, u.y, 14, .32, 4); if (own) ring(u.x, u.y, 70, p.ring, .2, 14); },
+    cuts(u, dx, dy, p, own) { const X = u.x + dx * 46, Y = u.y + dy * 46; burst(u.x, u.y, 18, p, .7, false); if (own) { cine(.5, .55); G.punch = Math.max(G.punch, .02); } for (let i = 0; i < (own ? 9 : 5); i++) later(i * .05, () => { const a = Math.random() * TAU; cut(X + rnd(-34, 34), Y + rnd(-24, 24), a, 130, i % 3 ? p.mid : '#ffffff', .12, 26); spark(X, Y, 1, p.spark, 300, .18, 10, 24); }); },
+    // ---- Ironjaw: chains, rust and very large objects.
+    wrecking(u, dx, dy, p, own) { ring(u.x, u.y, 190, p.ring, .28); dustRing(u.x, u.y, 80, 4); gather(u.x, u.y, 100, p.mid, 5, .14, 12); if (own) G.punch = Math.max(G.punch, .016); },
+    grab(u, dx, dy, p, own) { const an = Math.atan2(dy, dx); slash(u.x, u.y, dx, dy, 200, p.mid, .22); for (const s of [-.55, 0, .55]) cut(u.x + Math.cos(an + s) * 160, u.y + Math.sin(an + s) * 160, an + s, 70, p.spark2, .2); if (own) G.shake = Math.max(G.shake, 3); },
+    demolish(u, dx, dy, p, own) { gather(u.x + dx * 40, u.y + dy * 40, 120, p.mid, 8, .18, 30); dustRing(u.x, u.y, 130, 6); chips(u.x, u.y, 8, '#c8a080', 280); lineAlong(u, dx, dy, 240, p.out, 24, .22); if (own) { G.punch = Math.max(G.punch, .03); cine(.4, .5); } },
+  };
+  // The eight newcomers, addressed by kit and slot so they read right whatever their sim strings end up being.
+  const zipGhost = (u, dx, dy, L) => ghostLine(worldSprite(u), artR(u), u.x, u.y, u.x + dx * L, u.y + dy * L);
+  const SIG = {
+    voltaic: [
+      (u, dx, dy, p, own, k) => { const L = 240, X = u.x + dx * L, Y = u.y + dy * L; beam(u.x, u.y, X, Y, p.out, 16, .16, 22); arcs(u.x, u.y, 22, X, Y, 22, p.mid, .26, 38); later(.05, () => arcs(u.x, u.y, 22, X, Y, 22, '#ffffff', .2, 24)); zipGhost(u, dx, dy, L); flare(u.x, u.y, 22, p.mid, 170 * k, .14); flare(X, Y, 22, p.core, 190 * k, .16); ring(X, Y, 70, p.ring, .18, 14); if (own) { G.shake = Math.max(G.shake, 2.5); G.punch = Math.max(G.punch, .016); } },
+      (u, dx, dy, p, own, k) => { ring(u.x, u.y, 180, p.ring, .26, 14); for (let i = 0; i < 7; i++) { const a = i / 7 * TAU + rnd(-.2, .2), d = rnd(120, 190); arcs(u.x, u.y, 26, u.x + Math.cos(a) * d, u.y + Math.sin(a) * d, 6, i % 2 ? p.mid : '#ffffff', .16, 26); } flare(u.x, u.y, 28, p.core, 200 * k, .16); spark(u.x, u.y, own ? 8 : 3, p.spark, 340, .26, 12, 22); if (own) G.punch = Math.max(G.punch, .018); },
+      (u, dx, dy, p, own, k) => { gather(u.x, u.y, 240, p.mid, 14, .2, 60); const L = 420; for (let i = 1; i <= 4; i++) later(i * .05, () => { const X = u.x + dx * L * i / 4, Y = u.y + dy * L * i / 4; arcs(X - dx * 70, Y - dy * 70, 8, X, Y, 8, p.mid, .3, 14); ring(X, Y, 50, p.ring, .24, 2); }); sigil('crash', u.x, u.y, 170, p.mid, .4, 6, 4); overlay(2, u.x, u.y, 20, .3, { spr: Art.speedLines(p.lines, 2), r: 280, ink: null }); if (own) { cine(.72, .7); G.punch = Math.max(G.punch, .04); hitStop(.04); } },
+    ],
+    tidecaller: [
+      (u, dx, dy, p, own, k) => { slash(u.x, u.y, dx, dy, 180, p.mid, .28); later(.06, () => slash(u.x + dx * 24, u.y + dy * 24, dx, dy, 130, p.core, .2)); splash(u.x + dx * 50, u.y + dy * 50, 1.1); flare(u.x + dx * 60, u.y + dy * 60, 20, p.mid, 120 * k, .16); },
+      (u, dx, dy, p, own, k) => { const X = u.x + dx * 70, Y = u.y + dy * 70; gather(X, Y, 90, p.mid, 6, .12, 8); later(.08, () => { pillar(X, Y, p.out, p.mid, .42); ring(X, Y, 120, p.ring, .3); ring(X, Y, 70, p.core, .22, 6); splash(X, Y, 2); for (let i = 0; i < nq(8); i++) { const a = Math.random() * TAU, v = rnd(90, 260), q = add(DROP, X, Y, 26, rnd(.36, .6)); q.vx = Math.cos(a) * v; q.vy = Math.sin(a) * v; q.vz = rnd(260, 520); q.col = p.mid; q.size = rnd(8, 14); } }); if (own) G.punch = Math.max(G.punch, .018); },
+      (u, dx, dy, p, own, k) => { const px_ = -dy, py_ = dx; gather(u.x, u.y, 200, p.core, 12, .2, 14); for (let w = 0; w < 3; w++) later(w * .08, () => { const X = u.x + dx * (60 + w * 80), Y = u.y + dy * (60 + w * 80); beam(X - px_ * 140, Y - py_ * 140, X + px_ * 140, Y + py_ * 140, w % 2 ? p.core : p.mid, 18, .3, 14); for (const o of [-1, 0, 1]) splash(X + px_ * o * 110, Y + py_ * o * 110, 1.4); }); flare(u.x, u.y, 30, p.core, 300, .26); pillar(u.x, u.y, p.out, p.mid, .55); if (own) { cine(.75, .7); G.punch = Math.max(G.punch, .05); G.shake = Math.max(G.shake, 5); } },
+    ],
+    paragon: [
+      (u, dx, dy, p, own, k) => { gather(u.x, u.y, 120, p.core, 6, .1, 10); pillar(u.x, u.y, '#b8842a', p.core, .36); dustRing(u.x, u.y, 70, 4); flutter(u.x, u.y, own ? 6 : 2, '#fff6e0'); ring(u.x, u.y, 100, p.ring, .24); flare(u.x, u.y, 16, p.core, 170 * k, .16); if (own) G.shake = Math.max(G.shake, 2.5); },
+      (u, dx, dy, p, own, k) => { const a = Math.atan2(dy, dx), X = u.x + dx * 96, Y = u.y + dy * 96; slash(u.x, u.y, dx, dy, 220, p.mid, .24); later(.04, () => slash(u.x, u.y, dx, dy, 170, p.core, .18)); cut(X, Y, a, 190, '#ffffff', .18, 26); flare(X, Y, 26, '#fff0c8', 240 * k, .2); rays(X, Y, 6, p.mid, 110, 5, .18, 24, a); if (own) { G.shake = Math.max(G.shake, 3.2); G.punch = Math.max(G.punch, .024); hitStop(.03); } },
+      (u, dx, dy, p, own, k) => { gather(u.x, u.y, 220, p.core, 12, .2, 40); pillar(u.x, u.y, '#b8842a', p.core, .6); sigil('salute', u.x, u.y, 180, p.mid, .45, 1.4, 6); flutter(u.x, u.y, own ? 10 : 4, '#fff6e0'); flare(u.x, u.y, 40, '#ffffff', 280, .24); if (own) { cine(.75, .7); G.punch = Math.max(G.punch, .04); } },
+    ],
+    mirage: [
+      (u, dx, dy, p, own, k) => { muzzle(u, dx, dy, p, 28 * k); const px_ = -dy, py_ = dx; [['#ff8ae0', 7], ['#8ae0ff', -7], ['#ffffff', 0]].forEach(([c, o]) => beam(u.x + dx * 22 + px_ * o, u.y + dy * 22 + py_ * o, u.x + dx * 190 + px_ * o, u.y + dy * 190 + py_ * o, c, 4, .12, 24)); flare(u.x + dx * 34, u.y + dy * 34, 24, p.mid, 130 * k, .12); },
+      (u, dx, dy, p, own, k) => { const sp = worldSprite(u), R0 = artR(u), L = 170; ghost(sp, R0, u.x, u.y, 14, .5, 2); zipGhost(u, dx, dy, L); cut(u.x, u.y, Math.atan2(dy, dx) + 1.57, 70, '#ffffff', .14, 22); flare(u.x, u.y, 24, '#8ae0ff', 170 * k, .16); sigil('mark', u.x, u.y, 80, p.mid, .28, -6, 12); },
+      (u, dx, dy, p, own, k) => { gather(u.x, u.y, 180, p.core, 10, .2, 40); ring(u.x, u.y, 150, p.ring, .3, 12); flare(u.x, u.y, 36, '#ffffff', 280, .24); sigil('mark', u.x, u.y, 120, p.mid, .4, 6, 8); if (own) { cine(.6, .65); G.punch = Math.max(G.punch, .04); } },
+    ],
+    cinder: [
+      (u, dx, dy, p, own, k) => { muzzle(u, dx, dy, p, 32 * k); sigil('mark', u.x, u.y, 56, p.mid, .22, 7, 14); rise(u.x, u.y, own ? 5 : 2, p.spark, 40, .55, 9); puff(u.x + dx * 26, u.y + dy * 26, own ? 2 : 1, 1, 22, .4, 22, 40); flare(u.x + dx * 30, u.y + dy * 30, 24, p.mid, 120 * k, .12); },
+      (u, dx, dy, p, own, k) => { ring(u.x, u.y, 110, p.ring, .24, 8); rise(u.x, u.y, own ? 5 : 2, p.spark, 40, .55, 10); muzzle(u, dx, dy, p, 26 * k); if (own) G.punch = Math.max(G.punch, .012); },
+      (u, dx, dy, p, own, k) => { gather(u.x, u.y, 240, p.spark, 14, .3, 30); ring(u.x, u.y, 200, p.ring, .4, 10); sigil('crash', u.x, u.y, 170, p.mid, .55, 3, 4); rise(u.x, u.y, own ? 8 : 3, p.spark, 80, .9, 12); flare(u.x, u.y, 44, p.core, 300, .26); if (own) { cine(.5, .6); G.punch = Math.max(G.punch, .03); } },
+    ],
+    ravager: [
+      (u, dx, dy, p, own, k) => { const a = Math.atan2(dy, dx), X = u.x + dx * 100, Y = u.y + dy * 100; for (const o of [-1, 0, 1]) later((o + 1) * .022, () => cut(X + -dy * o * 24, Y + dx * o * 24, a + o * .18, 150, o ? p.mid : '#ffffff', .18, 24)); zipGhost(u, dx, dy, 150); dust(u.x, u.y, 1.3); if (own) G.shake = Math.max(G.shake, 2.6); },
+      (u, dx, dy, p, own, k) => { gather(u.x, u.y, 100, p.mid, 6, .1, 8); dustRing(u.x, u.y, 70, 4); zipGhost(u, dx, dy, 160); flare(u.x, u.y, 14, p.mid, 130 * k, .14); if (own) G.shake = Math.max(G.shake, 2); },
+      (u, dx, dy, p, own, k) => { flare(u.x, u.y - 6, 36, p.mid, 340 * k, .3); for (let i = 0; i < 4; i++) later(i * .06, () => ring(u.x, u.y, 90 + i * 70, i % 2 ? p.core : p.ring, .28, 16)); overlay(2, u.x, u.y, 22, .3, { spr: Art.speedLines(p.lines, 2), r: 300, ink: null }); const a = Math.atan2(dy, dx); for (const o of [-.8, .8]) for (const s of [-1, 0, 1]) cut(u.x + Math.cos(a + o + 1.57) * s * 24, u.y + Math.sin(a + o + 1.57) * s * 24, a + o, 150, s ? p.mid : '#ffffff', .22, 26); puff(u.x, u.y, own ? 6 : 2, 1, 34, .5, 14, 100); if (own) { cine(.55, .6); G.punch = Math.max(G.punch, .05); hitStop(.05); G.shake = Math.max(G.shake, 5); } },
+    ],
+    cataclysm: [
+      (u, dx, dy, p, own, k) => { gather(u.x + dx * 24, u.y + dy * 24, 80, p.mid, 5, .1, 28); chips(u.x + dx * 30, u.y + dy * 30, own ? 4 : 2, '#a08878', 260, 30); muzzle(u, dx, dy, p, 40 * k); flare(u.x + dx * 30, u.y + dy * 30, 30, p.spark, 120 * k, .14); if (own) { G.shake = Math.max(G.shake, 3); G.punch = Math.max(G.punch, .016); } },
+      (u, dx, dy, p, own, k) => { dustRing(u.x, u.y, 120, 7); sigil('stomp', u.x, u.y, 170, p.mid, .46, 0, 2); ring(u.x, u.y, 150, p.ring, .32); chips(u.x, u.y, own ? 7 : 3, '#a08878', 240, 10); for (let i = 0; i < 6; i++) { const a = i / 6 * TAU; arcs(u.x, u.y, 4, u.x + Math.cos(a) * 110, u.y + Math.sin(a) * 88, 4, p.spark, .24, 12); } if (own) { G.shake = Math.max(G.shake, 4); G.punch = Math.max(G.punch, .02); } },
+      (u, dx, dy, p, own, k) => { const L = 540; gather(u.x, u.y, 180, p.mid, 10, .24, 16); dustRing(u.x, u.y, 110, 6); for (let i = 1; i <= 6; i++) later(i * .05, () => { const X = u.x + dx * L * i / 6, Y = u.y + dy * L * i / 6; arcs(X - dx * 90, Y - dy * 90, 4, X, Y, 4, p.spark, .34, 20); dustRing(X, Y, 42, 2); }); if (own) { cine(.75, .75); G.punch = Math.max(G.punch, .04); hitStop(.04); G.shake = Math.max(G.shake, 5); } },
+    ],
+    puppeteer: [
+      (u, dx, dy, p, own, k) => { const px_ = -dy, py_ = dx; for (const o of [-16, 0, 16]) beam(u.x + dx * 20, u.y + dy * 20, u.x + dx * 230 + px_ * o, u.y + dy * 230 + py_ * o, o ? p.mid : '#ffffff', 2.4, .14, 24); flare(u.x + dx * 20, u.y + dy * 20, 24, p.mid, 90 * k, .1); },
+      (u, dx, dy, p, own, k) => { const X = u.x + dx * 110, Y = u.y + dy * 110; flare(u.x + dx * 24, u.y + dy * 24, 22, p.mid, 90 * k, .1); rise(X, Y, own ? 3 : 1, p.spark, 26, .5, 9); },
+      (u, dx, dy, p, own, k) => { const a = Math.atan2(dy, dx), X = u.x + dx * 150, Y = u.y + dy * 150; gather(X, Y, 130, p.core, 8, .16, 30); for (let i = 0; i < 5; i++) later(i * .03, () => { const o = (i - 2) * .22; beam(u.x + dx * 22, u.y + dy * 22, X + Math.cos(a + o + 1.57) * 26 * (i - 2), Y + Math.sin(a + o + 1.57) * 26 * (i - 2), i % 2 ? p.mid : '#ffffff', 2.4, .36, 26); }); sigil('salute', X, Y, 130, p.mid, .46, 3, 8); flare(X, Y, 26, p.core, 180 * k, .2); if (own) { cine(.6, .65); G.punch = Math.max(G.punch, .03); } },
+    ],
+  };
+  const SIG_POSE = {
+    voltaic: [pose(.16, .1, 4, 26, 0, .9, .5), pose(.24, .3, 0, 0, 12, TAU * .5, .5), pose(.46, .32, 0, 0, 40, TAU, 1)],
+    tidecaller: [pose(.26, .2, 6, 10, 6, .4, .4), pose(.28, .3, 2, 2, 14, .4, .5), pose(.5, .36, 0, 0, 30, TAU, .9)],
+    paragon: [pose(.2, .14, 8, 26, 6, .6, .7), pose(.26, .22, 8, 8, 12, .7, .6), pose(.5, .34, 0, 0, 56, TAU, 1.3)],
+    mirage: [pose(.22, .18, -4, -10, 2, .3, .45), pose(.24, .16, 0, 0, 4, TAU * .5, .4), pose(.46, .34, 0, 0, 24, TAU, .8)],
+    cinder: [pose(.26, .22, 8, -8, 10, .4, .45), pose(.3, .32, 0, 0, 18, .4, .6), pose(.5, .4, 0, 0, 34, TAU * .5, 1)],
+    ravager: [pose(.18, .1, 8, 28, 2, .7, .7), pose(.3, .3, 6, 0, 8, .3, .9), pose(.5, .2, 0, 14, 10, TAU, .9)],
+    cataclysm: [pose(.32, .36, 8, -10, 12, .3, .7), pose(.34, .38, 0, 8, 22, 0, 1.1), pose(.56, .46, 0, 0, 50, 0, 1.5)],
+    puppeteer: [pose(.26, .24, 6, -6, 8, .4, .4), pose(.28, .3, 4, 4, 8, .5, .4), pose(.5, .36, 0, 0, 28, TAU, .7)],
   };
   function burstOut(u, p, own) { const X = u.x, Y = u.y; ring(X, Y, 90, p.ring, .26); puff(X, Y, own ? 6 : 3, 1, 28, .32, 14, 80); sigil('mark', X, Y, 70, p.mid, .26, -6); cut(X, Y, -Math.PI / 2, 80, p.core, .16, 26); if (own) overlay(2, X, Y, 22, .18, { spr: Art.speedLines(p.lines, 3), r: 120, ink: null }); }
   const shakeIf = (own, s, k) => { if (own) { G.shake = Math.max(G.shake, s); G.punch = Math.max(G.punch, k); } };
   const BOOM = {
-    rupture(e, t, p, own) { sigil('rupture', e.x, e.y, e.r, p.mid, .36, 1.4); ring(e.x, e.y, e.r, p.ring, .34); for (let i = 0; i < 8; i++) { const a = i / 8 * TAU + rnd(-.2, .2), d = e.r * rnd(.3, .9); beam(e.x + Math.cos(a) * d, e.y + Math.sin(a) * d * .9, e.x + Math.cos(a) * d, e.y + Math.sin(a) * d * .9, p.mid, 8, .26, 60); } spark(e.x, e.y, 10, p.spark, e.r * 2.2, .42, 16, 16); shakeIf(own, 2.5, .012); },
+    rupture(e, t, p, own) { flare(e.x, e.y, 30, p.core, e.r * 1.2, .2); sigil('rupture', e.x, e.y, e.r, p.mid, .36, 1.4); ring(e.x, e.y, e.r, p.ring, .34); for (let i = 0; i < 8; i++) { const a = i / 8 * TAU + rnd(-.2, .2), d = e.r * rnd(.3, .9); beam(e.x + Math.cos(a) * d, e.y + Math.sin(a) * d * .9, e.x + Math.cos(a) * d, e.y + Math.sin(a) * d * .9, p.mid, 8, .26, 60); } spark(e.x, e.y, 10, p.spark, e.r * 2.2, .42, 16, 16); shakeIf(own, 2.5, .012); },
     break(e, t, p) { flash(e.x, e.y, 20, p, 60); spark(e.x, e.y, 8, p.spark, 300, .3, 14, 22); sigil('mark', e.x, e.y, 70, p.core, .3, 8); },
-    crash(e, t, p, own, huge) { sigil('crash', e.x, e.y, e.r, p.mid, .5, 0, 2); ring(e.x, e.y, e.r * 1.1, p.ring, .4); ring(e.x, e.y, e.r * .6, p.core, .24, 8); dustRing(e.x, e.y, e.r * .7, 7); chips(e.x, e.y, 8, p.chip, e.r * 2.4, 24); spark(e.x, e.y, 12, p.spark, e.r * 2.4, .4, 16, 24); burst(e.x, e.y, 22, p, 1.1, true); shakeIf(own, 7, .04); },
-    stomp(e, t, p, own) { sigil('stomp', e.x, e.y, e.r, p.mid, .4, 0); dustRing(e.x, e.y, e.r * .7, 5); chips(e.x, e.y, 5, p.chip, e.r * 2, 16); shakeIf(own, 4, .02); },
+    crash(e, t, p, own, huge) { flare(e.x, e.y, 18, p.core, e.r * 1.5, .24); wave(e.x, e.y, e.r * 1.5, p.mid, .46); sigil('crash', e.x, e.y, e.r, p.mid, .5, 0, 2); ring(e.x, e.y, e.r * 1.1, p.ring, .4); ring(e.x, e.y, e.r * .6, p.core, .24, 8); dustRing(e.x, e.y, e.r * .7, 7); chips(e.x, e.y, 8, p.chip, e.r * 2.4, 24); spark(e.x, e.y, 12, p.spark, e.r * 2.4, .4, 16, 24); burst(e.x, e.y, 22, p, 1.1, true); shakeIf(own, 7, .04); },
+    stomp(e, t, p, own) { wave(e.x, e.y, e.r * 1.3, p.mid, .4); sigil('stomp', e.x, e.y, e.r, p.mid, .4, 0); dustRing(e.x, e.y, e.r * .7, 5); chips(e.x, e.y, 5, p.chip, e.r * 2, 16); shakeIf(own, 4, .02); },
     heal(e, t, p, own) { sigil('heal', e.x, e.y, e.r, p.mid, .6, .6); ring(e.x, e.y, e.r, p.ring, .6); rise(e.x, e.y, 14, HEAL, e.r * .8, 1, 14); shakeIf(own, 3, .02); },
     tripwire(e, t, p) { sigil('root', e.x, e.y, 70, '#c8ef5a', .32, 0); spark(e.x, e.y, 8, '#c8ef5a', 240, .32, 12, 14); arcs(e.x - 40, e.y, 16, e.x + 40, e.y, 16, '#c8ef5a', .18); },
     feint(e, t, p) { puff(e.x, e.y, 8, 1, 32, .4, 20, 100); ring(e.x, e.y, e.r, p.ring, .3); spark(e.x, e.y, 6, p.spark2, 240, .3, 12, 22); },
-    coven(e, t, p, own) { ring(e.x, e.y, e.r * .4, '#c8ef5a', .22, 20); sigil('coven', e.x, e.y, e.r, '#c8ef5a', .4, -9); burst(e.x, e.y, 20, p, 1.5, true); spark(e.x, e.y, 16, '#c8ef5a', e.r * 2.2, .5, 16, 24); pillar(e.x, e.y, '#2a5a10', '#c8ef5a', .6); shakeIf(own, 7, .04); },
-    demolish(e, t, p, own) { const x1 = e.x2 === undefined ? e.x : e.x2, y1 = e.y2 === undefined ? e.y : e.y2, x0 = e.x, y0 = e.y; for (let i = 0; i <= 7; i++) { const f = i / 7, X = lerp(x0, x1, f), Y = lerp(y0, y1, f); dustRing(X, Y, 60, 2); chips(X, Y, 3, '#c8a080', 340, 22); spark(X, Y, 2, p.spark, 220, .3, 12, 16); } beam(x0, y0, x1, y1, p.mid, 26, .3, 4); arcs(x0, y0, 10, x1, y1, 10, p.spark2, .24, 26); shakeIf(own, 8, .045); },
+    coven(e, t, p, own) { flare(e.x, e.y, 30, '#d8a8ff', e.r * 1.4, .26); wave(e.x, e.y, e.r * 1.4, '#c8ef5a', .5); ring(e.x, e.y, e.r * .4, '#c8ef5a', .22, 20); sigil('coven', e.x, e.y, e.r, '#c8ef5a', .4, -9); burst(e.x, e.y, 20, p, 1.5, true); spark(e.x, e.y, 16, '#c8ef5a', e.r * 2.2, .5, 16, 24); pillar(e.x, e.y, '#2a5a10', '#c8ef5a', .6); shakeIf(own, 7, .04); },
+    demolish(e, t, p, own) { flare(e.x, e.y, 16, p.spark, 260, .24); const x1 = e.x2 === undefined ? e.x : e.x2, y1 = e.y2 === undefined ? e.y : e.y2, x0 = e.x, y0 = e.y; for (let i = 0; i <= 7; i++) { const f = i / 7, X = lerp(x0, x1, f), Y = lerp(y0, y1, f); dustRing(X, Y, 60, 2); chips(X, Y, 3, '#c8a080', 340, 22); spark(X, Y, 2, p.spark, 220, .3, 12, 16); } beam(x0, y0, x1, y1, p.mid, 26, .3, 4); arcs(x0, y0, 10, x1, y1, 10, p.spark2, .24, 26); shakeIf(own, 8, .045); },
   };
   const PHIT = {
     snipeFull(e, t, p, own) { flash(e.x, e.y, 22, p, 54); ring(e.x, e.y, 84, p.ring, .22, 16); spark(e.x, e.y, own ? 7 : 3, p.spark, 340, .26, 14, 22); },
@@ -891,6 +993,28 @@ const { FX, fxEvent } = (() => {
     polymorph(e, t, p) { sigil('hex', e.x, e.y, 70, '#ffd78a', .34, 2, 12); coins(e.x, e.y, 5, { sp: 180, vz: 360 }); },
     lockdown(e, t, p) { arcs(e.x, e.y, 160, e.x, e.y, 16, '#ff3a20', .1); flash(e.x, e.y, 20, p, 30); },
   };
+
+  const lineBoom = (e, fn, n = 6) => { const x0 = e.x, y0 = e.y, x1 = e.x2 === undefined ? e.x : e.x2, y1 = e.y2 === undefined ? e.y : e.y2; for (let i = 0; i <= n; i++) { const f = i / n; fn(lerp(x0, x1, f), lerp(y0, y1, f), i); } return [x0, y0, x1, y1]; };
+  Object.assign(BOOM, {
+    thunder(e, t, p, own) { const [x0, y0, x1, y1] = lineBoom(e, (X, Y, i) => { later(i * .025, () => { skyBolt(X, Y, i % 2 ? p.mid : '#ffffff', .18); ring(X, Y, 62, p.ring, .22, 2); spark(X, Y, 2, p.spark, 300, .22, 11, 14); }); }, 7); beam(x0, y0, x1, y1, p.mid, 22, .24, 8); flare(lerp(x0, x1, .5), lerp(y0, y1, .5), 20, p.core, 360, .24); shakeIf(own, 8, .05); },
+    bubble(e, t, p) { ring(e.x, e.y, e.r * 1.3, p.ring, .3); ring(e.x, e.y, e.r * .8, p.core, .22, 20); splash(e.x, e.y, 1.6); flare(e.x, e.y, 30, p.core, 120, .16); rise(e.x, e.y, 6, p.mid, 40, .55, 9); },
+    skyward(e, t, p, own) { wave(e.x, e.y, e.r * 1.6, p.mid, .4); ring(e.x, e.y, e.r * 1.2, p.ring, .3); dustRing(e.x, e.y, e.r * .7, 5); rays(e.x, e.y, 6, p.mid, e.r * 1.3, 6, .24, 16, .26); flutter(e.x, e.y, 6, '#fff6e0'); flare(e.x, e.y, 18, p.core, e.r * 1.8, .2); shakeIf(own, 4, .024); },
+    meteordrop(e, t, p, own) { const b = add(BEAMK, e.x + 60, e.y - 460, 30, .2); b.dx = e.x; b.dy = e.y; b.R = 46; b.col = p.mid; later(.06, () => { wave(e.x, e.y, e.r * 1.9, p.mid, .55); sigil('crash', e.x, e.y, e.r * 1.1, p.mid, .55, 0, 2); ring(e.x, e.y, e.r * 1.2, p.ring, .36); ring(e.x, e.y, e.r * .6, p.core, .22, 8); dustRing(e.x, e.y, e.r * .8, 9); chips(e.x, e.y, 12, p.chip, e.r * 2.6, 24); rays(e.x, e.y, 10, p.mid, e.r * 1.5, 9, .3, 18, .15); flare(e.x, e.y, 26, '#ffffff', e.r * 2, .3); flutter(e.x, e.y, 8, '#fff6e0'); }); shakeIf(own, 10, .06); },
+    phantom(e, t, p) { for (let i = 0; i < 6; i++) { const a = i / 6 * TAU + rnd(-.3, .3); cut(e.x + Math.cos(a) * 40, e.y + Math.sin(a) * 34, a + 1.57, 70, i % 2 ? '#ff8ae0' : '#8ae0ff', .24, 22); } ring(e.x, e.y, e.r, p.ring, .28, 14); flare(e.x, e.y, 26, '#ffffff', 170, .16); spark(e.x, e.y, 7, p.mid, 300, .3, 12, 22); },
+    scorch(e, t, p, own) { ring(e.x, e.y, e.r, p.ring, .36, 4); wave(e.x, e.y, e.r * 1.3, p.mid, .4); rise(e.x, e.y, 10, p.spark, e.r * .8, .9, 12); flare(e.x, e.y, 14, p.core, e.r * 1.6, .2); shakeIf(own, 2.5, .014); },
+    inferno(e, t, p, own) { flare(e.x, e.y, 30, p.core, e.r * 1.9, .34); wave(e.x, e.y, e.r * 1.9, p.mid, .6); sigil('crash', e.x, e.y, e.r, p.mid, .6, 2, 2); pillar(e.x, e.y, p.out, p.mid, .8); for (let i = 0; i < 6; i++) later(i * .05, () => { const a = i / 6 * TAU, X = e.x + Math.cos(a) * e.r * .7, Y = e.y + Math.sin(a) * e.r * .56; pillar(X, Y, p.out, p.mid, .5); rise(X, Y, 3, p.spark, 30, .8, 12); puff(X, Y, 2, 1, 50, .8, 34, 60); }); ring(e.x, e.y, e.r * 1.2, p.ring, .42); burst(e.x, e.y, 26, p, 1.6, true); chips(e.x, e.y, 8, p.chip, e.r * 2.4, 24); shakeIf(own, 11, .07); },
+    pounce(e, t, p, own) { const a = Math.random() * Math.PI; for (const s of [-1, 0, 1]) cut(e.x + Math.cos(a + 1.57) * s * 22, e.y + Math.sin(a + 1.57) * s * 22, a, 140, s ? p.mid : '#ffffff', .18, 22); ring(e.x, e.y, e.r * 1.3, p.ring, .26, 6); dustRing(e.x, e.y, e.r * .7, 5); chips(e.x, e.y, 4, p.chip, 300, 14); shakeIf(own, 4, .026); },
+    bombard(e, t, p, own) { const b = add(BEAMK, e.x + 40, e.y - 300, 24, .14); b.dx = e.x; b.dy = e.y; b.R = 18; b.col = p.spark; later(.03, () => { wave(e.x, e.y, e.r * 1.6, p.mid, .42); sigil('crash', e.x, e.y, e.r * .95, p.mid, .4, 0, 2); ring(e.x, e.y, e.r * 1.1, p.ring, .3); dustRing(e.x, e.y, e.r * .7, 6); chips(e.x, e.y, 8, '#a08878', e.r * 2.6, 22); flare(e.x, e.y, 20, p.core, e.r * 1.6, .22); burst(e.x, e.y, 22, p, 1, true); }); shakeIf(own, 6, .036); },
+    earthbreak(e, t, p, own) { const [x0, y0, x1, y1] = lineBoom(e, (X, Y, i) => { later(i * .022, () => { dustRing(X, Y, 62, 3); chips(X, Y, 3, '#a08878', 400, 22); spark(X, Y, 2, p.spark, 320, .3, 13, 14); puff(X, Y, 1, 1, 38, .6, 18, 60); }); }, 8); beam(x0, y0, x1, y1, p.mid, 34, .34, 3); beam(x0, y0, x1, y1, p.spark, 12, .46, 3); arcs(x0, y0, 8, x1, y1, 8, p.spark, .3, 34); flare(lerp(x0, x1, .5), lerp(y0, y1, .5), 12, p.core, 380, .28); shakeIf(own, 12, .07); },
+    dance(e, t, p) { ring(e.x, e.y, e.r, p.ring, .3, 14); flare(e.x, e.y, 24, p.core, 150, .18); },
+  });
+  Object.assign(PHIT, {
+    firebolt(e, t, p, own) { flash(e.x, e.y, 20, p, 40); ring(e.x, e.y, 60, p.ring, .2, 16); spark(e.x, e.y, own ? 8 : 4, p.spark, 300, .3, 12, 22); rise(e.x, e.y, own ? 5 : 2, p.mid, 30, .6, 10); puff(e.x, e.y, 1, 1, 26, .5, 26, 40); },
+    splitshot(e, t, p, own) { flash(e.x, e.y, 22, p, 30); for (let i = 0; i < 3; i++) { const a = i / 3 * TAU + rnd(-.4, .4); cut(e.x, e.y, a, 80, i === 0 ? '#ff8ae0' : i === 1 ? '#8ae0ff' : '#ffffff', .16, 22); } spark(e.x, e.y, own ? 5 : 2, p.mid, 280, .24, 10, 22); },
+    riptide(e, t, p, own) { splash(e.x, e.y, 1.6); ring(e.x, e.y, 76, p.ring, .24, 14); spark(e.x, e.y, own ? 5 : 2, p.spark, 240, .26, 11, 20); },
+    thread(e, t, p) { sigil('root', e.x, e.y, 60, p.mid, .34, 2, 12); flare(e.x, e.y, 22, p.core, 110, .14); arcs(e.x, e.y, 60, e.x, e.y, 18, p.mid, .3, 4); },
+    mirrors(e, t, p) { const a = Math.random() * TAU; beam(e.x + Math.cos(a) * 180, e.y + Math.sin(a) * 140, e.x, e.y, Math.random() < .5 ? '#ff8ae0' : '#8ae0ff', 6, .16, 22); flare(e.x, e.y, 24, '#ffffff', 90, .1); },
+  });
 
   // ---------- zones on the ground: sigils and dressed lines, under the units ----------
   function zst(z) { let v = ZST.get(z.id); if (!v) { v = { t: 0, x: z.x, y: z.y }; if (ZST.size > 60) ZST.delete(ZST.keys().next().value); ZST.set(z.id, v); } return v; }
@@ -919,6 +1043,13 @@ const { FX, fxEvent } = (() => {
         return true;
       }
       case 'miasma': {
+        if (z.fx === 'scorch' || z.fx === 'meteordrop') {
+          const hot = friendly ? '255,146,56' : '255,90,50', cold = friendly ? '#ffd46a' : '#ff6a3c';
+          ctx.fillStyle = rgba(hot, .13 * fade); ctx.beginPath(); ctx.ellipse(X, Y, R, Ry, 0, 0, TAU); ctx.fill();
+          ctx.strokeStyle = rgba(hot, .7 * fade); ctx.lineWidth = 2; ctx.beginPath(); ctx.ellipse(X, Y, R * (.96 + Math.sin(T * 7) * .02), Ry * (.96 + Math.sin(T * 7) * .02), 0, 0, TAU); ctx.stroke();
+          if (dt > 0 && (st.t -= dt) <= 0) { st.t = quality >= 2 ? .07 : .13; const a = Math.random() * TAU, d = Math.sqrt(Math.random()) * z.r; rise(z.x + Math.cos(a) * d, z.y + Math.sin(a) * d * .85, 1, Math.random() < .5 ? pal.mid : cold, 6, rnd(.5, .85), rnd(9, 14)); }
+          return true;
+        }
         const isSmoke = z.fx === 'smoke', crash = z.fx === 'crash', tint = isSmoke ? 1 : 0;
         if (crash) { drawSig('crash', X, Y, R, friendly ? pal.mid : '#ff3e28', fade * .4, 0); return true; }
         ctx.fillStyle = rgba(isSmoke ? '120,126,140' : friendly ? '182,236,58' : '255,110,60', .11 * fade + (friendly ? 0 : .05)); ctx.beginPath(); ctx.ellipse(X, Y, R, Ry, 0, 0, TAU); ctx.fill();
@@ -944,7 +1075,26 @@ const { FX, fxEvent } = (() => {
         ctx.fillStyle = '#ffffff'; for (let i = 0; i < 4; i++) { const f = 1 - ((Tl + i / 4) % 1), mx0 = (ax + bx) / 2, my0 = (ay + by) / 2 - 18 * Z, x = (1 - f) * (1 - f) * bx + 2 * (1 - f) * f * mx0 + f * f * ax, y = (1 - f) * (1 - f) * by + 2 * (1 - f) * f * my0 + f * f * ay; ctx.beginPath(); ctx.arc(x, y, 2.4 * Z + .6, 0, TAU); ctx.fill(); }
         return true;
       }
+      case 'tidewave': {
+        const dx = z.dx || 1, dy = z.dy || 0, wx = -dy, wy = dx, W = z.r; ctx.lineCap = 'round';
+        for (let i = 0; i < 3; i++) { const b = i * 16, X0 = z.x - dx * b, Y0 = z.y - dy * b; lineBetween(X0 - wx * W, Y0 - wy * W, X0 + wx * W, Y0 + wy * W, friendly ? (i ? pal.mid : pal.core) : '#ff5a3c', (8 - i * 2.4) * Z); }
+        if (dt > 0 && (st.t -= dt) <= 0) { st.t = .07; const o = rnd(-1, 1) * W; splash(z.x + wx * o, z.y + wy * o, 1); }
+        return true;
+      }
+      case 'mirrors': {
+        ctx.strokeStyle = rgba(friendly ? '232,200,255' : '255,62,40', .6 * fade); ctx.lineWidth = 1.5; ctx.beginPath(); ctx.ellipse(X, Y, R, Ry, 0, 0, TAU); ctx.stroke();
+        for (let i = 0; i < 8; i++) { const a = T * .5 + i / 8 * TAU, H = (34 + Math.sin(T * 3 + i) * 6) * Z, mx = X + Math.cos(a) * R, my = Y + Math.sin(a) * Ry, cq = Math.max(.18, Math.abs(Math.sin(a + T * .7))), w = 15 * Z * cq, c = i % 2 ? '255,138,224' : '138,224,255'; ctx.fillStyle = rgba(c, .3 * fade); ctx.fillRect(mx - w, my - H, w * 2, H); ctx.strokeStyle = rgba(c, .9 * fade); ctx.lineWidth = 1.4; ctx.strokeRect(mx - w, my - H, w * 2, H); ctx.fillStyle = rgba('255,255,255', .7 * fade); ctx.fillRect(mx - w * .3, my - H, w * .5, H); }
+        return true;
+      }
+      case 'puppet': {
+        const hop = Math.abs(Math.sin(T * 4)) * 5 * Z, sz = 36 * Z, tint = friendly ? pal.mid : '#ff5a44', sp = Art.seal('puppeteer', tint), top = Y - 96 * Z;
+        ctx.drawImage(Art.shadow(), X - sz * .7, Y - sz * .3, sz * 1.4, sz * .6);
+        ctx.drawImage(sp, X - sz / 2, Y - sz * .9 - hop, sz, sz);
+        ctx.strokeStyle = rgba(friendly ? '232,122,232' : '255,90,68', .75 * fade); ctx.lineWidth = 1.1; ctx.beginPath(); for (const o of [-.34, 0, .34]) { ctx.moveTo(X + o * sz * 1.4, top); ctx.lineTo(X + o * sz * .7, Y - sz * .8 - hop); } ctx.moveTo(X - sz * .6, top); ctx.lineTo(X + sz * .6, top); ctx.stroke();
+        return true;
+      }
       case 'orbit': {
+        if (z.fx === 'entrench') { const o = unitRef(z.owner); if (!o) return true; const q = (typeof posNow === 'function') ? posNow(o, Math.min(1, (G.acc || 0) / DT)) : o, XP = sx(q.x), YP = sy(q.y), n = 6; ctx.strokeStyle = rgba(friendly ? '255,146,56' : '255,62,40', .7); ctx.lineWidth = 2 * Z; ctx.beginPath(); ctx.ellipse(XP, YP, 62 * Z, 62 * Z * TILT, 0, 0, TAU); ctx.stroke(); ctx.fillStyle = friendly ? '#8a7870' : '#a04030'; for (let i = 0; i < n; i++) { const a = T * 1.2 + i / n * TAU, rx = XP + Math.cos(a) * 62 * Z, ry = YP + Math.sin(a) * 62 * Z * TILT; ctx.fillRect(rx - 6 * Z, ry - 14 * Z, 12 * Z, 14 * Z); ctx.fillStyle = '#ffb060'; ctx.fillRect(rx - 6 * Z, ry - 14 * Z, 12 * Z, 2.4 * Z); ctx.fillStyle = friendly ? '#8a7870' : '#a04030'; } return true; }
         const o = unitRef(z.owner), ang = z.ang || 0, rad = z.orbit || 170; if (!o) return true; const px0 = o.x, py0 = o.y, q = (typeof posNow === 'function') ? posNow(o, Math.min(1, (G.acc || 0) / DT)) : o, ox = q.x, oy = q.y, Xb = ox + Math.cos(ang) * rad, Yb = oy + Math.sin(ang) * rad; void px0; void py0;
         ctx.strokeStyle = rgba(friendly ? '230,209,156' : '255,62,40', .3); ctx.lineWidth = 1.4; ctx.beginPath(); ctx.ellipse(sx(ox), sy(oy), rad * Z, rad * Z * TILT, 0, 0, TAU); ctx.stroke();
         lineBetween(ox, oy, Xb, Yb, INK, 5 * Z + 1); lineBetween(ox, oy, Xb, Yb, '#9aa3b2', 2.2 * Z);
@@ -953,7 +1103,10 @@ const { FX, fxEvent } = (() => {
       }
       case 'fissure': {
         const x0 = z.x1 === undefined ? z.x : z.x1, y0 = z.y1 === undefined ? z.y : z.y1, x1 = z.x2 === undefined ? z.x : z.x2, y1 = z.y2 === undefined ? z.y : z.y2, a = fracOf(z.t, z.total);
-        lineBetween(x0, y0, lerp(x0, x1, a), lerp(y0, y1, a), INK, 10 * Z); lineBetween(x0, y0, lerp(x0, x1, a), lerp(y0, y1, a), friendly ? pal.mid : '#ff3e28', 4 * Z); return true;
+        const fCol = !friendly ? '#ff3e28' : z.fx === 'thunder' ? '#ffe870' : z.fx === 'earthbreak' ? '#ff9238' : pal.mid;
+        lineBetween(x0, y0, lerp(x0, x1, a), lerp(y0, y1, a), INK, 10 * Z); lineBetween(x0, y0, lerp(x0, x1, a), lerp(y0, y1, a), fCol, 4 * Z);
+        if (z.fx === 'thunder' && dt > 0 && (st.t -= dt) <= 0) { st.t = .1; const q = lerp(x0, x1, a), r2 = lerp(y0, y1, a); arcs(q, r2, 6, q + rnd(-70, 70), r2 + rnd(-40, 40), 6, fCol, .1, 12); }
+        return true;
       }
       case 'decoy': {
         const o = unitRef(z.owner); if (!o || (!friendly && !litAt(z.x, z.y, 40))) return true; const sp = worldSprite(o), hasF = sp.T ? sp.T.ready : true; if (!hasF) return true; const v = 22 + Math.abs(Math.sin(T * 10)) * 5, W = artR(o) * Z, Xd = sx(z.x), Yd = sy(z.y);
@@ -1040,6 +1193,14 @@ const { FX, fxEvent } = (() => {
   // A unique last word per champion. ux,uy runs from the killer through the victim. k is 1 for your own kills and deaths and about .6 for a kill you merely witness.
   const seal = (kit, x, y, r, col, life = .34) => overlay(4, x, y, 34, life, { spr: Art.seal(kit, col), r });
   const FIN = {
+    voltaic(x, y, ux, uy, p, k) { for (let i = 0; i < 6; i++) later(i * .04, () => { skyBolt(x + rnd(-110, 110) * k, y + rnd(-70, 70) * k, i % 2 ? p.mid : '#ffffff', .2); }); ring(x, y, 160 * k, p.ring, .3, 16); flare(x, y, 28, p.core, 320 * k, .28); spark(x, y, 14, p.spark, 520, .42, 16, 26); },
+    tidecaller(x, y, ux, uy, p, k) { pillar(x, y, p.out, p.mid, .7); splash(x, y, 3); sigil('coven', x, y, 200 * k, p.mid, .55, -3, 3); for (let i = 0; i < 3; i++) later(i * .09, () => ring(x, y, (240 - i * 60) * k, i % 2 ? p.core : p.ring, .3, 4)); },
+    paragon(x, y, ux, uy, p, k) { const b = add(BEAMK, x + 40, y - 420, 30, .24); b.dx = x; b.dy = y; b.R = 44; b.col = p.mid; later(.1, () => { wave(x, y, 340 * k, p.mid, .55); ring(x, y, 200 * k, p.core, .34); rays(x, y, 8, p.mid, 280 * k, 9, .32, 20, .39); flutter(x, y, 14, '#fff6e0'); flare(x, y, 30, '#ffffff', 340 * k, .26); }); },
+    mirage(x, y, ux, uy, p, k) { for (let i = 0; i < 6; i++) { const a = i / 6 * TAU, X = x + Math.cos(a) * 190 * k, Y = y + Math.sin(a) * 150 * k; later(i * .03, () => { beam(X, Y, x, y, i % 2 ? '#ff8ae0' : '#8ae0ff', 8, .2, 26); cut(X, Y, a + 1.57, 70, '#ffffff', .2, 26); }); } later(.2, () => { flare(x, y, 30, '#ffffff', 300 * k, .24); ring(x, y, 150 * k, p.ring, .28, 16); spark(x, y, 12, p.mid, 440, .4, 15, 26); }); },
+    cinder(x, y, ux, uy, p, k) { pillar(x, y, p.out, p.mid, .7); sigil('crash', x, y, 210 * k, p.mid, .5, 2, 3); rise(x, y, 18, p.spark, 130, 1.1, 13); puff(x, y, 7, 1, 54, .9, 30, 110); wave(x, y, 280 * k, p.mid, .55); later(.12, () => { ring(x, y, 170 * k, p.ring, .3, 12); flare(x, y, 34, p.core, 300 * k, .26); }); },
+    ravager(x, y, ux, uy, p, k) { const a = Math.atan2(uy, ux); for (let i = 0; i < 3; i++) later(i * .08, () => { const o = (i - 1) * .9 + a; for (const s of [-1, 0, 1]) cut(x + Math.cos(o + 1.57) * s * 30, y + Math.sin(o + 1.57) * s * 30, o, 220 * k, s ? p.mid : '#ffffff', .2, 26); }); later(.26, () => { flutter(x, y, 14, '#c8243a'); ring(x, y, 140 * k, p.ring, .3, 20); spark(x, y, 12, p.spark, 460, .4, 16, 26); }); },
+    cataclysm(x, y, ux, uy, p, k) { sigil('fissure', x, y, 300 * k, p.mid, .7, 0, 2); sigil('stomp', x, y, 240 * k, p.spark, .5, 0, 2); wave(x, y, 420 * k, p.mid, .6); dustRing(x, y, 170 * k, 9); chips(x, y, 12, '#a08878', 460, 30); for (let i = 0; i < 6; i++) { const an = i / 6 * TAU + rnd(-.3, .3); arcs(x, y, 8, x + Math.cos(an) * 280 * k, y + Math.sin(an) * 220 * k, 6, p.spark, .3, 34); } G.shake = Math.max(G.shake, 8); },
+    puppeteer(x, y, ux, uy, p, k) { for (let i = 0; i < 8; i++) later(i * .03, () => { const X = x + rnd(-100, 100) * k, Y = y + rnd(-70, 70) * k; arcs(X, Y, 520, x, y, 26, i % 2 ? p.mid : '#ffffff', .34, 6); }); sigil('salute', x, y, 200 * k, p.mid, .6, 2.6, 4); later(.3, () => { flare(x, y, 30, p.core, 280 * k, .24); ring(x, y, 170 * k, p.ring, .3, 14); spark(x, y, 10, p.spark, 400, .36, 14, 26); }); },
     vesper(x, y, ux, uy, p, k) { sigil('mark', x, y, 170 * k, p.mid, .36, 3); later(.07, () => { beam(x - ux * 1400, y - uy * 1400, x + ux * 340, y + uy * 340, p.mid, 12, .26, 30); ring(x, y, 130 * k, p.ring, .26, 20); spark(x, y, 8, p.spark, 460, .3, 15, 28); }); },
     kade(x, y, ux, uy, p, k) { const a0 = Math.atan2(uy, ux); cut(x, y, a0 + .8, 200 * k, p.mid, .2, 26); later(.08, () => cut(x, y, a0 - .8, 200 * k, p.mid, .2, 26)); later(.17, () => { beam(x - ux * 210, y - uy * 210, x + ux * 220, y + uy * 220, '#ffffff', 7, .16, 26); spark(x, y, 9, p.spark, 400, .32, 16, 26); ring(x, y, 120 * k, p.ring, .22, 20); }); },
     ione(x, y, ux, uy, p, k) { for (let i = 0; i < 6; i++) later(i * .05, () => { const ax = x + rnd(-110, 110) * k, ay = y + rnd(-60, 60) * k; beam(ax + 130, ay - 220, ax, ay, p.mid, 8, .15, 12); ring(ax, ay, 40, p.ring, .2); spark(ax, ay, 3, p.spark, 240, .26, 12, 12); }); },
@@ -1056,8 +1217,12 @@ const { FX, fxEvent } = (() => {
   function finisher(u, by, x, y, own) {
     const kit = by && by.champ, F = FIN[kit], dx = by ? x - by.x : 1, dy = by ? y - by.y : 0, L = Math.hypot(dx, dy) || 1, ux = dx / L, uy = dy / L, p = palK(by || u), k = own ? 1 : .62;
     if (F) F(x, y, ux, uy, p, k);
-    if (kit) seal(kit, x, y, (own ? 150 : 96), p.mid);
-    wave(x, y, own ? 300 : 180, p.mid, .5);
+    // The killer's mark: stamped in the air for a beat, then burned into the ground for a while longer.
+    if (kit) { seal(kit, x, y, (own ? 170 : 96), p.mid, .42); const d = add(SIGILK, x, y, 2, own ? 1.5 : .9); d.spr = Art.seal(kit, p.mid); d.R = own ? 130 : 86; d.rot = 0; d.vr = 0; d.alpha = .26; }
+    wave(x, y, own ? 340 : 180, p.mid, .5);
+    flare(x, y, 30, p.core, own ? 300 : 180, .24);
+    if (by && by.kind === 'champ') { const vk = visOf(by); poseStart(vk, 'killspin', ux, uy, by); }
+    if (own) impactFrame(kit, p.mid, x, y);
   }
   // Fireworks over a win. Launched in a short volley.
   function fireworks(x, y, col, n) {
@@ -1078,6 +1243,22 @@ const { FX, fxEvent } = (() => {
     if (near) { hitStop(.09); slowMo(.5, .4); cine(1, 1); G.shake = Math.max(G.shake, 11); G.punch = Math.max(G.punch, .07); }
   }
 
+  // Basic attacks. Short, sharp and one gesture each; the impact lands a beat after the wind-up.
+  const ATK_STYLE = { kade: 'thrust', duelist: 'thrust', shiv: 'thrust', sable: 'slash', gravel: 'smash', ironjaw: 'smash', cataclysm: 'smash', paragon: 'smash', ravager: 'claw', voltaic: 'zap' };
+  function basicAtk(u, t, ux, uy) {
+    const own = u === G.me, near = own || t === G.me, pal = palK(u), an = Math.atan2(uy, ux), X = u.x + ux * 56, Y = u.y + uy * 56;
+    if ((u.range || 0) >= 200) { if (own) { flash(u.x + ux * 30, u.y + uy * 30, 22, pal, 20); flare(u.x + ux * 30, u.y + uy * 30, 22, pal.mid, 60, .08); } return; }
+    if (!near) { cut(X, Y, an, 54, pal.mid, .1, 20); return; }
+    const land = () => { if (!t.alive && t.alive !== undefined) return; flare(t.x, t.y, 22, pal.core, own ? 76 : 52, .09); spark(t.x, t.y, own ? 3 : 2, pal.spark, 240, .18, 9, 22); };
+    switch (ATK_STYLE[u.champ] || 'slash') {
+      case 'thrust': cut(X + ux * 26, Y + uy * 26, an, 104, pal.mid, .11, 22); cut(X + ux * 36, Y + uy * 36, an, 56, '#ffffff', .07, 22); break;
+      case 'smash': ring(X, Y, 62, pal.ring, .13, 8); slash(u.x, u.y, ux, uy, 102, pal.mid, .13); if (own) dust(X, Y, .9); break;
+      case 'claw': for (const o of [-1, 0, 1]) cut(X + -uy * o * 13, Y + ux * o * 13, an + o * .16, 74, o ? pal.mid : '#ffffff', .1, 22); break;
+      case 'zap': arcs(u.x, u.y, 22, X + ux * 30, Y + uy * 30, 22, pal.mid, .09, 14); flare(X, Y, 22, pal.mid, 70, .08); break;
+      default: slash(u.x, u.y, ux, uy, 112, pal.mid, .13); slash(u.x, u.y, ux, uy, 84, pal.core, .08);
+    }
+    later(.05, land);
+  }
   function fxEvent(e) {
     const s = G.s, me = G.me; if (!s || !me) return;
     switch (e.e) {
@@ -1094,7 +1275,7 @@ const { FX, fxEvent } = (() => {
             number(u.x, u.y, 46, e.a, e.crit ? '#ffd08a' : '#fff6e2', true, .8, u.id, side);
             if (u.kind !== 'tower' && u.kind !== 'minion') flash(u.x, u.y, 18, pal, heavy ? 58 : 40);
           } else if (mine) {
-            spark(u.x, u.y, e.crit ? 4 : 2, SPARKY, 170, .2, 9, 18); if (e.crit) { hitMark(u, GOLD); flash(u.x, u.y, 16, pal, 40); }
+            spark(u.x, u.y, e.crit ? 4 : 2, SPARKY, 170, .2, 9, 18); flare(u.x, u.y, 20, e.crit ? GOLD : '#ffffff', e.crit ? 120 : 54, .08); if (e.crit) { hitMark(u, GOLD); flash(u.x, u.y, 16, pal, 40); }
             number(u.x, u.y, 42, e.a, e.crit ? '#ffd08a' : '#fff6e2', !!e.crit, .6, u.id, side);
           } else if (onMe) {
             number(u.x, u.y, 44, e.a, '#ff7a62', !!big, .8, 'me', 44);
@@ -1159,11 +1340,11 @@ const { FX, fxEvent } = (() => {
         const u = unitById(e.u); if (!u) return; const v = visOf(u), own = u === me, enemy = u.team !== me.team;
         if (enemy && !seesU(u)) return;
         const dx = e.dx || u.fx || 1, dy = e.dy || u.fy || 0, pal = palK(u), fx = e.fx || 'bolt';
-        poseStart(v, fx, dx, dy, u);
+        poseStart(v, fx, dx, dy, u, e.slot);
         if (enemy) v.spin = Math.max(v.spin, .5); // a quick half-turn tells you an enemy is casting
         if (!onScreen(u.x, u.y, 180) && !(e.e === 'fire')) return;
-        const R = CASTFX[fx], k = own ? 1 : .55;
-        if (R) R(u, dx, dy, pal, own, k, v);
+        const R = (e.slot !== undefined && SIG[u.champ] && SIG[u.champ][e.slot]) || CASTFX[fx], k = own ? 1 : .55;
+        if (R) R(u, dx, dy, pal, own, k, v, e);
         else if (own) { ring(u.x, u.y, 74, pal.ring, .2); flash(u.x + dx * 40, u.y + dy * 40, 18, pal, 24); G.punch = Math.max(G.punch, .008); }
         break;
       }
@@ -1219,7 +1400,7 @@ const { FX, fxEvent } = (() => {
         const u = unitById(e.u); if (!u) return; const v = visOf(u), t = e.t ? unitById(e.t) : null;
         const dx = t ? t.x - u.x : (u.fx || 0), dy = t ? t.y - u.y : (u.fy || 0), l = Math.hypot(dx, dy) || 1, k = u === me ? 12 : u.kind === 'champ' ? 6 : 3;
         v.rx += dx / l * k; v.ry += dy / l * k;
-        if (u.kind === 'champ' && (u.range || 0) < 200 && t && (u === me || t === me) && onScreen(u.x, u.y, 120)) slash(u.x, u.y, dx / l, dy / l, 110, u === me ? palT(u.team).mid : '#ff6a4a', .14);
+        if (u.kind === 'champ' && t && onScreen(u.x, u.y, 120)) basicAtk(u, t, dx / l, dy / l);
         break;
       }
       case 'stun': { const u = unitById(e.u); if (u === me && onScreen(u.x, u.y, 140)) ring(u.x, u.y, 70, '#ffe89e', .24, 30); break; }
