@@ -9,13 +9,15 @@
 //   Attack-mode buttons: atkChamp atkMinion atkTower
 //   Store and progress: storeBuy equip masteryUnlock rankUp rankDown
 //   Stingers: stingOk stingBad stingHero stingVillain
+//   Shop tabs: shopCat(categoryKey). Lane proficiency: profPick(index). Settings: targetPref accountOpen copyCode importOk importBad resetWarn resetDone.
+//   Any element with data-snd="name" plays that effect on press and replaces the generic tap (see soundhooks).
 //   Handled by soundhooks from match events, no UI call needed: beaconPlace beaconHit beaconKill pingAttack pingRetreat pingOmw pingHelp pingDanger, every ability, and buy/sell/evolve as a backstop.
 // Sound.has(name) says whether an effect exists. Sound.recent(name, ms) says whether it played in the last ms.
 const Sound = (() => {
   let ac = null, master, hush, ducker, duckWet, mus, musWet, sfx, farBus, revIn, rev, noise, rainG, windG, padA, padB, padF, arpF, timer = null, lean = false, autoLean = false, fxReady = false, musReady = false, susT = 0;
   const L = {}, W = {}, B = { pluck: [], clink: [], spic: [], cbell: [] }, last = {}, live = [], early = [], mixL = [];
-  const S = { mode: null, sting: false, dim: false, step: 0, next: 0, sec: 'intro', bar: 0, nextSec: null, jump: false, pass: {}, key: 0, cycle: 0, sinceBig: 99, chorusRun: 0, intensity: 0, I: 0, music: true, sfx: true, late: 0, night: 0, mixT: 0, hand: 0, stingAt: -99, duckAt: 0, duckAmt: 0, side: null, sideAt: 0, hope: .5, bright: null, darkL: false, flip: null, lowAt: 0, thLast: 0 };
-  const OUT_TRIM = 1, MUS = .4, SFX = .85, FX_WET = .45, LOW_GAP = 90, LAYERS = ['pad', 'bass', 'arp', 'lead', 'horn', 'ctr', 'perc', 'taiko'];
+  const S = { mode: null, sting: false, dim: false, step: 0, next: 0, sec: 'intro', bar: 0, nextSec: null, jump: false, pass: {}, key: 0, cycle: 0, sinceBig: 99, chorusRun: 0, intensity: 0, I: 0, music: true, sfx: true, late: 0, night: 0, mixT: 0, hand: 0, stingAt: -99, duckAt: 0, duckAmt: 0, side: null, sideAt: 0, hope: .5, bright: null, darkL: false, flip: null, lowAt: 0, thLast: 0, claim: 0 };
+  const OUT_TRIM = 1, MUS = .4, SFX = .85, FX_WET = .38, LOW_GAP = 90, LAYERS = ['pad', 'bass', 'arp', 'lead', 'horn', 'ctr', 'perc', 'taiko'];
   const SEND = { pad: .5, bass: 0, arp: .28, lead: .5, horn: .36, ctr: .28, perc: .04, taiko: .08 };
   const m2f = n => 440 * Math.pow(2, (n - 69) / 12);
   const clamp = (v, a = 0, b = 1) => v < a ? a : v > b ? b : v;
@@ -73,7 +75,7 @@ const Sound = (() => {
     for (let i = 0; i < n; i++) { const x = (i / (n - 1) * 2 - 1) * 2, a = Math.abs(x); curve[i] = Math.sign(x) * (a <= .8 ? a : .8 + .19 * Math.tanh((a - .8) / .19)); }
     clip.curve = curve; clip.connect(hush);
     const trim = gain(OUT_TRIM * .5, clip);
-    const comp = ac.createDynamicsCompressor(); comp.threshold.value = -14; comp.knee.value = 8; comp.ratio.value = 4; comp.attack.value = .003; comp.release.value = .16; comp.connect(trim);
+    const comp = ac.createDynamicsCompressor(); comp.threshold.value = -14; comp.knee.value = 8; comp.ratio.value = 4; comp.attack.value = .002; comp.release.value = .1; comp.connect(trim);
     const shelf = filt('highshelf', 8200, 0, comp); shelf.gain.value = -2;
     const hp = filt('highpass', 55, .7, shelf);
     master = gain(.9, hp); ducker = gain(1, master);
@@ -84,7 +86,7 @@ const Sound = (() => {
     const mLow = filt('lowshelf', 170, 0, mMid); mLow.gain.value = -5;
     mus = gain(S.music ? MUS : 0, filt('highpass', 78, .8, mLow));
     sfx = gain(S.sfx ? SFX : 0, master); farBus = filt('lowpass', 1500, .4, sfx);
-    rev = ac.createConvolver(); rev.connect(filt('highpass', 220, .7, gain(.2, master))); revIn = gain(1, rev);
+    rev = ac.createConvolver(); rev.connect(filt('highpass', 220, .7, gain(.2, master))); const pre = ac.createDelay(.05); pre.delayTime.value = .02; pre.connect(rev); revIn = gain(1, pre);
     // Music reverb is ducked with the dry music, so its tail never washes over an effect.
     duckWet = gain(1, revIn); musWet = gain(S.music ? MUS * 1.6 : 0, duckWet);
     const nb = ac.createBuffer(1, ac.sampleRate * 2, ac.sampleRate), nd = nb.getChannelData(0); for (let i = 0; i < nd.length; i++) nd[i] = Math.random() * 2 - 1; noise = nb;
@@ -139,7 +141,7 @@ const Sound = (() => {
   }
   function finish(b, d, sr) {
     let pk = 0; for (let i = 0; i < d.length; i++) { const a = Math.abs(d[i]); if (a > pk) pk = a; }
-    const g = pk ? .9 / pk : 1, at = sr * .0012 | 0, rl = sr * .012 | 0, n = d.length;
+    const g = pk ? .9 / pk : 1, at = sr * .0005 | 0, rl = sr * .012 | 0, n = d.length;
     for (let i = 0; i < n; i++) d[i] *= g;
     for (let i = 0; i < at; i++) d[i] *= i / at;
     for (let i = 0; i < rl; i++) d[n - 1 - i] *= i / rl;
@@ -162,12 +164,12 @@ const Sound = (() => {
     J.push(() => { B.ring = { f: 1318.51, b: render(1, [[1318.51, 1, .5], [2640, .22, .26], [3637, .22, .2]]) }; });
     // Bodies carry energy at 110 to 300 Hz as well as the fundamental, so an impact still has weight on a phone.
     J.push(() => { B.sub = render(.5, [[72, .75, .14, 170, .03], [144, .8, .08, 260, .02], [288, .35, .03]], .25, .006, .3); });
-    J.push(() => { B.boom = render(.95, [[66, .7, .3, 150, .06], [132, .85, .18, 230, .04], [264, .42, .08, 340, .02]], .5, .1, .16); });
-    J.push(() => { B.punch = render(.2, [[150, 1, .06, 420, .018], [300, .5, .03, 520, .012], [640, .14, .012]], .5, .008, .4); });
+    J.push(() => { B.boom = render(.72, [[66, .7, .22, 160, .05], [132, .85, .13, 250, .03], [264, .46, .06, 380, .016], [530, .16, .018]], .55, .07, .2); });
+    J.push(() => { B.punch = render(.16, [[150, 1, .05, 460, .014], [300, .55, .024, 600, .009], [640, .2, .01], [1250, .12, .005]], .6, .006, .45); });
     J.push(() => { B.snap = render(.09, [[1250, .5, .012], [2100, .3, .008]], 1, .012, .55); });
     // Reverb: exponential noise tail that darkens over time, like a stone hall.
     J.push(() => {
-      const sr = ac.sampleRate, len = sr * (lean ? 1.2 : 1.8) | 0, ir = ac.createBuffer(2, len, sr), dk = Math.pow(.001, 1 / len);
+      const sr = ac.sampleRate, len = sr * (lean ? 1.3 : 2.4) | 0, ir = ac.createBuffer(2, len, sr), dk = Math.pow(.001, 1 / len);
       for (let ch = 0; ch < 2; ch++) { const d = ir.getChannelData(ch); let e = 1, lp = 0; for (let i = 0; i < len; i++) { lp += (Math.random() * 2 - 1 - lp) * (.6 - .5 * i / len); d[i] = lp * e; e *= dk; } }
       rev.buffer = ir;
     });
@@ -189,6 +191,37 @@ const Sound = (() => {
       for (let c = 0; c < 11; c++) { const at = Math.random() * .42 * sr | 0, f = 1300 + Math.random() * 2400, g = .4 + Math.random() * .6, k = Math.exp(-1 / (sr * .018)); let e = g; for (let i = at; i < n && e > .001; i++) { d[i] += Math.sin((i - at) * w * f) * e + Math.sin((i - at) * w * f * 1.73) * e * .4; e *= k; } }
       B.chainL = finish(b, d, sr);
     });
+    // Signature material for the newer champions. Every one keeps its energy between 300 Hz and 5 kHz so it survives a phone speaker.
+    J.push(() => { // electric arc: gated, jumping square tone
+      const sr = ac.sampleRate, n = sr * .42 | 0, b = ac.createBuffer(1, n, sr), d = b.getChannelData(0), k = Math.exp(-1 / (sr * .11)); let e = 1, p = 0, f = 1800, gate = 0, left = 0, lp = 0;
+      for (let i = 0; i < n; i++) { if (--left <= 0) { gate = Math.random() < .68 ? 1 : 0; left = (sr * (.002 + Math.random() * .012)) | 0; f = 700 + Math.random() * 3000; } p += f / sr; lp += ((p % 1 < .5 ? 1 : -1) * gate - lp) * .5; d[i] = lp * e; e *= k; }
+      B.arc = finish(b, d, sr);
+    });
+    J.push(() => { // water: rising bubbles
+      const sr = ac.sampleRate, n = sr * .42 | 0, b = ac.createBuffer(1, n, sr), d = b.getChannelData(0), w = 2 * Math.PI / sr;
+      for (let c = 0; c < 9; c++) { const at = (c === 0 ? 0 : Math.random() * .34 * sr) | 0, f0 = 340 + Math.random() * 620, len = sr * (.03 + Math.random() * .05) | 0, g = .5 + Math.random() * .5; let p = 0; for (let i = 0; i < len && at + i < n; i++) { const x = i / len; p += w * f0 * (1 + x * 1.1); d[at + i] += Math.sin(p) * g * Math.sin(Math.PI * Math.min(1, x * 6)) * (1 - x); } }
+      B.bubble = finish(b, d, sr);
+    });
+    J.push(() => { const s = B.shine, n = s.length, r = ac.createBuffer(1, n, ac.sampleRate), a = s.getChannelData(0), z = r.getChannelData(0); for (let i = 0; i < n; i++) z[i] = a[n - 1 - i]; B.sheen = r; }); // a glint running backwards, for illusions
+    J.push(() => { // fire: a soft roar under random snaps
+      const sr = ac.sampleRate, n = sr * .62 | 0, b = ac.createBuffer(1, n, sr), d = b.getChannelData(0), k = Math.exp(-1 / (sr * .17)); let e = .4, lp = 0, hp = 0;
+      for (let i = 0; i < n; i++) { const x = Math.random() * 2 - 1; lp += (x - lp) * .16; hp += (lp - hp) * .012; d[i] = (lp - hp) * e * 1.7; e *= k; }
+      for (let c = 0; c < 34; c++) { const at = Math.pow(Math.random(), 1.6) * .54 * sr | 0, f = 1000 + Math.random() * 2800, g = .25 + Math.random() * .75, q = Math.exp(-1 / (sr * .0035)); let v = g; for (let i = at, p = 0; i < n && v > .002; i++, p += f / sr) { d[i] += (p % 1 < .5 ? v : -v); v *= q; } }
+      B.fire = finish(b, d, sr);
+    });
+    J.push(() => { // beast: a voiced snarl, additive with two formants and a fast flutter
+      const sr = ac.sampleRate, n = sr * .56 | 0, b = ac.createBuffer(1, n, sr), d = b.getChannelData(0), f0 = 92, w = 2 * Math.PI * f0 / sr, h = []; for (let k = 1; k <= 26; k++) { const fr = f0 * k; h.push(Math.exp(-Math.pow((fr - 620) / 260, 2)) + .7 * Math.exp(-Math.pow((fr - 1500) / 380, 2)) + .1 / k); }
+      for (let i = 0; i < n; i++) { const t = i / sr, fl = .55 + .45 * Math.sin(2 * Math.PI * 27 * t + 3 * Math.sin(2 * Math.PI * 7 * t)), env = Math.min(1, t / .018) * Math.exp(-t / .2); let v = 0; const ph = w * i * (1 - .1 * t); for (let k = 0; k < h.length; k++) v += Math.sin(ph * (k + 1)) * h[k]; d[i] = v * fl * env; }
+      B.growl = finish(b, d, sr);
+    });
+    J.push(() => { // siege engine: three strokes of a heavy piston
+      const sr = ac.sampleRate, n = sr * .5 | 0, b = ac.createBuffer(1, n, sr), d = b.getChannelData(0), w = 2 * Math.PI / sr;
+      [[0, 1], [.1, .62], [.19, .44]].forEach(([s0, g]) => { const at = s0 * sr | 0; for (const [f, a, dec] of [[176, 1, .07], [352, .8, .05], [737, .5, .03], [1370, .3, .016]]) { const k = Math.exp(-1 / (sr * dec)); let e = a * g; for (let i = at; i < n && e > .001; i++) { d[i] += Math.sin((i - at) * w * f) * e; e *= k; } } let v = g * .7, lp = 0; const q = Math.exp(-1 / (sr * .012)); for (let i = at; i < n && v > .002; i++) { lp += (Math.random() * 2 - 1 - lp) * .5; d[i] += lp * v; v *= q; } });
+      B.piston = finish(b, d, sr);
+    });
+    J.push(() => { B.wire = string(52, .4, .75, .6); }); // a taut puppet string
+    J.push(() => { B.mbox = render(.5, [[1568, 1, .16], [4698, .34, .05], [3136, .2, .08]]); }); // music-box tine
+    J.push(() => { B.wood = render(.1, [[660, .7, .018], [1180, .35, .01], [1950, .15, .006]], .3, .004, .5); });
     J.fxN = J.length;
     J.push(() => { B.kick = render(.26, [[78, .75, .09, 210, .03], [156, .55, .04, 280, .015]], .14, .005, .5); });
     J.push(() => { B.clack = render(.14, [[420, .5, .02], [980, .25, .012]], 1, .035, .6); });
@@ -203,6 +236,7 @@ const Sound = (() => {
     const saws = (f, n, dec, tilt) => Array.from({ length: n }, (_, k) => [f * (k + 1), 1 / Math.pow(k + 1, tilt), dec / (1 + k * .16)]);
     for (const n of [50, 60, 72]) mode(B.spic, n, f => render(.36, saws(f, 12, .11, .85), .4, .012, .6));
     J.push(() => { B.snr = render(.34, [[195, .55, .06, 240, .012], [330, .3, .035]], 1.1, .11, .85); });
+    J.push(() => { B.tom = render(.5, [[98, .55, .2, 180, .03], [196, .8, .12, 310, .02], [392, .38, .05], [610, .16, .02]], .55, .02, .5); }); // taiko: the body is up where phones can play it
     J.push(() => { B.rim = render(.06, [[1700, .6, .012], [2650, .35, .008]], .4, .008, .6); });
     // Timpani sampled at D3, with no real fundamental below it: phones keep the attack, and larger speakers get the rest.
     J.push(() => { B.timp = render(.9, [[146.83, .75, .36, 165, .03], [220.2, .45, .24], [293.7, .34, .16], [381, .16, .08], [73.4, .3, .22, 90, .04]], .28, .012, .4); });
@@ -286,6 +320,26 @@ const Sound = (() => {
     const a = osc(W.th, hz, t, end + .12, 0, f);
     a.frequency.setValueAtTime(from, t); a.frequency.exponentialRampToValueAtTime(hz, t + Math.min(.12, dur * .4));
     if (dur > .4 && !lean) { const lg = gain(0); osc('sine', 6.2, t + .1, end + .1, 0, lg); lg.gain.setValueAtTime(0, t + .1); lg.gain.linearRampToValueAtTime(28, t + .45); lg.connect(a.detune); }
+  }
+
+  // The trailer hit: open fifths in low brass, a filter that tears open, and a long fall. Harmonics carry it on small speakers.
+  function braam(t, ns, dur, v) {
+    const thin = lean || count(musEnds) > musCap() * .5;
+    if (!room(1, ns.length * (thin ? 1 : 2))) return;
+    const g = gain(0, L.horn), f = filt('lowpass', 300, 1.1, g), end = t + dur, pk = 2800 + S.I * 1400;
+    f.frequency.setValueAtTime(260, t); f.frequency.exponentialRampToValueAtTime(pk, t + .07); f.frequency.setTargetAtTime(520, t + .12, dur * .34);
+    g.gain.setValueAtTime(.0001, t); g.gain.linearRampToValueAtTime(v, t + .03); g.gain.setTargetAtTime(v * .3, t + .12, dur * .4); g.gain.setValueAtTime(v * .3, Math.max(t + .14, end - .06)); g.gain.linearRampToValueAtTime(.0001, end + .16);
+    voice([g], t, end + .18);
+    for (const n of ns) { const hz = m2f(n); osc('sawtooth', hz, t, end + .18, -7, f); if (!thin) osc('sawtooth', hz, t, end + .18, 8, f); }
+  }
+  // Long-bow strings for the high lines: a narrow saw pair with late vibrato, dropped first when voices are short.
+  function strings(t, n, dur, v, atk = .08) {
+    if (lean || !room(1, 2)) return;
+    const hz = m2f(n), end = t + dur, g = gain(0, L.ctr), f = filt('lowpass', Math.min(5200, hz * 3.4), .5, g);
+    g.gain.setValueAtTime(.0001, t); g.gain.linearRampToValueAtTime(v, t + atk); g.gain.setValueAtTime(v, Math.max(t + atk, end - .08)); g.gain.linearRampToValueAtTime(.0001, end + .16);
+    voice([g], t, end + .18);
+    const a = osc('sawtooth', hz, t, end + .18, -6, f), b = osc('sawtooth', hz, t, end + .18, 6, f);
+    if (dur > .7) { const lg = gain(0); osc('sine', 5.6, t + .3, end + .16, 0, lg); lg.gain.setValueAtTime(0, t + .3); lg.gain.linearRampToValueAtTime(8, t + .7); lg.connect(a.detune); lg.connect(b.detune); }
   }
 
   // ---------- score ----------
@@ -434,6 +488,8 @@ const Sound = (() => {
       bass(t, ch[0] + 12, .13, spb * (len - 3));
       pluck(H(t), ch[0] + 24, .13, arpF, 1.1, 1);
       if (i % 4 === 0) smp(B.timp, H(t), rateTo(ch[0]), .12, L.taiko, 0, false, 1);
+      if (i % 8 === 0) braam(t, [ch[0] + 12, ch[0] + 19, ch[0] + 24], spb * len * 1.6, vil ? .05 : .042);
+      if (rich && i >= 8) strings(H(t), T[2] + 12, spb * len * .96, .022, .3);
     }
     // Harp figure: rolling in the 4/4, limping in the villain's 12/8.
     if (vil ? (b % 3 === 0 || b % 12 === 5) : (b % 2 === 0 && (b || i % 2))) { const tones = [T[0], T[1], T[2], T[0] + 12, T[1] + 12, T[2] + 12]; pluck(H(t, .016), tones[(vil ? ARP12 : ARP16)[vil ? b : b / 2 + (i % 2) * 8]], V(.095 * (vil ? ACC12 : ACC16)[b]), arpF, 1, 1); }
@@ -469,6 +525,8 @@ const Sound = (() => {
       if (i === 0 || pr[i - 1] !== name) { let run = 1; while (i + run < pr.length && pr[i + run] === name) run++; choir(t, S.sec === 'chorus' ? T.concat(T[0] + 12) : T, spb * len * run, .024 + .012 * I, S.sec === 'b' ? W.oo : W.ah); }
       if (ending && (S.nextSec === 'chorus' || S.sec === 'brk') && B.swell) smp(B.swell, t + Math.max(0, spb * len - B.swell.duration), 1, .1, mus, 0, false, 2);
       if (bar === 0 && S.sec === 'chorus' && B.crash) smp(B.crash, t, 1, .11, mus, 0, false, 2);
+      if (S.sec === 'chorus' && bar % 8 === 0) braam(t, [root + 12, root + 19, root + 24], spb * len, .075 + late * .02 + (bar ? .012 : 0));
+      else if (bar === 0 && S.sec === 'verse' && h > .35) braam(t, [root + 12, root + 19], spb * len, .04);
     }
     // Rhythm section. The bass sits an octave higher than written so phones can play it.
     const bc = sec.bs[b];
@@ -485,6 +543,9 @@ const Sound = (() => {
     // Coin ticks are the signature in the kit, and most of the top end.
     if (sec.h[b] === 'x' || (I > .6 && (vil ? b % 3 === 1 : b % 2 === 1) && Math.random() < .5)) smp(pick(B.clink), H(t), rp(.08) * (vil ? .74 : .95), V(.1 * a, .28), L.perc, 0, false, 0);
     if (sec.t[b] === 'x') smp(B.timp, H(t, .004), rateTo(root), V(.36 * a, .1), L.taiko, 0, false, 2);
+    // Taiko ensemble under the big sections. Sits above the timpani, so it reads on a phone where the timpani cannot.
+    if (S.sec === 'chorus' && B.tom && (vil ? 'x..x..x..x.x' : 'x..x..x.x.x.x..x')[b] === 'x') smp(B.tom, H(t, .005), rateTo(root) * (b === 0 ? .85 : 1), V((.2 + I * .08 + late * .06) * a, .1), L.taiko, 0, false, 1);
+    if (S.sec === 'chorus' && I > .55 && sec.os[b] === 'x') { if (count(musEnds) < musCap() * .7) spic(H(t, .006), root + 12, V(.11 * a, .1)); }
     if ((late > .35 || (vil && mine > .72)) && S.sec !== 'brk' && b === (vil ? 3 : 4)) smp(B.timp, H(t), rateTo(root) * .75, V(.13 + late * .08, .1), L.taiko, 0, false, 1);
     if (late > .7 && S.sec === 'chorus' && b >= len - 4) smp(B.snr, H(t), 1.15, V(.09), L.perc, 0, false, 0);
     if (ending && b >= len / 2 && (b >= len * .75 || b % 2 === 0)) { const c = (b - len / 2 + 1) / (len / 2); smp(B.timp, H(t, .004), rateTo(root) * (.95 + c * .2), V(.08 + c * .15, .08), L.taiko, 0, false, 2); }
@@ -505,7 +566,7 @@ const Sound = (() => {
         break;
       }
       case 'b': {
-        if (b === 0) brass(t, T.slice(0, 3), spb * (len - 1), .018 + I * .012);
+        if (b === 0) { brass(t, T.slice(0, 3), spb * (len - 1), .018 + I * .012); if (bar >= 4) strings(t, T[2] + 12, spb * (len - 1), .018 + I * .012, .35); }
         line(BT[i], b, (n, d) => { if (vil) { lead(n, d, V(.06, .08)); } else { horn(H(t), up(n) - 12, spb * d * .96, V(.075 * nv, .08)); if (pass % 2 === 0) coinbell(H(t), up(n), V(.1 * nv, .1)); else trumpet(H(t), up(n), spb * d * .95, V(.045 * nv, .08), L.horn);
           if (d >= 8) coinbell(H(t), up(n) + 12, V(.06 * nv, .1)); } });
         break;
@@ -521,6 +582,8 @@ const Sound = (() => {
         line(TH[i], b, (n, d) => { lead(n, d, V(.078 + pk * .012, .06)); if (!vil) horn(H(t), up(n) - 12, spb * d * .96, V(.07, .06)); else horn(H(t), up(n), spb * d * .92, V(.055, .06)); coinbell(H(t), up(n) + 12, V(.08 * nv, .1)); });
         line(CT[i], b, (n, d) => pluck(H(t, .012), n + K + 12, V(.08 * nv), L.ctr, .7, 1));
         if (b === 0) brass(H(t), T, spb * (vil ? 7 : 9), .03 + late * .012);
+        if (pk || late > .5) line(TH[i], b, (n, d) => { if (d >= 4) strings(H(t), up(n) + 12, spb * d * .96, V(.036 * nv, .06)); });
+        if (pk && b === 0 && late > .5) brass(H(t), T.map(n => n + 12), spb * 6, .024);
         break;
       }
     }
@@ -619,7 +682,7 @@ const Sound = (() => {
   function tone(f, d, type = 'sine', v = .08, slide = 1, w = 0, dly = 0) {
     if (fxFull()) return;
     const t = fxT + dly, g = gain(0, fxOut); if (w) g.connect(wet());
-    g.gain.setValueAtTime(.0001, t); g.gain.exponentialRampToValueAtTime(v, t + .003); g.gain.exponentialRampToValueAtTime(.0001, t + .003 + d);
+    g.gain.setValueAtTime(.0001, t); g.gain.exponentialRampToValueAtTime(v, t + .0016); g.gain.exponentialRampToValueAtTime(.0001, t + .0016 + d);
     const o = osc(type, f, t, t + d + .05, 0, g, true);
     if (slide !== 1) { o.frequency.setValueAtTime(f, t); o.frequency.exponentialRampToValueAtTime(Math.max(20, f * slide), t + d); }
   }
@@ -628,7 +691,7 @@ const Sound = (() => {
     const t = fxT + dly, n = ac.createBufferSource(), g = gain(0, fxOut), f = filt(type, fr, q, g); if (w) g.connect(wet());
     n.buffer = noise; n.playbackRate.value = .85 + Math.random() * .3; n.connect(f);
     if (to) { f.frequency.setValueAtTime(fr, t); f.frequency.exponentialRampToValueAtTime(to, t + d); }
-    g.gain.setValueAtTime(.0001, t); g.gain.exponentialRampToValueAtTime(v, t + .004); g.gain.exponentialRampToValueAtTime(.0001, t + .004 + d);
+    g.gain.setValueAtTime(.0001, t); g.gain.exponentialRampToValueAtTime(v, t + .002); g.gain.exponentialRampToValueAtTime(.0001, t + .002 + d);
     n.start(t, Math.random() * 1.2); n.stop(t + d + .05); track(t + d + .05, true);
   }
   const sam = (b, rate, v, w = 0, dly = 0) => smp(b, fxT + dly, rate, v, fxOut, 0, true, 2, w ? wet() : null);
@@ -671,20 +734,45 @@ const Sound = (() => {
   const anvil = (r, v, w = 0, dly = 0) => sam(B.anvil, r * rp(.03), v, w, dly);
   const rasp = (r, v, w = 0, dly = 0) => sam(B.rasp, r * rp(.05), v, w, dly);
   const trail = (notes, v, gap, w = 1, dly = 0) => notes.forEach((n, i) => chime(n, v, w, dly + i * gap));
+  const arc = (r, v, w = 0, dly = 0) => sam(B.arc, r * rp(.05), v, w, dly);
+  const bubble = (r, v, w = 0, dly = 0) => sam(B.bubble, r * rp(.05), v, w, dly);
+  const fire = (r, v, w = 0, dly = 0) => sam(B.fire, r * rp(.05), v, w, dly);
+  const growl = (r, v, w = 0, dly = 0) => sam(B.growl, r * rp(.04), v, w, dly);
+  const piston = (r, v, w = 0, dly = 0) => sam(B.piston, r * rp(.03), v, w, dly);
+  const mbox = (r, v, w = 0, dly = 0) => sam(B.mbox, r, v, w, dly);
+  const wood = (r, v, dly = 0) => sam(B.wood, r * rp(.04), v, 0, dly);
+  const wire = (r, v, w = 0, dly = 0) => { if (B.wire) sam(B.wire.b, r, v, w, dly); };
+  const sheen = (r, v, w = 1, dly = 0) => sam(B.sheen, r, v, w, dly);
   // Basic attacks, one per character. Very short: they repeat for the whole match.
   const ATK = {
     vesper() { crack(1.5, .13); flick(1.5, .06); },
-    kade() { hiss('bandpass', 1500, 1, .1, .05, 0, 0, 3400); flick(1.05, .08); },
+    kade() { hiss('bandpass', 1500, 1, .13, .05, 0, 0, 3400); flick(1.05, .1); tone(1109, .04, 'triangle', .06, 1, 1); },
     ione() { tone(880, .05, 'triangle', .07, 1.5); flick(1.7, .05); },
     solenne() { tone(1175, .06, 'sine', .08, 1.2, 1); glint(.03, 0, 1.3); },
-    sable() { hiss('bandpass', 2800, 1.6, .1, .035, 0, 0, 5200); flick(1.9, .04); },
+    sable() { hiss('bandpass', 2800, 1.6, .17, .035, 0, 0, 5200); flick(1.9, .08); tone(2090, .03, 'sine', .05, .4); },
     gravel() { sam(B.punch, 1, .16); metal(.5, .06); },
     deadbolt() { crack(1.05, .15); rasp(1.7, .05); },
-    duelist() { blade(1.5, .1); hiss('bandpass', 2100, 1.2, .07, .04, 0, 0, 1100); },
+    duelist() { metal(1.5, .1); tone(1568, .05, 'triangle', .07, .75); rasp(2, .05); },
     hex() { rough(1, () => tone(349, .07, 'sawtooth', .06, .55)); flick(.7, .05); },
-    plague() { hiss('bandpass', 1050, 1.1, .09, .07, 0, 0, 1800); metal(1.35, .05); },
+    plague() { hiss('bandpass', 1050, 1.1, .15, .07, 0, 0, 1800); metal(1.35, .08); },
     shiv() { blade(1.9, .09); rasp(2.2, .05); },
     ironjaw() { sam(B.punch, .85, .18); anvil(.8, .07); },
+    voltaic() { arc(1.7, .13); tone(1760, .03, 'square', .025, .6); },
+    tidecaller() { bubble(1.7, .13); tone(660, .05, 'sine', .07, 1.6); },
+    paragon() { sam(B.punch, 1.35, .16); tone(988, .05, 'triangle', .07, 1, 1); },
+    mirage() { flick(2, .09); tone(1318.5, .04, 'sine', .07, .75, 1); tone(1760, .03, 'sine', .035, .75, 0, .05); },
+    cinder() { fire(2, .13); rough(1, () => tone(220, .05, 'sawtooth', .05, .5)); },
+    ravager() { blade(1.05, .12); growl(1.5, .1); },
+    cataclysm() { piston(1.5, .15); sam(B.punch, 1.1, .16); },
+    puppeteer() { wire(2, .13); wood(1.5, .09); },
+  };
+  // What a champion's ability sounds like when it lands, layered under the shared hit. One or two voices each.
+  const CONTACT = {
+    vesper() { crack(1.8, .09); }, kade() { blade(1.25, .1); chime(85, .04, 1); }, ione() { chime(84, .05, 1); tone(740, .05, 'triangle', .05, 1.5); }, solenne() { glint(.08, 0, 1.25); tone(1175, .05, 'sine', .05, 1, 1); },
+    sable() { blade(1.7, .08); tone(2090, .03, 'sine', .05, .4); }, gravel() { anvil(1.1, .11); }, deadbolt() { crack(1.1, .11); rasp(1.8, .04); }, duelist() { metal(1.4, .1); tone(1568, .04, 'triangle', .05, .75); }, hex() { rasp(1.3, .08); chime(68, .04, 1); },
+    plague() { rough(1, () => tone(311, .06, 'sawtooth', .05, .6)); }, shiv() { blade(1, .1); rasp(2, .04); }, ironjaw() { anvil(.8, .13); },
+    voltaic() { arc(1.3, .14); }, tidecaller() { bubble(1.3, .13); }, paragon() { anvil(1.25, .1, 1); }, mirage() { glint(.06, 0, 1.4); tone(1568, .05, 'sine', .04, .6, 0, .05); },
+    cinder() { fire(1.3, .13); }, ravager() { blade(.85, .12); growl(1.7, .07); }, cataclysm() { piston(1.2, .13); anvil(.9, .06); }, puppeteer() { wood(1.1, .12); wire(1.5, .08); },
   };
   const FX = {
     // interface: short, soft, mid-band
@@ -737,8 +825,8 @@ const Sound = (() => {
     thud() { sam(B.punch, .72 * rp(.08), .42); hiss('lowpass', 480, .5, .1, .1); },
     // The player's ability connected: an unmistakable pair of notes on top of whatever impact plays. Clean for heroes, snarled for villains.
     hitConfirm(p = 1) {
-      if (S.side === 'villain') { rough(1.2, () => { tone(622.3 * p, .05, 'sawtooth', .22); tone(880 * p, .09, 'sawtooth', .2, 1, 1, .045); }); sam(B.punch, 1.5, .13); return; }
-      tone(987.8 * p, .05, 'triangle', .19); tone(1480 * p, .1, 'triangle', .18, 1, 1, .045); flick(1.1, .08, 1, .045); sam(B.punch, 1.5, .1);
+      if (S.side === 'villain') { rough(1.2, () => { tone(622.3 * p, .04, 'sawtooth', .22); tone(880 * p, .08, 'sawtooth', .2, 1, 1, .03); }); sam(B.punch, 1.5, .13); return; }
+      tone(987.8 * p, .04, 'triangle', .19); tone(1480 * p, .09, 'triangle', .18, 1, 1, .03); flick(1.1 * p, .08, 1, .03); sam(B.punch, 1.5, .1);
     },
     pow() { impact(0); },
     bam() { impact(1); sam(B.boom, 1.8, .2); },
@@ -810,6 +898,66 @@ const Sound = (() => {
     grab() { sam(B.punch, .95, .4); anvil(1.2, .16); rasp(1, .1); hiss('bandpass', 500, .8, .18, .22, 1, .12, 1900); },
     demolish() { rasp(.55, .2, 1); sam(B.boom, 1.9, .22); crack(.5, .24); for (let i = 0; i < 4; i++) crack(.7 + i * .13, .14 - i * .018, .07 + i * .07); },
     demolishHit() { sam(B.boom, 1.05, .5); anvil(.5, .24, 1); crack(.42, .2, .01); hiss('lowpass', 1000, .4, .16, .4, 1, 0, 260); shower(3, .6); },
+    skHit(k) { const f = CONTACT[k]; if (f) f(); },
+    // Heroes, 10.0. Slot names: Q is the first ability, W the second, R the ultimate; Hit is a skill landing, Burst a big area going off.
+    voltaicQ() { arc(1, .3); hiss('bandpass', 2400, 1, .1, .06, 0, 0, 5200); flick(1.4, .09); chime(90, .05, 1, .03); },
+    voltaicW() { tone(440, .16, 'sawtooth', .06, 3, 1); arc(1.4, .2, 0, .02); hiss('bandpass', 1200, .9, .1, .16, 1, 0, 4200); chime(86, .05, 1, .1); },
+    voltaicR() { arc(.8, .3, 1); tone(330, .24, 'sawtooth', .07, 4, 1); sam(B.sub, 1.6, .3, 0, .16); crack(.62, .34, .18); arc(1.25, .24, 0, .18); trail([86, 90, 93], .08, .05, 1, .18); glint(.14, .2); },
+    voltaicHit() { arc(1.3, .24); crack(1.7, .11); },
+    voltaicBurst() { sam(B.boom, 1.25, .42); crack(.7, .3); arc(.85, .3, 1); glint(.12); hiss('bandpass', 3400, .8, .12, .22, 1, 0, 900); },
+    tidecallerQ() { air(400, 2200, .7, .2, .22); bubble(1, .24, 1); chime(74, .06, 1, .05); },
+    tidecallerW() { bloom('sine', 392, .4, .08, 0, 1.5); bubble(.8, .2, 1); chime(78, .06, 1, .06); chime(85, .05, 1, .14); },
+    tidecallerR() { air(260, 1600, .6, .26, .46); sam(B.boom, 1.6, .28, 0, .24); bubble(.7, .24, 1, .16); trail([69, 74, 81, 86], .075, .07, 1, .16); bloom(W.oo, 220, .7, .05); },
+    tidecallerHit() { bubble(1.3, .22); tone(330, .1, 'triangle', .07, 2); },
+    tidecallerBurst() { sam(B.boom, 1.35, .38); air(1600, 320, .7, .22, .32); bubble(.75, .28, 1); chime(69, .08, 1, .02); },
+    paragonW() { sam(B.punch, 1.2, .26); for (const n of [69, 76]) tone(m2f(n), .13, 'sawtooth', .065, 1, 1); hiss('bandpass', 900, .9, .13, .1, 0, 0, 2600); flick(.9, .07, 1, .03); },
+    paragonQ() { hiss('bandpass', 500, .8, .2, .3, 1, 0, 2800); tone(293.7, .3, 'sine', .07, 2, 1); flick(.85, .11, 1); chime(81, .05, 1, .16); },
+    paragonR() { for (const [n, d] of [[62, 0], [69, .08], [74, .16]]) { tone(m2f(n), .34, 'sawtooth', .065, 1, 1, d); tone(m2f(n + 12), .3, 'triangle', .08, 1, 1, d); } sam(B.boom, 1.1, .48, 0, .2); anvil(.85, .26, 1, .2); glint(.18, .22); chime(86, .1, 1, .24); },
+    paragonHit() { sam(B.punch, 1.1, .26); anvil(1.25, .15, 1); tone(587.3, .08, 'triangle', .07, 1, 1); },
+    paragonBurst() { sam(B.boom, 1, .48); anvil(.8, .28, 1); trail([74, 81, 86], .085, .05, 1, .03); hiss('lowpass', 1400, .4, .14, .28, 1, 0, 320); },
+    mirageQ() { crack(1.4, .26); flick(1.7, .1, 1); crack(1.9, .09, .075); flick(2.1, .05, 1, .075); glint(.05, .02, 1.3); },
+    mirageW() { sheen(2.4, .18); tone(1400, .13, 'sine', .07, .5, 1); tone(1050, .13, 'sine', .045, .5, 1, .07); tone(787, .13, 'sine', .03, .5, 1, .14); },
+    mirageR() { sheen(1.5, .26); tone(620, .42, 'triangle', .06, 3, 1); crack(.78, .4, .44); sam(B.boom, 1.5, .3, 0, .44); crack(1.2, .14, .55); crack(1.6, .07, .64); glint(.14, .46); chime(90, .08, 1, .46); },
+    mirageHit() { glint(.09, 0, 1.4); crack(1.6, .11); tone(1568, .06, 'sine', .05, .6, 0, .05); },
+    mirageBurst() { sam(B.boom, 1.4, .36); glint(.16); sheen(3, .14); trail([90, 85, 81], .07, .07, 1, .02); },
+    // Villains, 10.0.
+    cinderQ() { hiss('bandpass', 700, .8, .18, .18, 1, 0, 2400); fire(1.4, .22, 1); rough(1.1, () => tone(311, .1, 'sawtooth', .07, .6)); },
+    cinderW() { fire(.9, .28, 1); rough(1.1, () => tone(138.6, .3, 'sawtooth', .08, 1.4, 1)); hiss('lowpass', 1600, .5, .16, .26, 1, 0, 500); },
+    cinderR() { air(300, 2000, .7, .24, .36); fire(.7, .34, 1, .08); sam(B.boom, 1.25, .44, 0, .3); rough(1.4, () => { for (const f of [146.8, 207.7]) tone(f, .5, 'sawtooth', .06, .92, 1, .3); }); },
+    cinderHit() { fire(1.3, .24); crack(1.1, .1); rasp(1.7, .05); },
+    cinderBurst() { sam(B.boom, 1.1, .48); fire(.8, .34, 1); rough(1.4, () => { for (const f of [116.5, 164.8]) tone(f, .3, 'sawtooth', .06, .86, 1); }); hiss('lowpass', 1500, .4, .14, .26, 1, 0, 320); },
+    ravagerQ() { growl(1, .3); blade(.95, .24); rasp(1.3, .11); hiss('bandpass', 1200, .9, .12, .08, 0, 0, 2800); },
+    ravagerW() { growl(.76, .36, 1); rough(1.2, () => tone(110, .24, 'sawtooth', .08, 1.5, 1)); rasp(.7, .12, 1, .06); },
+    ravagerR() { growl(.6, .4, 1); bloom('sawtooth', 98, .7, .07, 0, 2.1); blade(.8, .32, 1, .22); sam(B.punch, .85, .38, 0, .22); blade(1.1, .24, 0, .32); rasp(.9, .16, 1, .22); },
+    ravagerHit() { blade(.85, .26); sam(B.punch, 1.2, .24); growl(1.7, .1); },
+    ravagerBurst() { sam(B.boom, 1.3, .42); growl(.7, .28, 1); blade(.7, .22, 1); rasp(.8, .14, 1); },
+    cataclysmQ() { piston(1, .34); rough(1.3, () => tone(98, .22, 'sawtooth', .09, .8)); anvil(.55, .18, 1); },
+    cataclysmW() { rough(1.4, () => tone(146.8, .36, 'sawtooth', .09, 1.5, 1)); piston(1, .26, 1, .05); anvil(.9, .12, 1); rasp(.7, .14, 1); },
+    cataclysmR() { for (let i = 0; i < 3; i++) piston(.9 + i * .22, .18 + i * .05, 0, i * .17); hiss('bandpass', 500, .8, .22, .5, 1, 0, 2600); sam(B.boom, 1, .5, 0, .54); anvil(.6, .34, 1, .54); crack(.6, .3, .54); shower(3, .6); },
+    cataclysmHit() { piston(.9, .32); anvil(.7, .22); crack(.6, .13); },
+    cataclysmBurst() { sam(B.boom, 1.1, .48); anvil(.62, .32, 1); crack(.62, .28); hiss('lowpass', 1000, .4, .16, .34, 1, 0, 260); shower(3, .55); },
+    puppeteerQ() { wire(1.4, .24); wire(1.9, .17, 0, .06); wood(1.3, .12, .02); tone(740, .08, 'triangle', .05, 1.4, 1, .05); },
+    puppeteerW() { mbox(1, .2, 1); mbox(1.414, .15, 1, .09); wood(1, .14, .05); wire(.9, .16, 1, .03); },
+    puppeteerR() { wire(.7, .34, 1); [1, 1.189, 1.414, 1.682].forEach((r, i) => mbox(r * .75, .16, 1, .1 + i * .09)); rough(1.3, () => { for (const f of [146.8, 207.7]) tone(f, .55, 'sawtooth', .05, .96, 1, .08); }); wood(.7, .22, .42); },
+    puppeteerHit() { wood(1.1, .24); wire(1.5, .2); },
+    puppeteerBurst() { wire(.6, .34, 1); sam(B.boom, 1.4, .34); mbox(.7, .16, 1, .1); mbox(.5, .14, 1, .2); },
+    killStrike() { sam(B.boom, 1.6, .34); blade(1.1, .3); crack(.9, .22); anvil(1.2, .16, 1); hiss('bandpass', 1800, .9, .14, .1, 0, 0, 4400); chime(86, .08, 1, .03); },
+    monsterKill() { sam(B.punch, 1.1, .26); metal(.7, .13, 1); chime(79, .06, 1, .03); },
+    boon() { sam(B.sub, 1.5, .2); [69, 76, 81].forEach((n, i) => chime(n, .07, 1, i * .07)); glint(.08, .14); },
+    levelMax() { sam(B.boom, 1.4, .3); [62, 69, 74, 78, 81, 86, 90].forEach((n, i) => chime(n, .09, 1, i * .055)); for (const n of [62, 69, 74]) tone(m2f(n + 12), .4, 'sawtooth', .05, 1, 1, .2); glint(.18, .3); shower(3, 1); },
+    // Shop tabs, lane proficiency, settings and account.
+    shopCat(k) {
+      const T = { rec: [79, () => glint(.04, 0, 1.2)], attack: [74, () => blade(1.5, .07)], ability: [86, () => chime(93, .04, 1, .02)], tank: [62, () => anvil(1.1, .07)], util: [81, () => flick(1.3, .05)], leg: [90, () => glint(.08)], cons: [76, () => metal(1.2, .07)], city: [69, () => { metal(.9, .07); metal(1.1, .06, 0, .03); }] }[k] || [76, null];
+      sam(B.snap, 1.5, .08); tone(m2f(T[0]), .07, 'triangle', .07, 1, 1); if (T[1]) T[1]();
+    },
+    profPick(i = 0) { const k = Math.abs(i | 0) % 3; sam(B.snap, 1.2, .12); metal(1 + k * .14, .13); tone(m2f([69, 74, 81][k]), .14, 'triangle', .08, 1, 1, .02); chime([81, 86, 90][k], .05, 1, .04); },
+    targetPref() { sam(B.snap, 1.6, .1); tone(880, .05, 'triangle', .07, 1.3, 1); },
+    accountOpen() { tone(329.6, .09, 'triangle', .07, 1.5, 1); flick(.9, .07, 1, .03); },
+    copyCode() { for (let i = 0; i < 3; i++) sam(B.snap, 1.2 + i * .25, .1, 0, i * .05); chime(83, .07, 1, .13); glint(.07, .14); },
+    importOk() { sam(B.punch, 1.2, .22); [69, 74, 78, 86].forEach((n, i) => chime(n, .085, 1, i * .07)); shower(3, 1); glint(.12, .2); },
+    importBad() { rough(1, () => { tone(233, .14, 'sawtooth', .07, .9, 1); tone(196, .2, 'sawtooth', .07, .85, 1, .12); }); anvil(.7, .12, 1, .12); },
+    resetWarn() { for (const d of [0, .14]) tone(466.2, .1, 'sawtooth', .06, 1, 1, d); anvil(.6, .14, 1); },
+    resetDone() { sam(B.boom, 1.3, .3); tone(330, .5, 'triangle', .09, .3, 1); shower(4, .7); },
     // Older names kept for other callers.
     bolt() { metal(.95 * rp(.12), .05); tone(1200 * rp(.08), .04, 'triangle', .03, .6); },
     mbolt() { metal(.6 * rp(.15), .03); },
@@ -830,20 +978,20 @@ const Sound = (() => {
     level() { [74, 81, 86, 89].forEach((n, i) => chime(n, .09, 1, i * .07)); tone(440, .3, 'triangle', .04, 1, 1); glint(.07, .16); },
     forge() { metal(.5, .22, 1); chime(81, .09, 1, .02); hiss('bandpass', 2600, 3, .1, .08, 1); sam(B.sub, 2.1, .14); },
     banVote() { tone(180, .3, 'sawtooth', .07, .7, 1); },
-    lockIn() { tone(392, .12, 'triangle', .08, 1, 1); setTimeout(() => tone(784, .3, 'triangle', .09, 1, 1), 90); },
+    lockIn() { sam(B.punch, 1.7, .16); metal(.8, .11); tone(392, .1, 'triangle', .08, 1, 1); tone(784, .26, 'triangle', .09, 1, 1, .07); chime(86, .06, 1, .09); },
     fundCity() { FX.fund(); },
-    buyLegendary() { [523, 784, 1047, 1568].forEach((f, i) => setTimeout(() => tone(f, .5, 'triangle', .08, 1, 1), i * 70)); sam(B.boom, 1.4, .14); },
+    buyLegendary() { sam(B.boom, 1.4, .24); anvil(1.3, .14, 1); [523, 784, 1047, 1568].forEach((f, i) => tone(f, .44, 'triangle', .08, 1, 1, i * .06)); glint(.14, .16); shower(3, 1); },
     emote() { tone(880, .12, 'sine', .06, 1.3, 1); },
     medal() { tone(1047, .4, 'triangle', .08, 1, 1); FX.clink(1.1); },
-    medalMvp() { [659, 880, 1109, 1319, 1760].forEach((f, i) => setTimeout(() => tone(f, .5, 'triangle', .08, 1, 1), i * 85)); },
-    siren() { for (let i = 0; i < 6; i++) setTimeout(() => tone(i % 2 ? 560 : 720, .24, 'triangle', .05, 1.06, 1), i * 250); },
+    medalMvp() { [659, 880, 1109, 1319, 1760].forEach((f, i) => tone(f, .44, 'triangle', .08, 1, 1, i * .07)); glint(.12, .24); },
+    siren() { for (let i = 0; i < 6; i++) tone(i % 2 ? 560 : 720, .22, 'triangle', .06, 1.06, 1, i * .24); },
     powerDown() { tone(460, 1, 'sawtooth', .06, .1, 1); hiss('lowpass', 700, .5, .12, .5); sam(B.boom, 1.5, .16); },
     dropLand() { sam(B.boom, 1.1, .3); tone(240, .3, 'triangle', .09, .55, 1); },
-    cheer() { hiss('bandpass', 1500, .6, .14, 1.3, 1); [659, 784, 988, 1319].forEach((f, i) => setTimeout(() => tone(f, .34, 'triangle', .06, 1, 1), i * 90)); },
-    eventLost() { [392, 349, 262].forEach((f, i) => setTimeout(() => tone(f, .5, 'sawtooth', .05, .98, 1), i * 170)); },
-    buyback() { sam(B.boom, 1.3, .2); [392, 587, 784, 1175].forEach((f, i) => setTimeout(() => tone(f, .3, 'triangle', .08, 1, 1), i * 60)); },
-    fund() { for (let i = 0; i < 6; i++) setTimeout(() => FX.clink(.9 + i * .12), i * 55); tone(523, .6, 'sine', .06, 1.5, 1); },
-    reinforce() { tone(196, .5, 'sawtooth', .08, 1, 1); setTimeout(() => tone(294, .7, 'sawtooth', .08, 1.02, 1), 180); },
+    cheer() { hiss('bandpass', 1500, .6, .14, 1.1, 1); [659, 784, 988, 1319].forEach((f, i) => tone(f, .3, 'triangle', .07, 1, 1, i * .08)); },
+    eventLost() { [392, 349, 262].forEach((f, i) => tone(f, .44, 'sawtooth', .05, .98, 1, i * .15)); },
+    buyback() { sam(B.boom, 1.3, .24); [392, 587, 784, 1175].forEach((f, i) => tone(f, .28, 'triangle', .08, 1, 1, i * .05)); },
+    fund() { for (let i = 0; i < 6; i++) metal(.9 + i * .12, .12, 0, i * .05); tone(523, .6, 'sine', .06, 1.5, 1); },
+    reinforce() { tone(196, .46, 'sawtooth', .08, 1, 1); tone(294, .64, 'sawtooth', .08, 1.02, 1, .16); },
     consume() { tone(600, .16, 'sine', .07, 1.6, 1); },
     surrender() { tone(330, .4, 'triangle', .07, .8, 1); },
     bossup() { tone(140, 1.3, 'sawtooth', .06, 1.4, 1); tone(210, 1.3, 'triangle', .14, 1.2, 1); sam(B.boom, .85, .36); },
@@ -886,12 +1034,13 @@ const Sound = (() => {
     blast: .35, tower: .5, kill: .4, crash: .4, stomp: .3, rupture: .3, cascade: .28, break: .25, boss: .5, bossup: .4, thunder: .2, deadeye: .3, death: .5, seized: .35, hopeSwell: .3, dread: .4,
     hitConfirm: .22, pow: .25, bam: .4, crit: .28, thud: .3, danger: .45, dangerTower: .4, towerFall: .4, victory: .1, heal: .3, reap: .35, avalanche: .25, avalancheHit: .45, parry: .22, snipeFull: .22,
     lockdown: .35, salute: .4, coven: .3, covenHit: .42, quarantine: .35, cuts: .3, demolish: .45, demolishHit: .35, wrecking: .22, wreckingHit: .3, grab: .28, polymorphHit: .3,
+    voltaicR: .35, voltaicBurst: .4, tidecallerR: .32, tidecallerBurst: .35, paragonR: .45, paragonBurst: .42, mirageR: .35, mirageBurst: .32, cinderR: .42, cinderBurst: .42, ravagerR: .4, ravagerBurst: .36, cataclysmR: .5, cataclysmBurst: .46, puppeteerR: .35, puppeteerBurst: .32, killStrike: .4, levelMax: .4, importOk: .25, resetDone: .3,
     flipSlam: .75, flipReveal: .55, versus: .65, friendJoin: .2, friendLeave: .15, evolve: .3, storeBuy: .35, masteryUnlock: .45, rankUp: .6, rankDown: .35, stingHero: .55, stingVillain: .55, stingOk: .2, stingBad: .2, pingDanger: .3, pingHelp: .2,
   };
   function duck(amount = .4, recover = .5) {
     if (!ac) return; if (S.sting) amount *= .4;
     const t = ac.currentTime, a = clamp(amount, 0, .85); if (t - S.duckAt < .1 && a <= S.duckAmt) return; S.duckAt = t; S.duckAmt = a;
-    for (const g of [ducker, duckWet]) { g.gain.cancelScheduledValues(t); g.gain.setTargetAtTime(1 - a, t, .015); g.gain.setTargetAtTime(1, t + .1 + a * .14, recover); }
+    for (const g of [ducker, duckWet]) { g.gain.cancelScheduledValues(t); g.gain.setTargetAtTime(1 - a, t, .008); g.gain.setTargetAtTime(1, t + .05 + a * .1, recover); }
   }
   function flush() {
     if (!ac || !fxReady || ac.state !== 'running' || !early.length) return;
@@ -901,6 +1050,7 @@ const Sound = (() => {
   function play(name, a, gap = 34, opts) {
     if (!ac || !S.sfx) return;
     const f = FX[name]; if (!f) return;
+    if ((name === 'tap' || name === 'tick' || name === 'clink' || name === 'menuOpen') && !opts && performance.now() < S.claim) return; // the screen already played something specific for this press
     if (!fxReady || ac.state !== 'running') { if (ac.state !== 'closed' && !document.hidden && early.length < 4) early.push({ name, a, gap, opts, at: performance.now() }); return; }
     const vol = opts && num(opts.vol) ? clamp(opts.vol) : 1, pan = opts && num(opts.pan) ? clamp(opts.pan, -1, 1) : 0, low = !!(opts && opts.low);
     // Prominent sounds may exceed the budget slightly: dropping the player's own hit is worse than one more voice.
@@ -912,7 +1062,7 @@ const Sound = (() => {
     fxOut = sfx; fxVol = vol; fxSend = null; fxT = ac.currentTime;
     if (vol < .99 || pan) { const dest = vol < .4 ? farBus : sfx; fxOut = gain(vol, pan ? panTo(pan, dest) : dest); }
     try { f(a); } catch (e) { }
-    if (DUCK[name]) duck(DUCK[name] * vol, DUCK[name] > .45 ? .6 : .35);
+    if (DUCK[name]) duck(DUCK[name] * vol, DUCK[name] > .45 ? .42 : .22);
   }
   function ambience(rain, wind) { if (!ac) return; const t = ac.currentTime; rainG.gain.setTargetAtTime(clamp(rain) * .04, t, .8); windG.gain.setTargetAtTime(clamp(wind) * .03, t, 1.2); }
   function setOn(music, fx) {
@@ -922,6 +1072,8 @@ const Sound = (() => {
   }
   return {
     init, play, setMode, stinger, ambience, setOn, duck,
+    claim(ms) { S.claim = ms ? performance.now() + ms : 0; },
+    voices: () => ac ? { mus: count(musEnds), fx: count(fxEnds) } : { mus: 0, fx: 0 },
     has: name => typeof FX[name] === 'function',
     recent: (name, ms = 500) => last[name] !== undefined && performance.now() - last[name] < ms,
     setSide(v) {
