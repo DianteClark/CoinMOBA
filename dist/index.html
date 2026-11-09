@@ -5548,7 +5548,7 @@ const Art = (() => {
   // face: buffers from buildFace. yaw: radians about the vertical axis. thick: edge thickness in pixels. out: {ctx, W, x, y, id (ImageData), ...}
   function shade(F, yaw, thick, rimTint, emis, opt, target) {
     const S = F.S, R = F.R, cs = Math.cos(yaw), sn = Math.sin(yaw), MCv = matcap(), MCcv = MCC, FL = film(), sw = opt.sweep ? 1 : 0, bp = sw ? -1.8 + Math.min(1.1, Math.abs(yaw)) * 4.1 : 99, gyaw = sw ? Math.sign(yaw) * Math.min(Math.abs(yaw) * 1.75, .46 + Math.abs(yaw) * .42) : yaw, csg = Math.cos(gyaw), sng = Math.sin(gyaw), filmK = opt.film || 0, ink = opt.ink !== false, data = target, N = MCN, half = S / 2, gloss = opt.gloss || 0, edgeC = opt.edge;
-    const ca = Math.max(.08, Math.abs(cs)), Rx = R * ca, Hx = HALFV[0] * cs - HALFV[2] * sn, Hy = HALFV[1], d0x = thick * sn, d0y = thick * Math.sqrt(1 - F.pitch * F.pitch), dmag = Math.hypot(d0x, d0y);
+    const rimL = opt.rimL, boost = opt.boost || 1, ca = Math.max(.08, Math.abs(cs)), Rx = R * ca, Hx = HALFV[0] * cs - HALFV[2] * sn, Hy = HALFV[1], d0x = thick * sn, d0y = thick * Math.sqrt(1 - F.pitch * F.pitch), dmag = Math.hypot(d0x, d0y);
     const nx_a = F.nx, ny_a = F.ny, r_a = F.r, g_a = F.g, b_a = F.b, m_a = F.m, an_a = F.an, sp_a = F.sp, em_a = F.em, a_a = F.a, tx_a = F.tx, ty_a = F.ty;
     const px = opt.W || S;
     // Reversed sign keeps the visible edge consistent through a half turn.
@@ -5577,6 +5577,8 @@ const Art = (() => {
           if (bp < 1.6) { const q = ((su - half) * .7 + (sv - half) * .714) / R - bp, b1 = 1 - q * q / .16, q2 = q + .46, b2 = 1 - q2 * q2 / .012; let bb2 = 0; if (b1 > 0) bb2 += b1 * b1; if (b2 > 0) bb2 += b2 * .7; if (bb2 > 0) { const g = bb2 * (.2 + .8 * m) * (.55 + L * .6) * 1.3; cr += g * (rr * .55 + .55); cg += g * (gg * .55 + .55); cb += g * (bb * .55 + .55); } }
           const e = em_a[idx]; if (e > 0) { cr += eR * e * .5; cg += eG * e * .5; cb += eB * e * .5; }
           if (filmK > 0 && m > .3) { const fi = (nzr * .5 + .5) * (FILMN - 1) | 0, ft = filmK * m; cr *= 1 - ft + ft * FL[fi * 3] * 1.05; cg *= 1 - ft + ft * FL[fi * 3 + 1] * 1.05; cb *= 1 - ft + ft * FL[fi * 3 + 2] * 1.05; }
+          if (rimL) { const ru = (su - half) / R, rv = (sv - half) / (R * F.pitch), r2 = ru * ru + rv * rv; if (r2 > .6) { let q = (r2 - .6) / .4; if (q > 1) q = 1; q = q * q * (.62 + .38 * Math.max(0, ru * .6 + rv * .8)); cr += rimL[0] * q * .85; cg += rimL[1] * q * .85; cb += rimL[2] * q * .85; } }
+          if (boost !== 1) { cr *= boost; cg *= boost; cb *= boost; }
           // Past white, colour bleeds toward white: a highlight that truly blows out.
           const over = Math.max(cr, cg, cb) - 1; if (over > 0) { const q = over * .7; cr += q; cg += q; cb += q; }
           R8 = cr * 255; G8 = cg * 255; B8 = cb * 255; A8 = fA * 255;
@@ -5609,6 +5611,11 @@ const Art = (() => {
         const on = v => v > 128 && v !== 215; if (on(data[i - 1]) || on(data[i + 7]) || on(data[i + 3 - px * 4]) || on(data[i + 3 + px * 4])) { data[i] = 7; data[i + 1] = 9; data[i + 2] = 14; data[i + 3] = 215; }
       }
     }
+    // The halo: a thin spill of team light on the air around the coin, so it lifts off a dark street.
+    if (rimL) {
+      const hr = Math.min(255, rimL[0] * 255), hg = Math.min(255, rimL[1] * 255), hb = Math.min(255, rimL[2] * 255), PP = F.pitch * R;
+      for (let y = 0, i = 0; y < px; y++) for (let x = 0; x < px; x++, i += 4) { if (data[i + 3] > 8) continue; const u = (x + .5 - fcx) / (ca * R), v = (y + .5 - fcy) / PP, r2 = u * u + v * v; if (r2 < .9 || r2 > 1.46) continue; const t = (Math.sqrt(r2) - 1) / .2; if (t >= 1) continue; const q = t < 0 ? 1 : 1 - t; data[i] = hr; data[i + 1] = hg; data[i + 2] = hb; data[i + 3] = q * q * 165; }
+    }
   }
   // ---------- sprites built from faces ----------
   const faces = new Map(); // face buffers, held only until the frames are done
@@ -5638,7 +5645,7 @@ const Art = (() => {
   const WORLD_PITCH = .84;
   function turntable(id, spec, R, N, thick) {
     if (cache.has(id)) return cache.get(id);
-    const ss = R < 40 ? 1.6 : 1.3, Sg = Math.ceil(R * ss * 2 + 2 * (Math.ceil(R * ss * .14) + 4)), S = Math.ceil(Sg / ss), T = { N, S, R, F: null, id, spec, ss, f: new Array(N), left: N, thick, rimT: rimTintOf(spec), emis: rgbF(spec.glow || '#ffffff'), mid: N / 2 | 0, ready: false };
+    const ss = R < 40 ? 1.6 : 1.3, Sg = Math.ceil(R * ss * 2 + 2 * (Math.ceil(R * ss * .14) + 4)), S = Math.ceil(Sg / ss), T = { N, S, R, F: null, id, spec, ss, f: new Array(N), left: N, thick, rimT: rimTintOf(spec), emis: rgbF(spec.glow || '#ffffff'), mid: N / 2 | 0, ready: false, rimL: rgbF(spec.rimLight || (spec.villain ? '#ff4a3a' : '#5cc0ff')) };
     const out = { c: null, R, P: S / 2 - R, S, T, pitched: true };
     cache.set(id, out);
     JOBS.push({ T, i: -1, k: 0, spr: out });
@@ -5651,7 +5658,7 @@ const Art = (() => {
   function bakeFrame(T, i, spr) {
     if (T.f[i]) return;
     const t = nowMs(), yaw = yawOf(i - T.mid, T.N);
-    T.f[i] = canvasFrom(T.S, d => shade(T.F, yaw, T.thick, T.rimT, T.emis, { film: T.spec.film, gloss: T.spec.gloss, sweep: 1 }, d));
+    T.f[i] = canvasFrom(T.S, d => shade(T.F, yaw, T.thick, T.rimT, T.emis, { film: T.spec.film, gloss: T.spec.gloss, sweep: 1, rimL: T.rimL, boost: 1.17 }, d));
     if (i === T.mid && spr) { spr.c = T.f[i]; T.ready = true; }
     T.left--; STAT.bakeMs += nowMs() - t; STAT.frames++;
     if (T.left <= 0) T.F = null;
@@ -5764,10 +5771,10 @@ const Art = (() => {
   };
   const bossSpec = kind => { if (!BOSS_SKIN[kind]) return beastSpec(false, true); const k = BOSS_SKIN[kind]; return { tier: -1, villain: true, rIn: .8, k: .8, skin: k, metal: k.rim, emblem: BOSS_EMB[kind], glow: k.glow }; };
   const bossCoin = (kind, R = 96) => faceSprite(`bossF${kind}|${R}`, bossSpec(kind), R);
-  function bossTurn(kind, R) { return turntable(`bossT${kind}|${R}`, bossSpec(kind), R, 8, R * .3); }
+  function bossTurn(kind, R) { return turntable(`bossT${kind}|${R}`, { ...bossSpec(kind), rimLight: BOSS_COL[kind] || '#ffb060' }, R, 8, R * .3); }
   const BOSS_COL = { warlord: '#ff7a40', foreman: '#ffc24a', sentinel: '#7ae8ff', colossus: '#ffb04a' };
   const monsterCoin = (big, boss) => faceSprite(`bst${boss ? 'b' : big ? 'g' : 'm'}`, beastSpec(big, boss), boss ? 96 : big ? 44 : 28);
-  function monsterTurn(big, boss, R) { return turntable(`bt${boss ? 'b' : big ? 'g' : 'm'}|${R}`, beastSpec(big, boss), R, boss ? 8 : 10, R * .24); }
+  function monsterTurn(big, boss, R) { return turntable(`bt${boss ? 'b' : big ? 'g' : 'm'}|${R}`, { ...beastSpec(big, boss), rimLight: '#ffb060' }, R, boss ? 8 : 10, R * .24); }
 
   // Plain struck discs: gold pickups, tower bolts, the core coin. `emblem` names a simple glyph.
   const poly = (g, p) => { g.beginPath(); p.forEach(([x, y], i) => g[i ? 'lineTo' : 'moveTo'](x, y)); g.closePath(); g.fill(); };
@@ -9244,7 +9251,7 @@ const { FX, fxEvent } = (() => {
     return linkC[k] = c;
   }
 
-  function reset() { PINGS.length = 0; ZST.clear(); P = []; cursor = 0; trails = new Map(); flyers = []; OV = []; panel = null; readyFx = []; prevCd = []; zoneTeam = new Map(); falls = []; arrive = []; DUST.length = 0; dustN = 0; lastKill = -9; GW.length = 0; LATER.length = 0; CINE = null; G.text = []; G.tAim = null; }
+  function reset() { VIC = CUT = KF = null; PINGS.length = 0; ZST.clear(); P = []; cursor = 0; trails = new Map(); flyers = []; OV = []; panel = null; readyFx = []; prevCd = []; zoneTeam = new Map(); falls = []; arrive = []; DUST.length = 0; dustN = 0; lastKill = -9; GW.length = 0; LATER.length = 0; CINE = null; G.text = []; G.tAim = null; }
 
   function add(k, x, y, z, life) {
     const cap = FX_CAP(quality); let p;
@@ -9296,7 +9303,7 @@ const { FX, fxEvent } = (() => {
   // Letterbox: two black bars slide in and the world holds its breath for a beat.
   function cine(life = .6, k = 1) { if (!calm) CINE = { t: 0, life, k }; }
   // The kill frame: for a tenth of a second the world drops out and only the killer's mark exists.
-  let KF = null;
+  let KF = null, chainN = 0, chainT = -99;
   function impactFrame(kit, col, x, y) { if (!calm && kit) KF = { t: 0, kit, col, x, y }; }
   function drawKF(dt) {
     if (!KF) return; KF.t += dt; const a = KF.t / .17; if (a >= 1) { KF = null; return; }
@@ -9304,8 +9311,34 @@ const { FX, fxEvent } = (() => {
     ctx.globalAlpha = a < .35 ? .6 : .6 * (1 - (a - .35) / .65); ctx.fillStyle = '#04050b'; ctx.fillRect(0, 0, VW, VH);
     ctx.globalAlpha = a < .4 ? 1 : 1 - (a - .4) / .6; ctx.drawImage(S, X - sz / 2, Y - sz / 2, sz, sz); ctx.globalAlpha = 1;
   }
+  // The ultimate cut-in: a blade of colour crosses the screen with your coin on it, and it's gone before it gets in the way.
+  let VIC = null;
+  function drawVictory(dt) {
+    if (!VIC) return; VIC.t += dt; const T_ = VIC.t, Life = 2.3; if (T_ >= Life) { VIC = null; return; }
+    const R = Math.min(VW, VH) * .25, cx = VW / 2, cy = VH * .42, inn = Math.min(1, T_ / .35), fade = T_ > Life - .4 ? (Life - T_) / .4 : 1, lift = (1 - outExpo(inn)) * VH * .6, rest = Math.min(1, T_ / 1.15), spin = (1 - outCub(rest)) * TAU * 3, wide = Math.max(.08, Math.abs(Math.cos(spin)));
+    // A fan of light behind it, turning slowly.
+    ctx.globalCompositeOperation = 'lighter'; ctx.fillStyle = VIC.col; ctx.globalAlpha = .16 * fade * inn;
+    ctx.beginPath(); for (let i = 0; i < 12; i++) { const a = T_ * .3 + i / 12 * TAU, w = .11, Lr = R * 3.4; ctx.moveTo(cx, cy - lift); ctx.lineTo(cx + Math.cos(a - w) * Lr, cy - lift + Math.sin(a - w) * Lr); ctx.lineTo(cx + Math.cos(a + w) * Lr, cy - lift + Math.sin(a + w) * Lr); ctx.closePath(); } ctx.fill();
+    ctx.globalAlpha = fade * .85; const g = Art.glow(VIC.col); ctx.drawImage(g, cx - R * 1.9, cy - lift - R * 1.9, R * 3.8, R * 3.8);
+    ctx.globalCompositeOperation = 'source-over'; ctx.globalAlpha = fade;
+    const W = VIC.spr.S * R / VIC.spr.R, k = outBack(Math.min(1, T_ / .4)); ctx.drawImage(VIC.spr.c, cx - W * wide * k / 2, cy - lift - W * k / 2, W * wide * k, W * k);
+    // Once it settles, one bar of light rakes across the face.
+    if (T_ > 1.05 && T_ < 1.7) { const q = (T_ - 1.05) / .65, bx = cx + (q * 2 - 1) * R * 1.2; ctx.globalCompositeOperation = 'lighter'; ctx.globalAlpha = fade * Math.sin(q * Math.PI) * .9; ctx.drawImage(Art.flare('#ffffff'), bx - R * .6, cy - R, R * 1.2, R * 2); ctx.globalCompositeOperation = 'source-over'; }
+    ctx.globalAlpha = 1;
+  }
+  let CUT = null, cutAt = -9;
+  function cutIn(u, p, name) { if (calm || G.t - cutAt < 2) return; cutAt = G.t; CUT = { t: 0, spr: Art.champCoin(u.champ, u.team, u.tier | 0, 80, cosOf(u, 'finish')), col: p.mid, out: p.out, name: String(name || '').toUpperCase() }; }
+  function drawCut(dt) {
+    if (!CUT) return; CUT.t += dt; const L = .5, a = CUT.t / L; if (a >= 1) { CUT = null; return; }
+    const inn = outExpo(Math.min(1, a / .2)), off = a > .78 ? outCub((a - .78) / .22) : 0, H = Math.min(70, VH * .17), Y0 = Math.max(46, VH * .12), sk = H * .5, dx = (1 - inn) * -VW + off * VW;
+    const band = (h, y, c, al) => { ctx.globalAlpha = al; ctx.fillStyle = c; ctx.beginPath(); ctx.moveTo(dx + sk, y); ctx.lineTo(dx + VW + sk, y); ctx.lineTo(dx + VW - sk, y + h); ctx.lineTo(dx - sk, y + h); ctx.closePath(); ctx.fill(); };
+    band(H, Y0, '#05060c', .82); band(3, Y0, CUT.col, 1); band(3, Y0 + H - 3, CUT.col, 1); band(H * .34, Y0 + H * .33, CUT.out, .34);
+    const R = H * .62, W = CUT.spr.S * R / CUT.spr.R, cx = dx + VW * .3; ctx.globalAlpha = 1; ctx.drawImage(CUT.spr.c, cx - W / 2, Y0 + H / 2 - W / 2, W, W);
+    ctx.font = 'italic 700 ' + Math.round(H * .4) + 'px "Barlow Semi Condensed",sans-serif'; ctx.textAlign = 'left'; ctx.textBaseline = 'middle'; ctx.fillStyle = '#fff'; ctx.fillText(CUT.name, cx + R * 1.25, Y0 + H / 2); ctx.textAlign = 'start'; ctx.textBaseline = 'alphabetic';
+    ctx.globalAlpha = 1;
+  }
   function drawCine(dt) {
-    drawKF(dt);
+    drawKF(dt); drawCut(dt); drawVictory(dt);
     if (!CINE) return; CINE.t += dt; const a = CINE.t / CINE.life; if (a >= 1) { CINE = null; return; }
     const io = a < .18 ? outExpo(a / .18) : a > .78 ? 1 - outCub((a - .78) / .22) : 1, h = Math.round(Math.min(34, VH * .09) * CINE.k * io);
     if (a < .35) { ctx.globalAlpha = .26 * CINE.k * (1 - a / .35); ctx.fillStyle = '#02030a'; ctx.fillRect(0, 0, VW, VH); ctx.globalAlpha = 1; }
@@ -9999,7 +10032,16 @@ const { FX, fxEvent } = (() => {
     const cr = Terrain.towerCrown(team, core), p = add(SHARD, x, y, H, 1.2); p.spr = cr.c; p.size = cr.w / cr.c.width; p.vz = 540; p.vx = rnd(-110, 110); p.vy = rnd(-40, 40); p.vr = rnd(-6, 6); p.bounce = 1;
     if (near) { hitStop(.07); slowMo(.34, .5); cine(core ? 1.1 : .7, core ? 1 : .7); G.shake = Math.max(G.shake, core ? 11 : 8); G.punch = Math.max(G.punch, core ? .07 : .05); }
   }
-  function finale(won, x, y) { if (won) { const pal = palT(G.me.team); burst(x, y, 90, pal, 2, true); ring(x, y, 420, pal.ring, .9); } }
+  function finale(won, x, y) {
+    const pal = palT(G.me.team), kit = KIT_PAL[G.me.champ] || pal;
+    if (!won) { for (let i = 0; i < 8; i++) later(i * .22, () => { puff(x + rnd(-260, 260), y + rnd(-160, 160), 2, 1, 60, 1.4, 90, 40); chips(x + rnd(-200, 200), y + rnd(-120, 120), 2, '#6a6470', 160, 200); }); return; }
+    burst(x, y, 90, pal, 2, true); ring(x, y, 520, pal.ring, 1); flare(x, y, 80, '#ffffff', 620, .6);
+    rays(x, y, 16, kit.mid, 620, 16, .9, 40, .1);
+    // Your coin rises over the wreck, spinning to rest in a fan of light, while the volleys go up.
+    if (!calm) VIC = { t: 0, spr: Art.champCoin(G.me.champ, G.me.team, G.me.tier | 0, 180, cosOf(G.me, 'finish')), col: kit.mid };
+    for (let i = 0; i < 6; i++) later(.25 + i * .28, () => { const a = i / 6 * TAU, X = x + Math.cos(a) * 280, Y = y + Math.sin(a) * 210; pillar(X, Y, kit.out, kit.mid, 1); ring(X, Y, 170, kit.ring, .5); rise(X, Y, 6, kit.spark, 50, 1.2, 14); });
+    fireworks(x, y, kit.mid, 8); later(.5, () => fireworks(x, y, GOLD, 8)); later(1, () => { wave(x, y, 760, kit.mid, 1); flare(x, y, 70, GOLD, 700, .6); });
+  }
 
   // ---------- simulation events ----------
   // Rule of the house: your own actions and what happens to you get the show. Everyone else's routine is nearly silent.
@@ -10109,7 +10151,7 @@ const { FX, fxEvent } = (() => {
     tidecaller: [
       (u, dx, dy, p, own, k) => { slash(u.x, u.y, dx, dy, 180, p.mid, .28); later(.06, () => slash(u.x + dx * 24, u.y + dy * 24, dx, dy, 130, p.core, .2)); splash(u.x + dx * 50, u.y + dy * 50, 1.1); flare(u.x + dx * 60, u.y + dy * 60, 20, p.mid, 120 * k, .16); },
       (u, dx, dy, p, own, k) => { const X = u.x + dx * 70, Y = u.y + dy * 70; gather(X, Y, 90, p.mid, 6, .12, 8); later(.08, () => { pillar(X, Y, p.out, p.mid, .42); ring(X, Y, 120, p.ring, .3); ring(X, Y, 70, p.core, .22, 6); splash(X, Y, 2); for (let i = 0; i < nq(8); i++) { const a = Math.random() * TAU, v = rnd(90, 260), q = add(DROP, X, Y, 26, rnd(.36, .6)); q.vx = Math.cos(a) * v; q.vy = Math.sin(a) * v; q.vz = rnd(260, 520); q.col = p.mid; q.size = rnd(8, 14); } }); if (own) G.punch = Math.max(G.punch, .018); },
-      (u, dx, dy, p, own, k) => { const px_ = -dy, py_ = dx; gather(u.x, u.y, 200, p.core, 12, .2, 14); for (let w = 0; w < 3; w++) later(w * .08, () => { const X = u.x + dx * (60 + w * 80), Y = u.y + dy * (60 + w * 80); beam(X - px_ * 140, Y - py_ * 140, X + px_ * 140, Y + py_ * 140, w % 2 ? p.core : p.mid, 18, .3, 14); for (const o of [-1, 0, 1]) splash(X + px_ * o * 110, Y + py_ * o * 110, 1.4); }); flare(u.x, u.y, 30, p.core, 300, .26); pillar(u.x, u.y, p.out, p.mid, .55); if (own) { cine(.75, .7); G.punch = Math.max(G.punch, .05); G.shake = Math.max(G.shake, 5); } },
+      (u, dx, dy, p, own, k) => { const px_ = -dy, py_ = dx; gather(u.x, u.y, 200, p.core, 12, .2, 14); for (let w = 0; w < 3; w++) later(w * .08, () => { const X = u.x + dx * (60 + w * 80), Y = u.y + dy * (60 + w * 80); beam(X - px_ * 140, Y - py_ * 140, X + px_ * 140, Y + py_ * 140, p.mid, 9, .26, 14); for (let o = 0; o < nq(8); o++) { const q = add(DROP, X + px_ * rnd(-130, 130), Y + py_ * rnd(-130, 130), 30, rnd(.3, .5)); q.vx = dx * rnd(200, 420); q.vy = dy * rnd(200, 420); q.vz = rnd(200, 480); q.col = p.mid; q.size = rnd(9, 15); } }); flare(u.x, u.y, 30, p.core, 300, .26); pillar(u.x, u.y, p.out, p.mid, .55); if (own) { cine(.75, .7); G.punch = Math.max(G.punch, .05); G.shake = Math.max(G.shake, 5); } },
     ],
     paragon: [
       (u, dx, dy, p, own, k) => { gather(u.x, u.y, 120, p.core, 6, .1, 10); pillar(u.x, u.y, '#b8842a', p.core, .36); dustRing(u.x, u.y, 70, 4); flutter(u.x, u.y, own ? 6 : 2, '#fff6e0'); ring(u.x, u.y, 100, p.ring, .24); flare(u.x, u.y, 16, p.core, 170 * k, .16); if (own) G.shake = Math.max(G.shake, 2.5); },
@@ -10227,11 +10269,20 @@ const { FX, fxEvent } = (() => {
         return true;
       }
       case 'miasma': {
+        if (z.fx === 'entrench') {
+          const n = 8, rr = Math.min(R, 92 * Z), rt = rr * TILT, kp = KIT_PAL.cataclysm, c0 = friendly ? kp.spark : '#ff5a3c', rise01 = outBack(clamp01(z.t > (z.total || 2) - .25 ? ((z.total || 2) - z.t) / .25 : 1));
+          ctx.strokeStyle = rgba(friendly ? '255,146,56' : '255,62,40', .75 * fade); ctx.lineWidth = 2.4 * Z; ctx.beginPath(); ctx.ellipse(X, Y, rr, rt, 0, 0, TAU); ctx.stroke();
+          for (let i = 0; i < n; i++) { const a = i / n * TAU + .2, fw = Math.sin(a) > 0, rx = X + Math.cos(a) * rr, ry = Y + Math.sin(a) * rt, h = (fw ? 26 : 34) * Z * rise01 * (1 + (i % 3) * .18), w = 11 * Z; ctx.fillStyle = '#4a403c'; ctx.beginPath(); ctx.moveTo(rx - w, ry); ctx.lineTo(rx - w * .55, ry - h); ctx.lineTo(rx + w * .4, ry - h * 1.14); ctx.lineTo(rx + w, ry); ctx.closePath(); ctx.fill(); ctx.fillStyle = c0; ctx.beginPath(); ctx.moveTo(rx - w * .55, ry - h); ctx.lineTo(rx + w * .4, ry - h * 1.14); ctx.lineTo(rx + w * .2, ry - h * .86); ctx.closePath(); ctx.fill(); }
+          if (dt > 0 && (st.t -= dt) <= 0) { st.t = .16; const a = Math.random() * TAU; chips(z.x + Math.cos(a) * 80, z.y + Math.sin(a) * 66, 1, '#a08878', 90, 12); }
+          return true;
+        }
         if (z.fx === 'scorch' || z.fx === 'meteordrop') {
-          const hot = friendly ? '255,146,56' : '255,90,50', cold = friendly ? '#ffd46a' : '#ff6a3c';
-          ctx.fillStyle = rgba(hot, .13 * fade); ctx.beginPath(); ctx.ellipse(X, Y, R, Ry, 0, 0, TAU); ctx.fill();
-          ctx.strokeStyle = rgba(hot, .7 * fade); ctx.lineWidth = 2; ctx.beginPath(); ctx.ellipse(X, Y, R * (.96 + Math.sin(T * 7) * .02), Ry * (.96 + Math.sin(T * 7) * .02), 0, 0, TAU); ctx.stroke();
-          if (dt > 0 && (st.t -= dt) <= 0) { st.t = quality >= 2 ? .07 : .13; const a = Math.random() * TAU, d = Math.sqrt(Math.random()) * z.r; rise(z.x + Math.cos(a) * d, z.y + Math.sin(a) * d * .85, 1, Math.random() < .5 ? pal.mid : cold, 6, rnd(.5, .85), rnd(9, 14)); }
+          const kp = z.fx === 'scorch' ? KIT_PAL.cinder : KIT_PAL.paragon, hot = friendly ? (z.fx === 'scorch' ? '255,146,56' : '255,206,120') : '255,90,50', cold = friendly ? kp.spark : '#ff6a3c', mid = friendly ? kp.mid : '#ff5a3c';
+          ctx.fillStyle = rgba(hot, .24 * fade); ctx.beginPath(); ctx.ellipse(X, Y, R, Ry, 0, 0, TAU); ctx.fill();
+          ctx.fillStyle = rgba(hot, .22 * fade); ctx.beginPath(); ctx.ellipse(X, Y, R * .62, Ry * .62, 0, 0, TAU); ctx.fill();
+          drawSig('crash', X, Y, R * .94, mid, fade * (.42 + Math.sin(T * 9) * .1), z.id % 7);
+          ctx.strokeStyle = rgba(hot, .9 * fade); ctx.lineWidth = 2.6 * Z; ctx.beginPath(); ctx.ellipse(X, Y, R * (.97 + Math.sin(T * 7) * .02), Ry * (.97 + Math.sin(T * 7) * .02), 0, 0, TAU); ctx.stroke();
+          if (dt > 0 && (st.t -= dt) <= 0) { st.t = quality >= 2 ? .05 : .11; const a = Math.random() * TAU, d = Math.sqrt(Math.random()) * z.r; rise(z.x + Math.cos(a) * d, z.y + Math.sin(a) * d * .85, 1, Math.random() < .5 ? mid : cold, 6, rnd(.5, .85), rnd(10, 16)); }
           return true;
         }
         const isSmoke = z.fx === 'smoke', crash = z.fx === 'crash', tint = isSmoke ? 1 : 0;
@@ -10260,25 +10311,32 @@ const { FX, fxEvent } = (() => {
         return true;
       }
       case 'tidewave': {
-        const dx = z.dx || 1, dy = z.dy || 0, wx = -dy, wy = dx, W = z.r; ctx.lineCap = 'round';
-        for (let i = 0; i < 3; i++) { const b = i * 16, X0 = z.x - dx * b, Y0 = z.y - dy * b; lineBetween(X0 - wx * W, Y0 - wy * W, X0 + wx * W, Y0 + wy * W, friendly ? (i ? pal.mid : pal.core) : '#ff5a3c', (8 - i * 2.4) * Z); }
-        if (dt > 0 && (st.t -= dt) <= 0) { st.t = .07; const o = rnd(-1, 1) * W; splash(z.x + wx * o, z.y + wy * o, 1); }
+        const dx = z.dx || 1, dy = z.dy || 0, wx = -dy, wy = dx, W = z.r, kp = KIT_PAL.tidecaller, A0x = sx(z.x - wx * W), A0y = sy(z.y - wy * W), A1x = sx(z.x + wx * W), A1y = sy(z.y + wy * W), B0x = sx(z.x - wx * W * .9 - dx * 60), B0y = sy(z.y - wy * W * .9 - dy * 60), B1x = sx(z.x + wx * W * .9 - dx * 60), B1y = sy(z.y + wy * W * .9 - dy * 60), H = 62 * Z * (.9 + Math.sin(T * 9) * .1), body = friendly ? '111,232,224' : '255,110,80', foam = friendly ? kp.core : '#ffd8c8', Tx0 = (A0x + B0x) / 2, Ty0 = (A0y + B0y) / 2 - H, Tx1 = (A1x + B1x) / 2, Ty1 = (A1y + B1y) / 2 - H, Mx = (Tx0 + Tx1) / 2 + dx * 26 * Z, My = (Ty0 + Ty1) / 2 - 16 * Z;
+        ctx.fillStyle = rgba(body, .3 * fade); ctx.beginPath(); ctx.moveTo(B0x, B0y); ctx.lineTo(B1x, B1y); ctx.lineTo(A1x, A1y); ctx.lineTo(A0x, A0y); ctx.closePath(); ctx.fill();
+        ctx.fillStyle = rgba(body, .66 * fade); ctx.beginPath(); ctx.moveTo(A0x, A0y); ctx.lineTo(Tx0, Ty0); ctx.quadraticCurveTo(Mx, My, Tx1, Ty1); ctx.lineTo(A1x, A1y); ctx.closePath(); ctx.fill();
+        ctx.strokeStyle = foam; ctx.globalAlpha = fade; ctx.lineWidth = 5 * Z; ctx.lineCap = 'round'; ctx.beginPath(); ctx.moveTo(Tx0, Ty0); ctx.quadraticCurveTo(Mx, My, Tx1, Ty1); ctx.stroke(); ctx.lineWidth = 2.2 * Z; ctx.beginPath(); ctx.moveTo(A0x, A0y); ctx.lineTo(A1x, A1y); ctx.stroke(); ctx.globalAlpha = 1;
+        if (dt > 0 && (st.t -= dt) <= 0) { st.t = quality >= 2 ? .04 : .09; const o = rnd(-1, 1) * W, q = add(DROP, z.x + wx * o, z.y + wy * o, 56, rnd(.3, .5)); q.vx = dx * rnd(120, 300) + wx * rnd(-60, 60); q.vy = dy * rnd(120, 300) + wy * rnd(-60, 60); q.vz = rnd(160, 380); q.col = friendly ? kp.mid : '#ff8a70'; q.size = rnd(9, 15); }
         return true;
       }
       case 'mirrors': {
-        ctx.strokeStyle = rgba(friendly ? '232,200,255' : '255,62,40', .6 * fade); ctx.lineWidth = 1.5; ctx.beginPath(); ctx.ellipse(X, Y, R, Ry, 0, 0, TAU); ctx.stroke();
-        for (let i = 0; i < 8; i++) { const a = T * .5 + i / 8 * TAU, H = (34 + Math.sin(T * 3 + i) * 6) * Z, mx = X + Math.cos(a) * R, my = Y + Math.sin(a) * Ry, cq = Math.max(.18, Math.abs(Math.sin(a + T * .7))), w = 15 * Z * cq, c = i % 2 ? '255,138,224' : '138,224,255'; ctx.fillStyle = rgba(c, .3 * fade); ctx.fillRect(mx - w, my - H, w * 2, H); ctx.strokeStyle = rgba(c, .9 * fade); ctx.lineWidth = 1.4; ctx.strokeRect(mx - w, my - H, w * 2, H); ctx.fillStyle = rgba('255,255,255', .7 * fade); ctx.fillRect(mx - w * .3, my - H, w * .5, H); }
+        ctx.strokeStyle = rgba(friendly ? '232,200,255' : '255,62,40', .7 * fade); ctx.lineWidth = 2 * Z; ctx.beginPath(); ctx.ellipse(X, Y, R, Ry, 0, 0, TAU); ctx.stroke();
+        ctx.fillStyle = rgba(friendly ? '190,150,255' : '255,62,40', .07 * fade); ctx.beginPath(); ctx.ellipse(X, Y, R, Ry, 0, 0, TAU); ctx.fill();
+        for (let i = 0; i < 8; i++) {
+          const a = T * .5 + i / 8 * TAU, H = (66 + Math.sin(T * 3 + i) * 8) * Z, mx = X + Math.cos(a) * R, my = Y + Math.sin(a) * Ry, cq = Math.max(.3, Math.abs(Math.sin(a + T * .7))), w = 22 * Z * cq, c = friendly ? (i % 2 ? '255,138,224' : '138,224,255') : '255,90,68', lean = Math.cos(a) * 8 * Z, gl = ((T * .9 + i * .37) % 1);
+          ctx.fillStyle = rgba(c, .34 * fade); ctx.beginPath(); ctx.moveTo(mx - w, my); ctx.lineTo(mx - w + lean, my - H); ctx.lineTo(mx + w + lean, my - H); ctx.lineTo(mx + w, my); ctx.closePath(); ctx.fill();
+          ctx.strokeStyle = rgba(c, fade); ctx.lineWidth = 2 * Z; ctx.stroke();
+          const gx = mx - w + w * 2 * gl; ctx.strokeStyle = rgba('255,255,255', .85 * fade); ctx.lineWidth = 3 * Z; ctx.beginPath(); ctx.moveTo(gx, my - 2); ctx.lineTo(gx + lean, my - H + 2); ctx.stroke();
+        }
         return true;
       }
       case 'puppet': {
-        const hop = Math.abs(Math.sin(T * 4)) * 5 * Z, sz = 36 * Z, tint = friendly ? pal.mid : '#ff5a44', sp = Art.seal('puppeteer', tint), top = Y - 96 * Z;
+        const hop = Math.abs(Math.sin(T * 4)) * 6 * Z, sz = 66 * Z, kp = KIT_PAL.puppeteer, tint = friendly ? kp.mid : '#ff5a44', sp = Art.seal('puppeteer', tint), top = Y - 118 * Z, sway = Math.sin(T * 2.4) * 7 * Z;
         ctx.drawImage(Art.shadow(), X - sz * .7, Y - sz * .3, sz * 1.4, sz * .6);
         ctx.drawImage(sp, X - sz / 2, Y - sz * .9 - hop, sz, sz);
-        ctx.strokeStyle = rgba(friendly ? '232,122,232' : '255,90,68', .75 * fade); ctx.lineWidth = 1.1; ctx.beginPath(); for (const o of [-.34, 0, .34]) { ctx.moveTo(X + o * sz * 1.4, top); ctx.lineTo(X + o * sz * .7, Y - sz * .8 - hop); } ctx.moveTo(X - sz * .6, top); ctx.lineTo(X + sz * .6, top); ctx.stroke();
+        ctx.strokeStyle = rgba(friendly ? '232,122,232' : '255,90,68', .75 * fade); ctx.lineWidth = 1.6 * Z; ctx.beginPath(); for (const o of [-.34, 0, .34]) { ctx.moveTo(X + sway + o * sz * 1.1, top); ctx.lineTo(X + o * sz * .7, Y - sz * .8 - hop); } ctx.stroke(); ctx.lineWidth = 4 * Z; ctx.lineCap = 'round'; ctx.beginPath(); ctx.moveTo(X + sway - sz * .55, top); ctx.lineTo(X + sway + sz * .55, top); ctx.stroke();
         return true;
       }
       case 'orbit': {
-        if (z.fx === 'entrench') { const o = unitRef(z.owner); if (!o) return true; const q = (typeof posNow === 'function') ? posNow(o, Math.min(1, (G.acc || 0) / DT)) : o, XP = sx(q.x), YP = sy(q.y), n = 6; ctx.strokeStyle = rgba(friendly ? '255,146,56' : '255,62,40', .7); ctx.lineWidth = 2 * Z; ctx.beginPath(); ctx.ellipse(XP, YP, 62 * Z, 62 * Z * TILT, 0, 0, TAU); ctx.stroke(); ctx.fillStyle = friendly ? '#8a7870' : '#a04030'; for (let i = 0; i < n; i++) { const a = T * 1.2 + i / n * TAU, rx = XP + Math.cos(a) * 62 * Z, ry = YP + Math.sin(a) * 62 * Z * TILT; ctx.fillRect(rx - 6 * Z, ry - 14 * Z, 12 * Z, 14 * Z); ctx.fillStyle = '#ffb060'; ctx.fillRect(rx - 6 * Z, ry - 14 * Z, 12 * Z, 2.4 * Z); ctx.fillStyle = friendly ? '#8a7870' : '#a04030'; } return true; }
         const o = unitRef(z.owner), ang = z.ang || 0, rad = z.orbit || 170; if (!o) return true; const px0 = o.x, py0 = o.y, q = (typeof posNow === 'function') ? posNow(o, Math.min(1, (G.acc || 0) / DT)) : o, ox = q.x, oy = q.y, Xb = ox + Math.cos(ang) * rad, Yb = oy + Math.sin(ang) * rad; void px0; void py0;
         ctx.strokeStyle = rgba(friendly ? '230,209,156' : '255,62,40', .3); ctx.lineWidth = 1.4; ctx.beginPath(); ctx.ellipse(sx(ox), sy(oy), rad * Z, rad * Z * TILT, 0, 0, TAU); ctx.stroke();
         lineBetween(ox, oy, Xb, Yb, INK, 5 * Z + 1); lineBetween(ox, oy, Xb, Yb, '#9aa3b2', 2.2 * Z);
@@ -10406,7 +10464,12 @@ const { FX, fxEvent } = (() => {
     wave(x, y, own ? 340 : 180, p.mid, .5);
     flare(x, y, 30, p.core, own ? 300 : 180, .24);
     if (by && by.kind === 'champ') { const vk = visOf(by); poseStart(vk, 'killspin', ux, uy, by); }
-    if (own) impactFrame(kit, p.mid, x, y);
+    if (own) {
+      impactFrame(kit, p.mid, x, y);
+      chainN = G.t - chainT < 9 ? chainN + 1 : 0; chainT = G.t;
+      // Each kill in a run lands harder than the last.
+      if (chainN >= 1) { const n = Math.min(3, chainN); later(.09, () => { rays(x, y, 6 + n * 3, p.mid, 260 + n * 70, 8 + n * 2, .36, 26, .2); ring(x, y, 240 + n * 80, p.core, .4, 12); coins(x, y, 8 + n * 5, { sp: 380, vz: 820, size: 12 }); flare(x, y, 40, '#ffffff', 340 + n * 90, .3); }); slowMo(.3 + n * .06, .4); G.shake = Math.max(G.shake, 9 + n); number(x, y, 110, ['DOUBLE', 'TRIPLE', 'RAMPAGE'][n - 1], p.spark, true, 1.1); }
+    }
   }
   // Fireworks over a win. Launched in a short volley.
   function fireworks(x, y, col, n) {
@@ -10529,7 +10592,21 @@ const { FX, fxEvent } = (() => {
         if (!onScreen(u.x, u.y, 180) && !(e.e === 'fire')) return;
         const R = (e.slot !== undefined && SIG[u.champ] && SIG[u.champ][e.slot]) || CASTFX[fx], k = own ? 1 : .55;
         if (R) R(u, dx, dy, pal, own, k, v, e);
+        if (own && (e.slot === 2 || fx === 'deadeye')) { const ab = u.kit && u.kit[2]; cutIn(u, pal, ab && ab.name); G.flashT = 0; }
         else if (own) { ring(u.x, u.y, 74, pal.ring, .2); flash(u.x + dx * 40, u.y + dy * 40, 18, pal, 24); G.punch = Math.max(G.punch, .008); }
+        break;
+      }
+      case 'strike': {
+        const u = unitById(e.u); if (!onScreen(e.x, e.y, 220)) break;
+        const own = u === me, pal = palK(u), X = e.x, Y = e.y;
+        gather(X, Y, own ? 220 : 130, pal.core, own ? 12 : 6, .13, 40);
+        later(.1, () => {
+          const b = add(BEAMK, X + 30, Y - 520, 40, .22); b.dx = X; b.dy = Y; b.R = own ? 56 : 30; b.col = GOLD;
+          sigil('crash', X, Y, own ? 240 : 140, GOLD, .5, 0, 2); wave(X, Y, own ? 420 : 220, GOLD, .55); ring(X, Y, own ? 300 : 170, GOLD, .4); ring(X, Y, own ? 170 : 90, '#ffffff', .24, 10);
+          rays(X, Y, own ? 12 : 6, GOLD, own ? 340 : 190, own ? 10 : 6, .34, 22, .13); flare(X, Y, 34, '#ffffff', own ? 440 : 220, .3);
+          spark(X, Y, own ? 22 : 8, GOLD, 620, .5, 18, 30); coins(X, Y, own ? 16 : 5, { sp: 340, vz: 760, size: 12 }); chips(X, Y, own ? 8 : 3, pal.chip, 420, 24); dustRing(X, Y, own ? 140 : 80, own ? 7 : 4);
+          if (own) { number(X, Y, 96, 'KILL STRIKE', GOLD, true, 1.05); hitStop(.08); slowMo(.26, .45); G.shake = Math.max(G.shake, 10); G.punch = Math.max(G.punch, .07); cine(.5, .6); if (u.champ) impactFrame(u.champ, GOLD, X, Y); }
+        });
         break;
       }
       case 'ping': if (e.team === undefined || e.team === G.me.team) pingAt(e); break;

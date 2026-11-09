@@ -495,7 +495,7 @@ const Art = (() => {
   // face: buffers from buildFace. yaw: radians about the vertical axis. thick: edge thickness in pixels. out: {ctx, W, x, y, id (ImageData), ...}
   function shade(F, yaw, thick, rimTint, emis, opt, target) {
     const S = F.S, R = F.R, cs = Math.cos(yaw), sn = Math.sin(yaw), MCv = matcap(), MCcv = MCC, FL = film(), sw = opt.sweep ? 1 : 0, bp = sw ? -1.8 + Math.min(1.1, Math.abs(yaw)) * 4.1 : 99, gyaw = sw ? Math.sign(yaw) * Math.min(Math.abs(yaw) * 1.75, .46 + Math.abs(yaw) * .42) : yaw, csg = Math.cos(gyaw), sng = Math.sin(gyaw), filmK = opt.film || 0, ink = opt.ink !== false, data = target, N = MCN, half = S / 2, gloss = opt.gloss || 0, edgeC = opt.edge;
-    const ca = Math.max(.08, Math.abs(cs)), Rx = R * ca, Hx = HALFV[0] * cs - HALFV[2] * sn, Hy = HALFV[1], d0x = thick * sn, d0y = thick * Math.sqrt(1 - F.pitch * F.pitch), dmag = Math.hypot(d0x, d0y);
+    const rimL = opt.rimL, boost = opt.boost || 1, ca = Math.max(.08, Math.abs(cs)), Rx = R * ca, Hx = HALFV[0] * cs - HALFV[2] * sn, Hy = HALFV[1], d0x = thick * sn, d0y = thick * Math.sqrt(1 - F.pitch * F.pitch), dmag = Math.hypot(d0x, d0y);
     const nx_a = F.nx, ny_a = F.ny, r_a = F.r, g_a = F.g, b_a = F.b, m_a = F.m, an_a = F.an, sp_a = F.sp, em_a = F.em, a_a = F.a, tx_a = F.tx, ty_a = F.ty;
     const px = opt.W || S;
     // Reversed sign keeps the visible edge consistent through a half turn.
@@ -524,6 +524,8 @@ const Art = (() => {
           if (bp < 1.6) { const q = ((su - half) * .7 + (sv - half) * .714) / R - bp, b1 = 1 - q * q / .16, q2 = q + .46, b2 = 1 - q2 * q2 / .012; let bb2 = 0; if (b1 > 0) bb2 += b1 * b1; if (b2 > 0) bb2 += b2 * .7; if (bb2 > 0) { const g = bb2 * (.2 + .8 * m) * (.55 + L * .6) * 1.3; cr += g * (rr * .55 + .55); cg += g * (gg * .55 + .55); cb += g * (bb * .55 + .55); } }
           const e = em_a[idx]; if (e > 0) { cr += eR * e * .5; cg += eG * e * .5; cb += eB * e * .5; }
           if (filmK > 0 && m > .3) { const fi = (nzr * .5 + .5) * (FILMN - 1) | 0, ft = filmK * m; cr *= 1 - ft + ft * FL[fi * 3] * 1.05; cg *= 1 - ft + ft * FL[fi * 3 + 1] * 1.05; cb *= 1 - ft + ft * FL[fi * 3 + 2] * 1.05; }
+          if (rimL) { const ru = (su - half) / R, rv = (sv - half) / (R * F.pitch), r2 = ru * ru + rv * rv; if (r2 > .6) { let q = (r2 - .6) / .4; if (q > 1) q = 1; q = q * q * (.62 + .38 * Math.max(0, ru * .6 + rv * .8)); cr += rimL[0] * q * .85; cg += rimL[1] * q * .85; cb += rimL[2] * q * .85; } }
+          if (boost !== 1) { cr *= boost; cg *= boost; cb *= boost; }
           // Past white, colour bleeds toward white: a highlight that truly blows out.
           const over = Math.max(cr, cg, cb) - 1; if (over > 0) { const q = over * .7; cr += q; cg += q; cb += q; }
           R8 = cr * 255; G8 = cg * 255; B8 = cb * 255; A8 = fA * 255;
@@ -556,6 +558,11 @@ const Art = (() => {
         const on = v => v > 128 && v !== 215; if (on(data[i - 1]) || on(data[i + 7]) || on(data[i + 3 - px * 4]) || on(data[i + 3 + px * 4])) { data[i] = 7; data[i + 1] = 9; data[i + 2] = 14; data[i + 3] = 215; }
       }
     }
+    // The halo: a thin spill of team light on the air around the coin, so it lifts off a dark street.
+    if (rimL) {
+      const hr = Math.min(255, rimL[0] * 255), hg = Math.min(255, rimL[1] * 255), hb = Math.min(255, rimL[2] * 255), PP = F.pitch * R;
+      for (let y = 0, i = 0; y < px; y++) for (let x = 0; x < px; x++, i += 4) { if (data[i + 3] > 8) continue; const u = (x + .5 - fcx) / (ca * R), v = (y + .5 - fcy) / PP, r2 = u * u + v * v; if (r2 < .9 || r2 > 1.46) continue; const t = (Math.sqrt(r2) - 1) / .2; if (t >= 1) continue; const q = t < 0 ? 1 : 1 - t; data[i] = hr; data[i + 1] = hg; data[i + 2] = hb; data[i + 3] = q * q * 165; }
+    }
   }
   // ---------- sprites built from faces ----------
   const faces = new Map(); // face buffers, held only until the frames are done
@@ -585,7 +592,7 @@ const Art = (() => {
   const WORLD_PITCH = .84;
   function turntable(id, spec, R, N, thick) {
     if (cache.has(id)) return cache.get(id);
-    const ss = R < 40 ? 1.6 : 1.3, Sg = Math.ceil(R * ss * 2 + 2 * (Math.ceil(R * ss * .14) + 4)), S = Math.ceil(Sg / ss), T = { N, S, R, F: null, id, spec, ss, f: new Array(N), left: N, thick, rimT: rimTintOf(spec), emis: rgbF(spec.glow || '#ffffff'), mid: N / 2 | 0, ready: false };
+    const ss = R < 40 ? 1.6 : 1.3, Sg = Math.ceil(R * ss * 2 + 2 * (Math.ceil(R * ss * .14) + 4)), S = Math.ceil(Sg / ss), T = { N, S, R, F: null, id, spec, ss, f: new Array(N), left: N, thick, rimT: rimTintOf(spec), emis: rgbF(spec.glow || '#ffffff'), mid: N / 2 | 0, ready: false, rimL: rgbF(spec.rimLight || (spec.villain ? '#ff4a3a' : '#5cc0ff')) };
     const out = { c: null, R, P: S / 2 - R, S, T, pitched: true };
     cache.set(id, out);
     JOBS.push({ T, i: -1, k: 0, spr: out });
@@ -598,7 +605,7 @@ const Art = (() => {
   function bakeFrame(T, i, spr) {
     if (T.f[i]) return;
     const t = nowMs(), yaw = yawOf(i - T.mid, T.N);
-    T.f[i] = canvasFrom(T.S, d => shade(T.F, yaw, T.thick, T.rimT, T.emis, { film: T.spec.film, gloss: T.spec.gloss, sweep: 1 }, d));
+    T.f[i] = canvasFrom(T.S, d => shade(T.F, yaw, T.thick, T.rimT, T.emis, { film: T.spec.film, gloss: T.spec.gloss, sweep: 1, rimL: T.rimL, boost: 1.17 }, d));
     if (i === T.mid && spr) { spr.c = T.f[i]; T.ready = true; }
     T.left--; STAT.bakeMs += nowMs() - t; STAT.frames++;
     if (T.left <= 0) T.F = null;
@@ -711,10 +718,10 @@ const Art = (() => {
   };
   const bossSpec = kind => { if (!BOSS_SKIN[kind]) return beastSpec(false, true); const k = BOSS_SKIN[kind]; return { tier: -1, villain: true, rIn: .8, k: .8, skin: k, metal: k.rim, emblem: BOSS_EMB[kind], glow: k.glow }; };
   const bossCoin = (kind, R = 96) => faceSprite(`bossF${kind}|${R}`, bossSpec(kind), R);
-  function bossTurn(kind, R) { return turntable(`bossT${kind}|${R}`, bossSpec(kind), R, 8, R * .3); }
+  function bossTurn(kind, R) { return turntable(`bossT${kind}|${R}`, { ...bossSpec(kind), rimLight: BOSS_COL[kind] || '#ffb060' }, R, 8, R * .3); }
   const BOSS_COL = { warlord: '#ff7a40', foreman: '#ffc24a', sentinel: '#7ae8ff', colossus: '#ffb04a' };
   const monsterCoin = (big, boss) => faceSprite(`bst${boss ? 'b' : big ? 'g' : 'm'}`, beastSpec(big, boss), boss ? 96 : big ? 44 : 28);
-  function monsterTurn(big, boss, R) { return turntable(`bt${boss ? 'b' : big ? 'g' : 'm'}|${R}`, beastSpec(big, boss), R, boss ? 8 : 10, R * .24); }
+  function monsterTurn(big, boss, R) { return turntable(`bt${boss ? 'b' : big ? 'g' : 'm'}|${R}`, { ...beastSpec(big, boss), rimLight: '#ffb060' }, R, boss ? 8 : 10, R * .24); }
 
   // Plain struck discs: gold pickups, tower bolts, the core coin. `emblem` names a simple glyph.
   const poly = (g, p) => { g.beginPath(); p.forEach(([x, y], i) => g[i ? 'lineTo' : 'moveTo'](x, y)); g.closePath(); g.fill(); };
