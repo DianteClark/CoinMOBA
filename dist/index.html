@@ -12696,7 +12696,7 @@ const { hud, initHud, hudDraw, uiEvent } = (() => {
     ctx.drawImage(H.mapC, M.x, M.y, M.w, M.h);
     drawFog(dt, s, me, M, kx, ky);
     ctx.save(); ctx.beginPath(); ctx.rect(M.x, M.y, M.w, M.h); ctx.clip();
-    for (const t of s.towers) if (t.alive) { const r = t.sub === 'core' ? 3.4 : 2.4; ctx.fillStyle = INK; ctx.fillRect(M.x + t.x * kx - r - .8, M.y + t.y * ky - r - .8, 2 * r + 1.6, 2 * r + 1.6); ctx.fillStyle = TEAM_DOT[t.team ? 1 : 0]; ctx.fillRect(M.x + t.x * kx - r, M.y + t.y * ky - r, 2 * r, 2 * r); }
+    for (const t of s.towers) if (t.alive) { const r = t.sub === 'core' ? 3.4 : 2.4; ctx.fillStyle = INK; ctx.fillRect(M.x + t.x * kx - r - .8, M.y + t.y * ky - r - .8, 2 * r + 1.6, 2 * r + 1.6); ctx.fillStyle = TEAM_DOT[t.team === me.team ? 0 : 1]; ctx.fillRect(M.x + t.x * kx - r, M.y + t.y * ky - r, 2 * r, 2 * r); }
     ctx.fillStyle = 'rgba(233,237,244,.7)'; for (const c of s.sites) if (c.alive) { disc(M.x + c.x * kx, M.y + c.y * ky, 1.6); ctx.fill(); }
     for (const b of (s.bosses || [])) if (b.up) { diamond(M.x + b.x * kx, M.y + b.y * ky, b.kind === 'colossus' ? 4.5 : 3.6); ctx.fillStyle = BUFF_COL[b.kind] || GOLD; ctx.fill(); ctx.strokeStyle = INK; ctx.lineWidth = 1; ctx.stroke(); }
     if (s.event) { const X = M.x + s.event.x * kx, Y = M.y + s.event.y * ky, p = calm ? .4 : (H.t * 1.4) % 1; disc(X, Y, 3.5 + p * 7); ctx.strokeStyle = GOLD; ctx.lineWidth = 1.2; ctx.globalAlpha = 1 - p * .7; ctx.stroke(); ctx.globalAlpha = 1; disc(X, Y, 2.6); ctx.fillStyle = GOLD; ctx.fill(); }
@@ -12712,7 +12712,7 @@ const { hud, initHud, hudDraw, uiEvent } = (() => {
       if (!c.alive || !Sim.canSee(s, me.team, c)) continue;
       const mine = c === me, X = M.x + c.x * kx, Y = M.y + c.y * ky;
       if (c.team !== me.team) H.lastSeen.set(c.id, { x: c.x, y: c.y, t: s.t });
-      disc(X, Y, mine ? 4.2 : 3.2); ctx.fillStyle = mine ? PAPER : TEAM_DOT[c.team]; ctx.fill(); ctx.strokeStyle = INK; ctx.lineWidth = 1; ctx.stroke();
+      disc(X, Y, mine ? 4.2 : 3.2); ctx.fillStyle = mine ? PAPER : TEAM_DOT[c.team === me.team ? 0 : 1]; ctx.fill(); ctx.strokeStyle = INK; ctx.lineWidth = 1; ctx.stroke();
     }
     drawMapAim(s, me, M, kx, ky);
     ctx.restore();
@@ -12755,7 +12755,7 @@ const { hud, initHud, hudDraw, uiEvent } = (() => {
       if ((L0.x - me.x) * (L0.x - me.x) + (L0.y - me.y) * (L0.y - me.y) > range * range) continue;
       const cx0 = M.x + L0.x * kx, cy0 = M.y + L0.y * ky;
       if (vis) { disc(cx0, cy0, 5.6); ctx.strokeStyle = WHITE; ctx.lineWidth = 1.2; ctx.stroke(); }
-      else { ctx.globalAlpha = .4; disc(cx0, cy0, 3); ctx.fillStyle = TEAM_DOT[c.team]; ctx.fill(); ctx.globalAlpha = 1; }
+      else { ctx.globalAlpha = .4; disc(cx0, cy0, 3); ctx.fillStyle = TEAM_DOT[c.team === me.team ? 0 : 1]; ctx.fill(); ctx.globalAlpha = 1; }
     }
   }
   // Vision fog: a tiny layer, refreshed a few times a second and scaled up.
