@@ -8,6 +8,12 @@
 // structures soften. Feet: the stick eases into a moving spot, holds a reached one, turns at a hand's pace, and footwork keeps a
 // bot moving around its spot instead of planting. Skill adds stick quality, push discipline, greed (over-chasing), cooldown
 // tracking, focus fire and shop timing. Bots call help, danger and attack pings for people; they follow help and attack pings from people.
+// 15.0 (kit revamp): every kit script plays its signature hook on purpose, scaled by skill (Bullseye full charges, Kade's Parry only
+// on a read and Rally crashes, Starfall on marks, Dawn/Dusk weaving, Echo-behind-then-Rend, Chain-then-Stomp, Ride detonation, lobbed
+// Bubbles led 0.4 s, Wall Slam and landing Skyward beyond them, Point Blank, armed wires laid ahead, Leech held to Snap, Hurl, Ember
+// from Scorched Earth, Scent Pounces, Bulwark Entrench, Tie). respectKit is the counterplay a person reads (wait out a Parry, leave a
+// fed Entrench, break a Leech); bots step off arming wires and dodge the new telegraphs. A shape-driven genericCombo plays any slot
+// without a script. botPickBuild / botEvolve choose by role and lineup for sharp bots; beginners keep their roll and mash.
 
   // ---------- skill: one number, 0 (beginner) to 1 (superb) ----------
   function skillProfile(v) {
@@ -51,6 +57,47 @@
   }
 
   const CLASS = { vesper: 'back', ione: 'back', solenne: 'peel', kade: 'front', gravel: 'front', sable: 'flank', deadbolt: 'back', hex: 'back', plague: 'peel', duelist: 'front', ironjaw: 'front', shiv: 'flank', voltaic: 'flank', tidecaller: 'peel', paragon: 'front', mirage: 'back', cinder: 'back', ravager: 'flank', cataclysm: 'front', puppeteer: 'peel' };
+  // 15.0 builds as a person picks them: the build that suits the role (and, for a sharp player, the enemy lineup) most of the
+  // time; a beginner keeps whatever it rolled. Only a seat left on its default build is changed, before the first tick.
+  const BOT_BUILD = {
+    vesper: { bottom: ['executioner', 'marksman', 'skirmisher'], top: ['skirmisher', 'executioner'] },
+    kade: { top: ['parrymaster', 'blitz', 'breaker'], jungle: ['blitz', 'parrymaster'] },
+    ione: { bottom: ['constellation', 'comet'], support: ['stellar', 'meteor'], top: ['comet', 'constellation'] },
+    solenne: { support: ['lifebringer', 'protector', 'radiant'], bottom: ['sunlance'] },
+    sable: { jungle: ['hunter', 'reaper'], top: ['twin', 'ghost', 'reaper'] },
+    gravel: { support: ['warden', 'anchor'], top: ['juggernaut', 'seismic'], jungle: ['juggernaut', 'anchor'] },
+    deadbolt: { bottom: ['gunslinger', 'trapper', 'deadeyed'], top: ['deadeyed', 'gunslinger'] },
+    duelist: { top: ['fencer', 'honorbound'], jungle: ['bladestorm', 'fencer'] },
+    hex: { bottom: ['cursebinder', 'transmuter'], support: ['jinx', 'transmuter', 'ritualist'], top: ['cursebinder'] },
+    plague: { support: ['apothecary', 'ward'], top: ['bloodletter', 'pestilence'], bottom: ['pestilence'] },
+    shiv: { jungle: ['cutthroat', 'venomous'], top: ['venomous', 'butcher'] },
+    ironjaw: { top: ['brawler', 'wrecker'], support: ['bouncer', 'fortress'], jungle: ['wrecker', 'brawler'] },
+    voltaic: { jungle: ['stormchaser', 'thunderhead'], top: ['surge', 'conductor'] },
+    tidecaller: { support: ['wellspring', 'abyss', 'deluge'], bottom: ['deluge', 'wellspring'] },
+    paragon: { top: ['sunstriker', 'skyknight'], jungle: ['skyknight', 'sunstriker'], support: ['aegisborn'] },
+    mirage: { bottom: ['twinshot', 'kaleidoscope'], top: ['shade', 'twinshot'] },
+    cinder: { bottom: ['pyre', 'wildfire', 'firestorm'], support: ['firestorm', 'wildfire'], top: ['pyre'] },
+    ravager: { jungle: ['alpha', 'hemorrhage'], top: ['savage', 'hemorrhage'] },
+    cataclysm: { top: ['moonquake', 'artillery', 'wreckingcrew'], jungle: ['wreckingcrew', 'moonquake'], support: ['bastille', 'artillery'] },
+    puppeteer: { support: ['marionettist', 'maestro', 'troupe'], bottom: ['troupe', 'marionettist'] },
+  };
+  function botPickBuild(s, c, b) {
+    const k = KITS[c.champ]; if (!k || !c.buildDef || !k.builds) return;
+    if (c.build !== defaultBuild(c.champ, c.role, hash01((s.seed || 7) + c.team * 13, c.slot + 101))) return; // a chosen loadout stays
+    const v = b.sk.v, roll = hash01((s.seed || 7) + c.team * 7, c.slot + 401); if (roll > .25 + .7 * v) return;
+    const ids = k.builds.map(x => x.id), list = ((BOT_BUILD[c.champ] || {})[c.role] || []).filter(x => ids.includes(x));
+    if (!list.length) return;
+    const foes = s.champs.filter(e => e.team !== c.team).map(e => e.champ), healers = foes.filter(x => ['solenne', 'tidecaller', 'plague', 'ravager'].includes(x)).length;
+    let pick = list[hash01((s.seed || 7) + c.team * 3, c.slot + 409) < .35 + .5 * v ? 0 : Math.min(1, list.length - 1)];
+    // A sharp player answers the lineup it can see (Villains pick after Heroes are seated).
+    if (v > .6 && foes.length) {
+      if (c.champ === 'solenne' && foes.includes('plague') && ids.includes('protector') && c.role === 'support') pick = 'protector';
+      if (c.champ === 'cinder' && healers >= 1 && ids.includes('pyre')) pick = 'pyre';
+      if (c.champ === 'plague' && c.role === 'support' && healers >= 1 && ids.includes('ward')) pick = 'ward';
+    }
+    if (pick === c.build) return;
+    c.build = pick; c.buildDef = k.builds.find(x => x.id === pick); refreshChamp(c); c.hp = c.maxHp;
+  }
   function makeBot(s, c, skill) {
     const i = c.slot, b = {
       skill: 0, sk: null, lane: c.role === 'top' || c.oneLane ? 0 : 1, cls: CLASS[c.champ] || 'front', mask: navMask(c.team), next: i * .05 + .02, foes: [], tid: 0, closest: 1e9, ratio: 1, noise: 0, noiseAt: 0, strafe: i % 2 ? 1 : -1,
@@ -61,6 +108,7 @@
       setSkill(x) { b.skill = clamp(x, 0, 1); b.sk = skillProfile(b.skill); },
     };
     b.setSkill(skill !== undefined ? skill : c.skill !== undefined ? c.skill : .5);
+    if (!s.tick) botPickBuild(s, c, b);
     b.buyPath = hash01((s.seed || 7) + c.team * 31, c.slot + 77) * itemPaths(c.champ, c.build).length | 0;
     return b;
   }
@@ -527,15 +575,16 @@
   const BURST = { vesper: [190, 0, 260], kade: [124, 0, 185], ione: [82, 165, 345], solenne: [72, 0, 90], sable: [138, 0, 180], gravel: [64, 62, 165], deadbolt: [62, 160, 240], duelist: [220, 0, 150], hex: [100, 0, 240], plague: [120, 170, 0], shiv: [150, 0, 252], ironjaw: [130, 70, 165], voltaic: [120, 90, 190], tidecaller: [80, 60, 170], paragon: [95, 95, 230], mirage: [150, 0, 170], cinder: [110, 80, 280], ravager: [130, 90, 160], cataclysm: [140, 90, 190], puppeteer: [75, 80, 140] };
   // know (14.0): how well the viewer tracks an enemy's cooldowns it has watched go out. 0 assumes everything is up (the old
   // rule, and a beginner's); a sharp player counts a spent ultimate and a burnt Evade.
+  const BURST_DEF = [110, 80, 200];
   function power(u, foe, know = 0) {
-    const B = BURST[u.champ], pw = pow(u); let burst = 0;
+    const B = BURST[u.champ] || BURST_DEF, pw = pow(u); let burst = 0;
     for (let i = 0; i < 3; i++) if (i < 2 || u.lvl >= 3) { const up = u.cd[i] <= 1.5 ? 1 : .15, k = foe ? 1 + (up - 1) * know : up; burst += k * B[i] * pw / (u.kit[i].cd || 6); }
     const eh = Math.max(1, u.hp) * (100 + u.armor) / 100; let dps = u.dmgBase * u.as * (u.buffT > 0 ? 1.2 : 1) + burst;
     if (u.stunT > 0) dps *= .6;
     return Math.sqrt(eh * dps);
   }
   function burstOn(c, t) {
-    let v = c.dmgBase * 2; const B = BURST[c.champ];
+    let v = c.dmgBase * 2; const B = BURST[c.champ] || BURST_DEF;
     for (let i = 0; i < 3; i++) if (rdy(c, i)) v += B[i] * pow(c);
     return v * 100 / (100 + t.armor);
   }
@@ -945,27 +994,30 @@
     return t.hp <= burstOn(c, t) || near >= 2 || (b.ratio > .9 && frac(t) < .7 && (b.sk.iq > .5 || s.rand() < .6));
   }
 
+  // 15.0 kit scripts. Each kit's signature hook is played on purpose, scaled by skill (b.sk.iq, b.sk.combo); a beginner mashes.
+  const behind = (c, t) => { const n = norm(t.x - c.x, t.y - c.y); return (t.fx || 0) * -n.x + (t.fy || 0) * -n.y < -.25; };
+  const sharp = (s, b, x) => b.sk.iq > x || s.rand() < .25;
   const COMBO = {
     vesper(s, c, b, t, d, mode) {
       if (!t) return false;
       if (rdy(c, 1) && (mode === 'retreat' || d < 210)) { const a = awayPoint(s, c, t, c.kit[1].range); cast(c, 1, a.x, a.y); return true; }
       if (mode === 'fight' && rdy(c, 2) && d < c.kit[2].range - 30 && losClear(s, c.x, c.y, t.x, t.y)) {
-        // Deadeye is the longest, slowest wind-up. Save it for a stunned, slowed or dying target.
-        const pinned = t.stunT > 0 || t.slowT > 0 || Math.hypot(t.vx, t.vy) < 200 || t.chan || t.charge;
-        if ((pinned || b.sk.iq < .5) && (ultWorth(s, c, b, t) || frac(t) < .5)) { const p = lead(s, c, b, t, 2600, .7); cast(c, 2, p.tx, p.ty); return true; }
+        // Deadeye is the one channel in the game: save it for a pinned, slowed or dying target (it now reveals and slows, so it also opens a kill).
+        if ((pinned(t) || Math.hypot(t.vx, t.vy) < 200 || b.sk.iq < .5) && (ultWorth(s, c, b, t) || frac(t) < .5)) { const p = lead(s, c, b, t, 2600, .7); cast(c, 2, p.tx, p.ty); return true; }
       }
       const A = c.kit[0];
       if (mode !== 'retreat' && rdy(c, 0) && d < A.range - 20 && !lineBlocked(s, c, b, t.x, t.y, 34)) {
         c.q.push({ t: 'charge', slot: 0 });
-        // Full charge when nothing is close. A beginner lets go at odd moments.
-        const full = A.charge * 1.02;
-        b.chargeHold = b.sk.iq < .4 ? full * (.3 + s.rand() * .7) : (c.f.skirmisher ? full : (b.closest > 360 && frac(c) > .4 ? full : full * .45));
+        // Bullseye: a full charge on a champion gives Smoke Step back, so a sharp bot holds it whenever nothing is on top of it.
+        const full = A.charge * 1.02, room = b.closest > 330 && frac(c) > .35, want = room && (b.sk.iq > .55 || !rdy(c, 1) || pinned(t));
+        b.chargeHold = b.sk.iq < .4 ? full * (.3 + s.rand() * .7) : (c.f.skirmisher ? full : want ? full : full * .45);
         return true;
       }
       return false;
     },
     kade(s, c, b, t, d, mode) {
-      if (rdy(c, 1) && b.parry) { cast(c, 1, c.x, c.y); return true; }
+      // Off Guard: a Parry that catches nothing slows Kade, so it is a read on an incoming hit, never a reflex.
+      if (rdy(c, 1) && b.parry && (b.sk.iq > .3 || s.rand() < .5)) { cast(c, 1, c.x, c.y); return true; }
       if (!t) return false;
       if (c.recast[0] > 0) {
         if (mode === 'retreat') { const a = awayPoint(s, c, t, 195); cast(c, 0, a.x, a.y); return true; }
@@ -974,103 +1026,136 @@
       }
       if (mode === 'retreat') { if (rdy(c, 0) && d < 310) { const a = awayPoint(s, c, t, c.kit[0].range); cast(c, 0, a.x, a.y); return true; } return false; }
       if (mode !== 'fight') return false;
-      if (rdy(c, 2) && d > 150 && d < c.kit[2].range && b.ratio >= .9 && ultWorth(s, c, b, t)) { const p = lead(s, c, b, t, 1100); cast(c, 2, p.tx, p.ty); return true; }
+      // Heroic Crash rallies allies near the landing: a sharp Kade jumps when the team can follow.
+      if (rdy(c, 2) && d > 150 && d < c.kit[2].range && b.ratio >= .9) {
+        const follow = alliesNear(s, c, t.x, t.y, 520, a => a !== c), group = foesNear(b, t.x, t.y, c.kit[2].r || 165);
+        if (ultWorth(s, c, b, t) || (b.sk.iq > .5 && (follow >= 1 || group >= 2))) { const p = lead(s, c, b, t, 1100); cast(c, 2, p.tx, p.ty); return true; }
+      }
+      // Lunge strips a Duelist's stealth: a sharp Kade lunges at where he vanished.
       if (rdy(c, 0) && d < c.kit[0].range + 10 && losClear(s, c.x, c.y, t.x, t.y)) { cast(c, 0, t.x, t.y); return true; }
       return false;
     },
     ione(s, c, b, t, d, mode) {
       if (!t || mode === 'retreat') return false;
-      const A1 = c.kit[1], A0 = c.kit[0];
-      if (mode === 'fight' && rdy(c, 2) && d < c.kit[2].range - 20 && losClear(s, c.x, c.y, t.x, t.y) && (ultWorth(s, c, b, t) || t.stunT > 0)) { cast(c, 2, t.x, t.y); return true; }
+      const A1 = c.kit[1], A0 = c.kit[0], A2 = c.kit[2];
+      // Starfall breaks a mark for more and re-marks: Orb first, then the ult, then Rupture breaks the new mark.
+      if (mode === 'fight' && rdy(c, 2) && d < A2.range - 20 && losClear(s, c.x, c.y, t.x, t.y)) {
+        const marked = t.markT > 0 && b.sk.combo > .3, group = foesInLine(b, c, t, A2.range, 95);
+        if (ultWorth(s, c, b, t) || pinned(t) || (marked && frac(t) < .8) || group >= 2) { const p = lead(s, c, b, t, 0, .45); cast(c, 2, p.tx, p.ty); return true; }
+      }
       if (t.markT > 0 && rdy(c, 1) && d < A1.range - 20 && losClear(s, c.x, c.y, t.x, t.y)) { const p = lead(s, c, b, t, 0, A1.delay); cast(c, 1, p.tx, p.ty); return true; }
       if (rdy(c, 0) && d < A0.range - 30 && (A0.passThrough || !lineBlocked(s, c, b, t.x, t.y, 42))) { const p = lead(s, c, b, t, A0.speed); cast(c, 0, p.tx, p.ty); return true; }
-      // Without a mark coming, Rupture is only worth it on a stunned or careless target.
-      if (rdy(c, 1) && d < A1.range - 20 && losClear(s, c.x, c.y, t.x, t.y) && (b.sk.iq < .5 ? s.rand() < .5 : c.cd[0] > 1.5 && (mode === 'fight' || t.stunT > 0 || c.f.meteor))) { const p = lead(s, c, b, t, 0, A1.delay); cast(c, 1, p.tx, p.ty); return true; }
+      if (rdy(c, 1) && d < A1.range - 20 && losClear(s, c.x, c.y, t.x, t.y) && (b.sk.iq < .5 ? s.rand() < .5 : c.cd[0] > 1.5 && (mode === 'fight' || pinned(t) || c.f.meteor))) { const p = lead(s, c, b, t, 0, A1.delay); cast(c, 1, p.tx, p.ty); return true; }
       return false;
     },
     solenne(s, c, b, t, d, mode) {
-      if (rdy(c, 1)) { const a = threatenedAlly(s, c, b); if (a && (b.sk.iq > .4 || s.rand() < .3)) { cast(c, 1, a.x, a.y); return true; } }
+      const A0 = c.kit[0], A1 = c.kit[1], A2 = c.kit[2];
+      if (rdy(c, 1)) { const a = threatenedAlly(s, c, b); if (a && dist(a, c) < (A1.range || 345) + 40 && (b.sk.iq > .4 || s.rand() < .3)) { cast(c, 1, a.x, a.y); return true; } }
       if (rdy(c, 2)) {
-        let n = 0; for (const a of s.champs) if (a.alive && a.team === c.team && dist(a, c) < c.kit[2].r - 20 && (frac(a) < .55 || a.stunT > 0)) n++;
+        const n = alliesNear(s, c, c.x, c.y, (A2.r || 270) - 20, a => frac(a) < .55 || a.stunT > 0 || a.rootT > 0 || a.polyT > 0);
         if (n >= 1 && b.closest < 700 && (b.sk.iq > .3 || s.rand() < .5)) { cast(c, 2, c.x, c.y); return true; }
+        if (t && mode === 'retreat' && d < (A2.r || 270) * .7 && b.sk.iq > .5) { cast(c, 2, c.x, c.y); return true; } // the knockback peels
       }
       if (rdy(c, 0)) {
-        let ally = null, low = .82;
-        for (const a of s.champs) if (a !== c && a.alive && a.team === c.team && dist(a, c) < c.kit[0].range - 20 && frac(a) < low && losClear(s, c.x, c.y, a.x, a.y)) { low = frac(a); ally = a; }
-        if (ally && !b.foes.some(e => segDist(e.x, e.y, c.x, c.y, ally.x, ally.y) < e.r + 30)) { const p = lead(s, c, b, ally, 1150); cast(c, 0, p.tx, p.ty); return true; }
-        if (t && mode !== 'retreat' && d < c.kit[0].range - 20 && !lineBlocked(s, c, b, t.x, t.y, 46)) { const p = lead(s, c, b, t, 1150); cast(c, 0, p.tx, p.ty); return true; }
+        // Dawn and Dusk: pstack 1 = the next Ray heals harder, 2 = it burns harder. A sharp Solenne weaves.
+        const ps = b.sk.combo > .35 ? c.pstack || 0 : 0, need = ps === 1 ? .9 : ps === 2 ? .5 : .82;
+        const ally = lowAlly(s, c, A0.range - 20, need), burn = t && mode !== 'retreat' && d < A0.range - 20 && !lineBlocked(s, c, b, t.x, t.y, 46);
+        if (ps === 2 && burn && !(ally && frac(ally) < .4)) { const p = lead(s, c, b, t, 1150); cast(c, 0, p.tx, p.ty); return true; }
+        if (ally && losClear(s, c.x, c.y, ally.x, ally.y) && !b.foes.some(e => segDist(e.x, e.y, c.x, c.y, ally.x, ally.y) < e.r + 30)) { const p = lead(s, c, b, ally, 1150); cast(c, 0, p.tx, p.ty); return true; }
+        if (burn) { const p = lead(s, c, b, t, 1150); cast(c, 0, p.tx, p.ty); return true; }
       }
       return false;
     },
     sable(s, c, b, t, d, mode) {
       if (!t) return false;
-      if (rdy(c, 2) && d < c.kit[2].range - 10) {
-        const exec = (125 * pow(c) + (t.maxHp - t.hp) * .35) * 100 / (100 + t.armor);
-        if (b.sk.iq < .5 ? frac(t) < .45 : t.hp <= exec) { cast(c, 2, t.x, t.y); return true; }
+      const A0 = c.kit[0], A1 = c.kit[1], A2 = c.kit[2];
+      if (rdy(c, 2) && d < A2.range - 10) {
+        const exec = ((A2.dmg || 125) * pow(c) + (t.maxHp - t.hp) * (A2.missing || .35)) * 100 / (100 + t.armor);
+        // Reap lands behind the target (Backstab), so a sharp bot follows it with Rend; a takedown refunds most of it.
+        if (b.sk.iq < .5 ? frac(t) < .45 : t.hp <= exec + (rdy(c, 0) ? (A0.dmg || 92) * 1.5 * pow(c) : 0)) { cast(c, 2, t.x, t.y); return true; }
       }
-      if (c.recast[1] > 0) { if (mode === 'retreat' || frac(c) < .45 || d > 400) { cast(c, 1, c.x, c.y); return true; } }
+      if (c.recast[1] > 0) { if (mode === 'retreat' || frac(c) < .45 || (d > 400 && c.behindT <= 0)) { cast(c, 1, c.x, c.y); return true; } }
       else if (rdy(c, 1)) {
-        if (mode === 'retreat') { const a = awayPoint(s, c, t, c.kit[1].range); cast(c, 1, a.x, a.y); return true; }
-        // Blink always travels full range, so this lands behind the target.
-        if (mode === 'fight' && d > 130 && d < c.kit[1].range - 15) { cast(c, 1, t.x, t.y); return true; }
+        if (mode === 'retreat') { const a = awayPoint(s, c, t, A1.range); cast(c, 1, a.x, a.y); return true; }
+        // Echo behind them, then Rend: for 1.5 s after a blink everything counts as from behind.
+        if (mode === 'fight' && d > 110 && d < A1.range + 60 && rdy(c, 0) && (b.sk.combo > .3 || d > 150)) { const bx = t.x - (t.fx || 0) * 70, by = t.y - (t.fy || 0) * 70; cast(c, 1, bx, by); return true; }
       }
-      if (mode !== 'retreat' && rdy(c, 0) && d < c.kit[0].range - 15 && losClear(s, c.x, c.y, t.x, t.y)) { cast(c, 0, t.x, t.y); return true; }
+      if (mode !== 'retreat' && rdy(c, 0) && d < (A0.range || 180) - 10 && losClear(s, c.x, c.y, t.x, t.y)) {
+        const back = c.behindT > 0 || behind(c, t);
+        // A sharp Sable waits a beat for her angle when Echo is about to give it; a beginner swings on cooldown.
+        if (back || b.sk.iq < .5 || !rdy(c, 1) || d < 90 || mode === 'poke') { cast(c, 0, t.x, t.y); return true; }
+      }
+      return false;
+    },
+    gravel(s, c, b, t, d, mode) {
+      if (!t) return false;
+      const A0 = c.kit[0], A1 = c.kit[1], A2 = c.kit[2];
+      // Stomp only hardens if it hits a champion; at three Bedrock stacks it stuns.
+      if (rdy(c, 1) && d < (A1.r || 180) + 5) { cast(c, 1, c.x, c.y); return true; }
+      if (mode === 'retreat') return false;
+      if (c.f.warden && rdy(c, 0)) { for (const a of s.champs) if (a !== c && a.alive && a.team === c.team && frac(a) < .4 && dist(a, c) > 170 && dist(a, c) < A0.range - 40 && losClear(s, c.x, c.y, a.x, a.y) && b.foes.some(e => dist(e, a) < 360) && (b.sk.iq > .35 || s.rand() < .3)) { cast(c, 0, a.x, a.y); return true; } }
+      if (mode === 'fight' && rdy(c, 2) && d < A2.range - 40 && b.ratio >= .9 && losClear(s, c.x, c.y, t.x, t.y) && (ultWorth(s, c, b, t) || foesNear(b, t.x, t.y, 200) >= 2)) { const p = lead(s, c, b, t, 1000); cast(c, 2, p.tx, p.ty); return true; }
+      // Chain drags them onto the Stomp: a sharp Gravel holds the hook until Stomp is ready.
+      if (rdy(c, 0) && d > 130 && d < A0.range - 30 && !lineBlocked(s, c, b, t.x, t.y, 50) && (mode === 'fight' || b.ratio >= 1) && (b.sk.combo < .4 || c.cd[1] < 2.5 || pinned(t) || d > 330)) { const p = lead(s, c, b, t, A0.speed || 1050); cast(c, 0, p.tx, p.ty); return true; }
       return false;
     },
     deadbolt(s, c, b, t, d, mode) {
       if (!t) return false;
-      if (mode === 'fight' && rdy(c, 2) && d < c.kit[2].range - 40 && (ultWorth(s, c, b, t) || t.slowT > 0 || t.rootT > 0)) { cast(c, 2, t.x + t.vx * .4, t.y + t.vy * .4); return true; }
-      if (mode === 'retreat') { if (rdy(c, 0) && d < c.kit[0].range) { const n = norm(t.x - c.x, t.y - c.y); cast(c, 0, c.x + n.x * 110, c.y + n.y * 110); return true; } return false; }
-      if (rdy(c, 0) && d < c.kit[0].range - 10 && losClear(s, c.x, c.y, t.x, t.y) && (c.f.trapper || mode === 'fight' || b.ratio >= 1)) {
-        // Lay it across their path, ahead of where they are walking.
-        const sp = Math.hypot(t.vx, t.vy), n = norm(t.x - c.x, t.y - c.y), ahead = sp > 80 ? .55 : .25;
-        const x = t.x + t.vx * ahead - n.x * 50, y = t.y + t.vy * ahead - n.y * 50;
-        if (sp > 30 || d < c.kit[0].range * .8) { cast(c, 0, x, y); return true; }
+      const A0 = c.kit[0], A1 = c.kit[1], A2 = c.kit[2];
+      if (mode === 'fight' && rdy(c, 2) && d < A2.range - 40 && (ultWorth(s, c, b, t) || pinned(t) || foesNear(b, t.x, t.y, A2.r || 215) >= 2)) { cast(c, 2, t.x + t.vx * .4, t.y + t.vy * .4); return true; }
+      if (mode === 'retreat') { if (rdy(c, 0) && d < A0.range) { const n = norm(t.x - c.x, t.y - c.y); cast(c, 0, c.x + n.x * 110, c.y + n.y * 110); return true; } return false; }
+      // Wires take 0.6 s to arm: lay them across the path well ahead, or under someone who cannot step off.
+      if (rdy(c, 0) && d < A0.range - 10 && losClear(s, c.x, c.y, t.x, t.y) && (c.f.trapper || mode === 'fight' || b.ratio >= 1)) {
+        const sp = Math.hypot(t.vx, t.vy), arm = .6 + .15, ahead = pinned(t) ? 0 : (b.sk.iq > .5 ? arm : .45) * b.sk.lead;
+        const x = t.x + t.vx * ahead, y = t.y + t.vy * ahead;
+        if (pinned(t) || sp > 60 || (d < A0.range * .8 && b.sk.iq < .5)) { cast(c, 0, x, y); return true; }
       }
-      if (rdy(c, 1) && d < c.kit[1].range - 20) {
-        const clear = !lineBlocked(s, c, b, t.x, t.y, 36), bounceOff = c.kit[1].bounces > 0 && s.minions.some(m => m.alive && m.team !== c.team && dist(m, t) < 340 && segDist(m.x, m.y, c.x, c.y, t.x, t.y) < 60);
+      if (rdy(c, 1) && d < A1.range - 20) {
+        const clear = !lineBlocked(s, c, b, t.x, t.y, 36), bounceOff = A1.bounces > 0 && s.minions.some(m => m.alive && m.team !== c.team && dist(m, t) < 340 && segDist(m.x, m.y, c.x, c.y, t.x, t.y) < 60);
         if ((clear || bounceOff) && (mode === 'fight' || b.ratio >= 1)) { const p = lead(s, c, b, t, 1500); cast(c, 1, p.tx, p.ty); return true; }
       }
       return false;
     },
     duelist(s, c, b, t, d, mode) {
-      if (c.recast[0] > 0 && t && d < c.kit[0].reach1 + 30) { cast(c, 0, c.x, c.y); return true; }
+      if (c.recast[0] > 0 && t && d < (c.kit[0].reach1 || 160) + 30) { cast(c, 0, c.x, c.y); return true; }
       if (!t) return false;
-      if (rdy(c, 1) && (mode === 'retreat' && d < 350 || (b.parry && frac(c) < .6))) { const a = awayPoint(s, c, t, c.kit[1].range); cast(c, 1, a.x, a.y); return true; }
+      const A1 = c.kit[1], A2 = c.kit[2];
+      if (rdy(c, 1) && (mode === 'retreat' && d < 350 || (b.parry && frac(c) < .6))) { const a = awayPoint(s, c, t, A1.range); cast(c, 1, a.x, a.y); return true; }
       if (mode !== 'fight') return false;
-      if (rdy(c, 2) && d < c.kit[2].range + 20 && losClear(s, c.x, c.y, t.x, t.y) && (b.ratio >= 1 || (c.f.honorbound && b.ratio >= .9)) && ultWorth(s, c, b, t)) { cast(c, 2, t.x, t.y); return true; }
-      // A decoy away, and strike from the dark.
-      if (rdy(c, 1) && (c.f.masquerade || b.sk.iq > .5) && d > 140 && d < c.kit[1].range && (s.t < (b.feintUntil || 0) || b.ratio >= 1.2)) { b.feintUntil = s.t + 6; const a = awayPoint(s, c, t, c.kit[1].range * .85); cast(c, 1, a.x, a.y); return true; }
+      // Final Salute: a ring he means to win (a kill heals 20%). A sharp Duelist calls it on a duel he is ahead in.
+      if (rdy(c, 2) && d < A2.range + 20 && losClear(s, c.x, c.y, t.x, t.y) && (b.ratio >= 1 || (c.f.honorbound && b.ratio >= .9)) && (ultWorth(s, c, b, t) || (b.sk.iq > .5 && frac(t) < frac(c) - .1 && foesNear(b, t.x, t.y, 500) <= 1))) { cast(c, 2, t.x, t.y); return true; }
+      if (rdy(c, 1) && (c.f.masquerade || b.sk.iq > .5) && d > 140 && d < A1.range && (s.t < (b.feintUntil || 0) || b.ratio >= 1.2)) { b.feintUntil = s.t + 6; const a = awayPoint(s, c, t, A1.range * .85); cast(c, 1, a.x, a.y); return true; }
       if (c.stealthT > 0 && d < 130 && rdy(c, 0)) { cast(c, 0, c.x, c.y); return true; }
-      if (rdy(c, 0) && d < c.kit[0].reach0 && losClear(s, c.x, c.y, t.x, t.y)) { cast(c, 0, c.x, c.y); return true; }
+      if (rdy(c, 0) && d < (c.kit[0].reach0 || 150) && losClear(s, c.x, c.y, t.x, t.y)) { cast(c, 0, c.x, c.y); return true; }
       return false;
     },
     hex(s, c, b, t, d, mode) {
       if (!t) return false;
-      const A2 = c.kit[2], A1 = c.kit[1];
-      if (rdy(c, 1) && d < A1.range - 30 && !lineBlocked(s, c, b, t.x, t.y, A1.w)) {
-        // Polymorph first on whoever is diving, casting or fleeing; a sharper bot waits for it to matter.
+      const A2 = c.kit[2], A1 = c.kit[1], A0 = c.kit[0];
+      if (rdy(c, 1) && d < A1.range - 30 && !lineBlocked(s, c, b, t.x, t.y, A1.w || 40)) {
         const rushing = d < 260 && b.ratio < 1.3, caster = t.chan || t.charge || t.dash;
-        if (rushing || caster || (mode === 'fight' && (c.f.transmuter || frac(t) < .55) && b.sk.iq >= .3)) { const p = lead(s, c, b, t, 1250); cast(c, 1, p.tx, p.ty); return true; }
+        if (rushing || caster || (mode === 'fight' && (c.f.transmuter || frac(t) < .55) && b.sk.iq >= .3)) { const p = lead(s, c, b, t, A1.speed || 1250); cast(c, 1, p.tx, p.ty); return true; }
       }
+      // Coven shows its ring 0.35 s before it pulls: aim where they will be, and at a cluster when there is one.
       if (mode === 'fight' && rdy(c, 2) && d < A2.range + 80 && losClear(s, c.x, c.y, t.x, t.y)) {
-        let near = 0, curses = t.curseN || 0; for (const e of b.foes) if (dist(e, t) < A2.r) { near++; curses += e.curseN || 0; }
-        if (near >= 2 || curses >= 3 || ultWorth(s, c, b, t) || t.stunT > 0) { const p = lead(s, c, b, t, 0, A2.dur * .5); cast(c, 2, p.tx, p.ty); return true; }
+        let near = 0, curses = 0; for (const e of b.foes) if (dist(e, t) < (A2.r || 240)) { near++; curses += e.curseN || 0; }
+        if (near >= 2 || curses >= 3 || ultWorth(s, c, b, t) || pinned(t)) { const p = lead(s, c, b, t, 0, .35 + .3); cast(c, 2, p.tx, p.ty); return true; }
       }
-      if (rdy(c, 0) && d < c.kit[0].range - 30 && !lineBlocked(s, c, b, t.x, t.y, 40) && (mode !== 'retreat' || d < 400)) { const p = lead(s, c, b, t, 1100); cast(c, 0, p.tx, p.ty); return true; }
+      if (rdy(c, 0) && d < A0.range - 30 && !lineBlocked(s, c, b, t.x, t.y, A0.w || 40) && (mode !== 'retreat' || d < 400)) { const p = lead(s, c, b, t, A0.speed || 1100); cast(c, 0, p.tx, p.ty); return true; }
       return false;
     },
     plague(s, c, b, t, d, mode) {
       const A0 = c.kit[0], A1 = c.kit[1], A2 = c.kit[2];
       if (!t) return false;
       if (rdy(c, 2) && d < A2.range + 100 && losClear(s, c.x, c.y, t.x, t.y) && mode === 'fight') {
-        let n = 0; for (const e of b.foes) if (dist(e, t) < A2.r * .9) n++;
-        const healing = b.foes.some(e => e.champ === 'solenne') || s.champs.some(a => a.team !== c.team && a.alive && a.champ === 'plague');
+        const n = foesNear(b, t.x, t.y, (A2.r || 250) * .9), healing = b.foes.some(e => e.champ === 'solenne' || e.champ === 'tidecaller' || e.champ === 'ravager');
         if (n >= 2 || (ultWorth(s, c, b, t) && (healing || frac(t) < .6))) { cast(c, 2, t.x, t.y); return true; }
       }
+      // Leech snaps for a stun if held the full 3 s, so a sharp Plague tethers what she can stay near (she then follows it: kitMove).
       if (rdy(c, 1) && d < A1.range + 30 && losClear(s, c.x, c.y, t.x, t.y)) {
         const al = c.f.bloodletter ? (frac(c) < .85 ? c : null) : lowestAlly(s, c, 640, true), needs = al ? frac(al) < .8 : false, offensive = mode === 'fight' || (mode === 'poke' && b.ratio >= 1);
-        if (needs ? offensive || mode === 'poke' : (offensive && (b.sk.iq < .5 || frac(t) < .75))) { cast(c, 1, t.x, t.y); return true; }
+        const holdable = b.sk.iq < .5 || t.msBase <= c.msBase + 25 || pinned(t) || d < A1.range * .6;
+        if ((needs ? offensive || mode === 'poke' : (offensive && (b.sk.iq < .5 || frac(t) < .75))) && holdable) { cast(c, 1, t.x, t.y); b.leechId = t.id; b.leechAt = s.t; return true; }
       }
       if (rdy(c, 0) && d < A0.range + 30 && losClear(s, c.x, c.y, t.x, t.y) && (mode !== 'retreat' || d < 260)) {
         if (mode === 'retreat') { cast(c, 0, c.x, c.y); return true; }
@@ -1080,49 +1165,48 @@
     },
     shiv(s, c, b, t, d, mode) {
       if (!t) return false;
-      const A0 = c.kit[0];
+      const A0 = c.kit[0], A2 = c.kit[2];
       if (mode === 'retreat') {
         if (rdy(c, 1)) { cast(c, 1, c.x, c.y); return true; }
         if (rdy(c, 0) && d < 360 && c.rootT <= 0) { const a = awayPoint(s, c, t, A0.range); cast(c, 0, a.x, a.y); return true; }
         return false;
       }
-      if (rdy(c, 2) && d < c.kit[2].range + 30) {
-        const A = c.kit[2], burst = A.strikes * A.dmg * pow(c) * 100 / (100 + t.armor);
+      if (rdy(c, 2) && d < A2.range + 30) {
+        const burst = (A2.strikes || 6) * (A2.dmg || 36) * pow(c) * 100 / (100 + t.armor);
         if (t.hp <= burst * 1.1 || (mode === 'fight' && b.ratio >= 1 && ultWorth(s, c, b, t))) { cast(c, 2, t.x, t.y); return true; }
       }
-      // In the dark: walk in and let the basic attack do the crit. A sharper bot holds its Shank for after.
-      if (c.stealthT > 0) return false;
+      // In the dark: walk in and let the opening cut crit. Within 200 she shimmers into view, so the last step is a Shank.
+      if (c.stealthT > 0) { if (rdy(c, 0) && d < A0.range - 10 && d > 120 && b.sk.combo > .4 && c.pready) { cast(c, 0, t.x, t.y); return true; } return false; }
       if (mode === 'fight' && rdy(c, 1) && d > 240 && d < 700 && b.sk.iq > .3 && (b.ratio >= 1 || c.f.nightblade)) { cast(c, 1, c.x, c.y); return true; }
       if (rdy(c, 0) && d < A0.range + 40 && c.rootT <= 0 && losClear(s, c.x, c.y, t.x, t.y) && (mode === 'fight' || (mode === 'poke' && d < 190 && b.ratio >= 1))) { const n = norm(t.x - c.x, t.y - c.y); cast(c, 0, t.x + n.x * 60, t.y + n.y * 60); return true; }
       return false;
     },
     ironjaw(s, c, b, t, d, mode) {
       if (!t) return false;
-      const A1 = c.kit[1];
-      if (rdy(c, 1) && d < A1.range + 30 && losClear(s, c.x, c.y, t.x, t.y) && (mode !== 'poke' || b.ratio >= 1)) { cast(c, 1, t.x, t.y); return true; }
+      const A0 = c.kit[0], A1 = c.kit[1], A2 = c.kit[2];
+      // Hurl: while the ball orbits, recast throws it. Orbit for the wave, hurl for the pick at 200 to 460.
+      if (c.recast[0] > 0) {
+        const hr = A0.hurl || 460;
+        if (d > 170 && d < hr - 20 && !lineBlocked(s, c, b, t.x, t.y, 50) && (mode !== 'poke' || b.ratio >= 1 || c.recast[0] < .5)) { const p = lead(s, c, b, t, A0.hurlSpeed || 1200); cast(c, 0, p.tx, p.ty); return true; }
+      }
+      if (rdy(c, 1) && d < (A1.range || 190) + 30 && losClear(s, c.x, c.y, t.x, t.y) && (mode !== 'poke' || b.ratio >= 1)) { cast(c, 1, t.x, t.y); return true; }
       if (mode === 'retreat') { if (rdy(c, 0) && d < 230) { cast(c, 0, c.x, c.y); return true; } return false; }
-      if (rdy(c, 0) && d < c.kit[0].orbit + 80 && (mode === 'fight' || b.ratio >= 1)) { cast(c, 0, c.x, c.y); return true; }
-      if (mode === 'fight' && rdy(c, 2) && d < c.kit[2].range - 40 && b.ratio >= .9 && losClear(s, c.x, c.y, t.x, t.y)) {
-        const n = norm(t.x - c.x, t.y - c.y); let line = 0;
-        for (const e of b.foes) if (segDist(e.x, e.y, c.x, c.y, c.x + n.x * c.kit[2].range, c.y + n.y * c.kit[2].range) < 90) line++;
-        if (line >= 2 || ultWorth(s, c, b, t) || t.stunT > 0) { const p = lead(s, c, b, t, 0, c.kit[2].delay); cast(c, 2, p.tx, p.ty); return true; }
+      if (rdy(c, 0) && (d < (A0.orbit || 140) + 80 || (b.sk.combo > .45 && d < (A0.hurl || 460) - 40 && mode === 'fight')) && (mode === 'fight' || b.ratio >= 1)) { cast(c, 0, c.x, c.y); return true; }
+      if (mode === 'fight' && rdy(c, 2) && d < A2.range - 40 && b.ratio >= .9 && losClear(s, c.x, c.y, t.x, t.y)) {
+        if (foesInLine(b, c, t, A2.range, 90) >= 2 || ultWorth(s, c, b, t) || pinned(t)) { const p = lead(s, c, b, t, 0, A2.delay || .42); cast(c, 2, p.tx, p.ty); return true; }
       }
       return false;
     },
-    gravel(s, c, b, t, d, mode) {
-      if (!t) return false;
-      if (rdy(c, 1) && d < c.kit[1].r + 5) { cast(c, 1, c.x, c.y); return true; }
-      if (mode === 'retreat') return false;
-      if (c.f.warden && rdy(c, 0)) { for (const a of s.champs) if (a !== c && a.alive && a.team === c.team && frac(a) < .4 && dist(a, c) > 170 && dist(a, c) < c.kit[0].range - 40 && losClear(s, c.x, c.y, a.x, a.y) && b.foes.some(e => dist(e, a) < 360) && (b.sk.iq > .35 || s.rand() < .3)) { cast(c, 0, a.x, a.y); return true; } }
-      if (rdy(c, 0) && d > 130 && d < c.kit[0].range - 30 && !lineBlocked(s, c, b, t.x, t.y, 50) && (mode === 'fight' || b.ratio >= 1)) { const p = lead(s, c, b, t, 1050); cast(c, 0, p.tx, p.ty); return true; }
-      if (mode === 'fight' && rdy(c, 2) && d < c.kit[2].range - 40 && b.ratio >= .9 && losClear(s, c.x, c.y, t.x, t.y) && ultWorth(s, c, b, t)) { const p = lead(s, c, b, t, 1000); cast(c, 2, p.tx, p.ty); return true; }
-      return false;
-    },
     voltaic(s, c, b, t, d, mode) {
+      if (c.recast[2] > 0) {
+        // Ride the Lightning's trail lingers: detonate it the moment an enemy champion is standing on it.
+        const z = s.zones.find(z => z.kind === 'fissure' && z.owner === c);
+        if (z && b.foes.some(e => segDist(e.x, e.y, z.x1, z.y1, z.x2, z.y2) < (z.r || 60) + e.r * .5) && (b.sk.combo > .25 || s.rand() < .3)) { cast(c, 2, c.x, c.y); return true; }
+      }
       if (!t) return false;
       const A0 = c.kit[0], A2 = c.kit[2];
       if (mode === 'retreat') { if (rdy(c, 0) && c.rootT <= 0) { const a = awayPoint(s, c, t, A0.range); cast(c, 0, a.x, a.y); return true; } return false; }
-      if (mode === 'fight' && rdy(c, 2) && d < A2.range - 40 && losClear(s, c.x, c.y, t.x, t.y) && (ultWorth(s, c, b, t) || t.stunT > 0)) { const p = lead(s, c, b, t, 1900, A2.delay); cast(c, 2, p.tx, p.ty); return true; }
+      if (mode === 'fight' && rdy(c, 2) && c.recast[2] <= 0 && d < A2.range - 40 && losClear(s, c.x, c.y, t.x, t.y) && (ultWorth(s, c, b, t) || pinned(t) || foesInLine(b, c, t, A2.range, 70) >= 2)) { const p = lead(s, c, b, t, 1900, A2.delay || 0); cast(c, 2, p.tx, p.ty); return true; }
       if (mode === 'fight' && rdy(c, 1) && d < 280) { cast(c, 1, c.x, c.y); return true; }
       if (rdy(c, 0) && d < A0.range + 20 && c.rootT <= 0 && losClear(s, c.x, c.y, t.x, t.y) && (mode === 'fight' || b.ratio >= 1)) { const n = norm(t.x - c.x, t.y - c.y); cast(c, 0, t.x + n.x * 60, t.y + n.y * 60); return true; }
       return false;
@@ -1130,35 +1214,57 @@
     tidecaller(s, c, b, t, d, mode) {
       const A0 = c.kit[0], A1 = c.kit[1], A2 = c.kit[2];
       if (rdy(c, 1)) { const a = threatenedAlly(s, c, b); if (a && dist(a, c) < A1.range && (b.sk.iq > .4 || s.rand() < .3)) { cast(c, 1, a.x, a.y); return true; } }
-      if (rdy(c, 2)) { let n = 0; for (const a of s.champs) if (a.alive && a.team === c.team && dist(a, c) < 420 && frac(a) < .6) n++; if ((n >= 1 && b.closest < 620) || (t && mode === 'fight' && ultWorth(s, c, b, t) && d < A2.range - 80)) { const x = t || c; cast(c, 2, x.x, x.y); return true; } }
-      if (rdy(c, 0)) { let ally = null, low = .85; for (const a of s.champs) if (a !== c && a.alive && a.team === c.team && dist(a, c) < A0.range - 20 && frac(a) < low && losClear(s, c.x, c.y, a.x, a.y)) { low = frac(a); ally = a; } if (ally) { const p = lead(s, c, b, ally, 1050); cast(c, 0, p.tx, p.ty); return true; } if (t && mode !== 'retreat' && d < A0.range - 20 && losClear(s, c.x, c.y, t.x, t.y)) { const p = lead(s, c, b, t, 1050); cast(c, 0, p.tx, p.ty); return true; } }
-      if (t && rdy(c, 1) && d < A1.range && losClear(s, c.x, c.y, t.x, t.y) && (mode === 'fight' || (mode === 'retreat' && d < 260))) { cast(c, 1, t.x, t.y); return true; }
+      if (rdy(c, 2)) { const n = alliesNear(s, c, c.x, c.y, 420, a => frac(a) < .6); if ((n >= 1 && b.closest < 620) || (t && mode === 'fight' && (ultWorth(s, c, b, t) || foesInLine(b, c, t, A2.range || 700, 140) >= 2) && d < (A2.range || 700) - 80)) { const x = t || c; cast(c, 2, x.x, x.y); return true; } }
+      if (rdy(c, 0)) { const ally = lowAlly(s, c, A0.range - 20, .85); if (ally && losClear(s, c.x, c.y, ally.x, ally.y)) { const p = lead(s, c, b, ally, 1050); cast(c, 0, p.tx, p.ty); return true; } if (t && mode !== 'retreat' && d < A0.range - 20 && losClear(s, c.x, c.y, t.x, t.y)) { const p = lead(s, c, b, t, 1050); cast(c, 0, p.tx, p.ty); return true; } }
+      // Bubble on an enemy is a lob that lands in 0.4 s: lead it, and save it for a diver or a fight.
+      if (t && rdy(c, 1) && d < A1.range + 30 && losClear(s, c.x, c.y, t.x, t.y) && (mode === 'fight' || (d < 300 && b.sk.iq > .35))) { const p = lead(s, c, b, t, 0, .4); cast(c, 1, p.tx, p.ty); return true; }
       return false;
     },
     paragon(s, c, b, t, d, mode) {
       if (!t) return false;
       const A0 = c.kit[0], A1 = c.kit[1], A2 = c.kit[2];
       if (mode === 'retreat') { if (rdy(c, 0)) { const a = awayPoint(s, c, t, A0.range); cast(c, 0, a.x, a.y); return true; } return false; }
-      if (mode === 'fight' && rdy(c, 2) && d < A2.range - 60 && b.ratio >= .9 && (ultWorth(s, c, b, t) || t.stunT > 0)) { const p = lead(s, c, b, t, 0, 1.05); cast(c, 2, p.tx, p.ty); return true; }
-      if (mode === 'fight' && rdy(c, 0) && d > 150 && d < A0.range + 30) { const p = lead(s, c, b, t, 0, .4); cast(c, 0, p.tx, p.ty); return true; }
-      if (rdy(c, 1) && d < A1.range && losClear(s, c.x, c.y, t.x, t.y) && (mode === 'fight' || b.ratio >= 1)) { cast(c, 1, t.x, t.y); return true; }
+      // Meteor Drop is telegraphed for 1.05 s now: lead it hard, or drop it on someone who cannot move.
+      if (mode === 'fight' && rdy(c, 2) && d < A2.range - 60 && b.ratio >= .9 && (ultWorth(s, c, b, t) || pinned(t) || foesNear(b, t.x, t.y, A2.r || 210) >= 2)) { const p = lead(s, c, b, t, 0, pinned(t) ? .3 : 1.05); cast(c, 2, p.tx, p.ty); return true; }
+      // Wall Slam: Solar Fist drives a champion into a wall for a stun. A sharp Paragon fires it when a wall is right behind them.
+      if (rdy(c, 1) && d < (A1.range || 190) && losClear(s, c.x, c.y, t.x, t.y)) {
+        const n = norm(t.x - c.x, t.y - c.y), wall = rayWall(t.x, t.y, n.x, n.y, 150 + t.r) - t.r < 135;
+        if ((wall && b.sk.combo > .3) || mode === 'fight' && (b.sk.iq < .55 || frac(c) < .6 || d < 120 || !rdy(c, 0)) || b.ratio >= 1.2) { cast(c, 1, t.x, t.y); return true; }
+      }
+      if (mode === 'fight' && rdy(c, 0) && d > 150 && d < A0.range + 30) {
+        // Land on the far side of them so the Fist drives them into the nearest wall.
+        let p = lead(s, c, b, t, 0, .4);
+        if (b.sk.combo > .5) { for (let k = 0; k < 8; k++) { const ang = k * Math.PI / 4, wx = Math.cos(ang), wy = Math.sin(ang); if (rayWall(t.x, t.y, wx, wy, 140) < 130) { const lx = t.x - wx * 90, ly = t.y - wy * 90; if (Math.hypot(lx - c.x, ly - c.y) < A0.range) { p = { tx: lx, ty: ly }; break; } } } }
+        cast(c, 0, p.tx, p.ty); return true;
+      }
       return false;
     },
     mirage(s, c, b, t, d, mode) {
       if (!t) return false;
       const A0 = c.kit[0], A1 = c.kit[1], A2 = c.kit[2];
-      if (rdy(c, 1) && (mode === 'retreat' || d < 200)) { const a = awayPoint(s, c, t, A1.range); cast(c, 1, a.x, a.y); return true; }
-      if (mode === 'fight' && rdy(c, 2) && d < A2.range - 30 && losClear(s, c.x, c.y, t.x, t.y) && (ultWorth(s, c, b, t) || t.slowT > 0 || t.stunT > 0)) { cast(c, 2, t.x + t.vx * .3, t.y + t.vy * .3); return true; }
-      if (mode !== 'retreat' && rdy(c, 0) && d < A0.range - 20 && !lineBlocked(s, c, b, t.x, t.y, 34)) { const p = lead(s, c, b, t, 1500); cast(c, 0, p.tx, p.ty); return true; }
+      // Phantom Step: the decoy walks on the old heading, so a sharp Mirage steps sideways from it.
+      if (rdy(c, 1) && (mode === 'retreat' || d < 200)) { const a = awayPoint(s, c, t, A1.range); if (b.sk.iq > .55) { const n = norm(a.x - c.x, a.y - c.y), sg = b.strafe; a.x = c.x + (n.x * .6 - n.y * .8 * sg) * A1.range; a.y = c.y + (n.y * .6 + n.x * .8 * sg) * A1.range; if (!navOpen(s.map, navMask(c.team), a.x, a.y)) { const q = awayPoint(s, c, t, A1.range); a.x = q.x; a.y = q.y; } } cast(c, 1, a.x, a.y); return true; }
+      if (mode === 'fight' && rdy(c, 2) && d < A2.range - 30 && losClear(s, c.x, c.y, t.x, t.y) && (ultWorth(s, c, b, t) || pinned(t) || foesNear(b, t.x, t.y, A2.r || 240) >= 2)) { cast(c, 2, t.x + t.vx * .3, t.y + t.vy * .3); return true; }
+      // Point Blank: all three bolts on one champion slow it. Close in, or poke from range.
+      // Three spread bolts: a minion in the way stops one, not the volley, so a sharp bot only needs a clear line past walls.
+      if (mode !== 'retreat' && rdy(c, 0) && d < A0.range - 20 && (b.sk.iq > .5 ? losClear(s, c.x, c.y, t.x, t.y) : !lineBlocked(s, c, b, t.x, t.y, 34))) {
+        const p = lead(s, c, b, t, A0.speed || 1500); cast(c, 0, p.tx, p.ty); return true;
+      }
       return false;
     },
     cinder(s, c, b, t, d, mode) {
       if (!t) return false;
       const A0 = c.kit[0], A1 = c.kit[1], A2 = c.kit[2];
       if (mode === 'retreat') { if (rdy(c, 1) && d < 340) { cast(c, 1, c.x, c.y); return true; } return false; }
-      if (mode === 'fight' && rdy(c, 2) && d < A2.range + 60 && losClear(s, c.x, c.y, t.x, t.y)) { let near = 0; for (const e of b.foes) if (dist(e, t) < A2.r) near++; if (near >= 2 || ultWorth(s, c, b, t) || t.stunT > 0 || t.rootT > 0) { const p = lead(s, c, b, t, 0, A2.delay); cast(c, 2, p.tx, p.ty); return true; } }
-      if (rdy(c, 0) && d < A0.range - 30 && !lineBlocked(s, c, b, t.x, t.y, 40)) { const p = lead(s, c, b, t, 1150); cast(c, 0, p.tx, p.ty); return true; }
-      if (rdy(c, 1) && d < A1.range + 40 && losClear(s, c.x, c.y, t.x, t.y) && (mode === 'fight' || b.ratio >= 1)) { const p = lead(s, c, b, t, 0, .5); cast(c, 1, p.tx, p.ty); return true; }
+      if (mode === 'fight' && rdy(c, 2) && d < A2.range + 60 && losClear(s, c.x, c.y, t.x, t.y)) { if (foesNear(b, t.x, t.y, A2.r || 235) >= 2 || ultWorth(s, c, b, t) || pinned(t)) { const p = lead(s, c, b, t, 0, A2.delay || 1); cast(c, 2, p.tx, p.ty); return true; } }
+      // Ember: a Firebolt cast from inside her own Scorched Earth is wider and stronger. A sharp Cinder lays the ground she stands on.
+      const onFire = s.zones.some(z => z.owner === c && z.kind !== 'blast' && !z.line && Math.hypot(z.x - c.x, z.y - c.y) < (z.r || 0) - 10);
+      if (rdy(c, 1) && d < (A1.range || 420) + 40 && losClear(s, c.x, c.y, t.x, t.y) && (mode === 'fight' || b.ratio >= 1)) {
+        const r = A1.r || 135;
+        if (b.sk.combo > .45 && rdy(c, 0) && !onFire) { const n = norm(t.x - c.x, t.y - c.y), k = Math.min(r - 30, d / 2); cast(c, 1, c.x + n.x * k, c.y + n.y * k); return true; }
+        if (b.sk.combo <= .45 || !rdy(c, 0)) { const p = lead(s, c, b, t, 0, .5); cast(c, 1, p.tx, p.ty); return true; }
+      }
+      if (rdy(c, 0) && d < A0.range - 30 && !lineBlocked(s, c, b, t.x, t.y, onFire ? 56 : 40)) { const p = lead(s, c, b, t, A0.speed || 1150); cast(c, 0, p.tx, p.ty); return true; }
       return false;
     },
     ravager(s, c, b, t, d, mode) {
@@ -1166,31 +1272,116 @@
       const A0 = c.kit[0], A1 = c.kit[1];
       if (mode === 'retreat') { if (rdy(c, 1)) { const a = awayPoint(s, c, t, A1.range); cast(c, 1, a.x, a.y); return true; } return false; }
       if (mode === 'fight' && rdy(c, 2) && d < 320 && (b.ratio >= 1 || ultWorth(s, c, b, t))) { cast(c, 2, c.x, c.y); return true; }
-      if (mode === 'fight' && rdy(c, 1) && d > 150 && d < A1.range + 30) { cast(c, 1, t.x, t.y); return true; }
-      if (rdy(c, 0) && d < A0.range && losClear(s, c.x, c.y, t.x, t.y) && (mode === 'fight' || b.ratio >= 1)) { cast(c, 0, t.x, t.y); return true; }
+      // Bloodscent: Pounce on a champion under half refunds half its cooldown, so the low one is always the Pounce.
+      if (mode === 'fight' && rdy(c, 1) && d < A1.range + 30 && (d > 150 || (frac(t) < .5 && b.sk.iq > .4))) { cast(c, 1, t.x, t.y); return true; }
+      if (rdy(c, 0) && d < (A0.range || 190) && losClear(s, c.x, c.y, t.x, t.y) && (mode === 'fight' || b.ratio >= 1 || frac(c) < .6)) { cast(c, 0, t.x, t.y); return true; }
       return false;
     },
     cataclysm(s, c, b, t, d, mode) {
       if (!t) return false;
       const A0 = c.kit[0], A2 = c.kit[2];
-      if (rdy(c, 1) && b.closest < 260 && (mode === 'retreat' || mode === 'fight')) { cast(c, 1, c.x, c.y); return true; }
+      // Bulwark: damage Entrench prevents feeds its shockwave, so dig in while being hit, not before.
+      if (rdy(c, 1) && b.closest < 260 && (mode === 'retreat' || mode === 'fight') && (b.sk.iq < .5 || s.t - (b.hurtAt || -9) < .8 || b.closest < 170)) { cast(c, 1, c.x, c.y); return true; }
       if (mode === 'retreat') return false;
-      if (mode === 'fight' && rdy(c, 2) && d < A2.range - 40 && b.ratio >= .9 && losClear(s, c.x, c.y, t.x, t.y)) { const n = norm(t.x - c.x, t.y - c.y); let line = 0; for (const e of b.foes) if (segDist(e.x, e.y, c.x, c.y, c.x + n.x * A2.range, c.y + n.y * A2.range) < 95) line++; if (line >= 2 || ultWorth(s, c, b, t) || t.stunT > 0) { const p = lead(s, c, b, t, 0, A2.delay); cast(c, 2, p.tx, p.ty); return true; } }
-      if (rdy(c, 0) && d < A0.range && losClear(s, c.x, c.y, t.x, t.y) && (mode === 'fight' || b.ratio >= 1)) { const p = lead(s, c, b, t, 0, A0.delay); cast(c, 0, p.tx, p.ty); return true; }
+      if (mode === 'fight' && rdy(c, 2) && d < A2.range - 40 && b.ratio >= .9 && losClear(s, c.x, c.y, t.x, t.y)) { if (foesInLine(b, c, t, A2.range, 95) >= 2 || ultWorth(s, c, b, t) || pinned(t)) { const p = lead(s, c, b, t, 0, A2.delay || .6); cast(c, 2, p.tx, p.ty); return true; } }
+      if (rdy(c, 0) && d < A0.range && losClear(s, c.x, c.y, t.x, t.y) && (mode === 'fight' || b.ratio >= 1)) { const p = lead(s, c, b, t, 0, A0.delay || .75); cast(c, 0, p.tx, p.ty); return true; }
       return false;
     },
     puppeteer(s, c, b, t, d, mode) {
       if (!t) return false;
       const A0 = c.kit[0], A1 = c.kit[1], A2 = c.kit[2];
       if (rdy(c, 2) && d < A2.range + 20 && losClear(s, c.x, c.y, t.x, t.y) && (mode === 'retreat' ? d < 300 : mode === 'fight' && (ultWorth(s, c, b, t) || frac(t) < .55))) { cast(c, 2, t.x, t.y); return true; }
-      if (rdy(c, 0) && d < A0.range - 20 && !lineBlocked(s, c, b, t.x, t.y, 40) && (mode !== 'poke' || b.ratio >= 1)) { const p = lead(s, c, b, t, 1250); cast(c, 0, p.tx, p.ty); return true; }
-      if (rdy(c, 1) && d < A1.range + 180 && mode !== 'retreat') { const n = norm(t.x - c.x, t.y - c.y), l = Math.min(A1.range - 20, Math.max(60, d - 120)); cast(c, 1, c.x + n.x * l, c.y + n.y * l); return true; }
+      // Tie: Thread also roots the nearest other champion within 280 of the one it catches, so aim at the pair.
+      if (rdy(c, 0) && (mode !== 'poke' || b.ratio >= 1)) {
+        let aim = null;
+        if (b.sk.combo > .4) for (const e of b.foes) { const de = dist(c, e); if (de < A0.range - 20 && b.foes.some(o => o !== e && dist(o, e) < 260) && !lineBlocked(s, c, b, e.x, e.y, 40)) { aim = e; break; } }
+        if (!aim && d < A0.range - 20 && !lineBlocked(s, c, b, t.x, t.y, 40)) aim = t;
+        if (aim) { const p = lead(s, c, b, aim, A0.speed || 1250); cast(c, 0, p.tx, p.ty); return true; }
+      }
+      if (rdy(c, 1) && d < (A1.range || 420) + 180 && mode !== 'retreat') { const n = norm(t.x - c.x, t.y - c.y), l = Math.min((A1.range || 420) - 20, Math.max(60, d - 120)); cast(c, 1, c.x + n.x * l, c.y + n.y * l); return true; }
       return false;
     },
   };
+  // 15.0: a shape-driven player for any ability, so a kit the bots have no script for (or a slot a script leaves out) is still
+  // played sensibly: shots led and kept off minions, blasts led by their delay, dashes in to fight and out to escape, self casts
+  // when someone is in reach, ultimates only when worth it. Kit scripts call these helpers too.
+  const KA = (c, i) => c.kit[i] || {};
+  const reachOf = A => A.range || A.r || 0;
+  function useShot(s, c, b, t, d, i, o = {}) {
+    const A = KA(c, i); if (!rdy(c, i) || !t) return false;
+    const R = (o.range || A.range || 400) - (o.slack !== undefined ? o.slack : 25);
+    if (d > R) return false;
+    if (o.pierce || A.passThrough ? !losClear(s, c.x, c.y, t.x, t.y) : lineBlocked(s, c, b, t.x, t.y, A.w || 40)) return false;
+    const p = lead(s, c, b, t, o.speed || A.speed || 1200, o.delay || 0); cast(c, i, p.tx, p.ty); return true;
+  }
+  function useBlast(s, c, b, t, d, i, o = {}) {
+    const A = KA(c, i); if (!rdy(c, i) || !t) return false;
+    if (d > (A.range || 0) + (o.over !== undefined ? o.over : (A.r || 80) * .5)) return false;
+    if (!o.walls && !losClear(s, c.x, c.y, t.x, t.y)) return false;
+    const p = lead(s, c, b, t, 0, o.delay !== undefined ? o.delay : (A.delay || 0) + .1); cast(c, i, p.tx, p.ty); return true;
+  }
+  function useSelf(s, c, b, t, d, i, r) {
+    const A = KA(c, i); if (!rdy(c, i) || !t || d > (r || A.r || 200) + 5) return false;
+    cast(c, i, c.x, c.y); return true;
+  }
+  function useDashIn(s, c, b, t, d, i, o = {}) {
+    const A = KA(c, i); if (!rdy(c, i) || !t) return false;
+    if (d < (o.min !== undefined ? o.min : 140) || d > (A.range || 200) + (o.extra !== undefined ? o.extra : c.range * .6)) return false;
+    if (!losClear(s, c.x, c.y, t.x, t.y)) return false;
+    cast(c, i, t.x, t.y); return true;
+  }
+  function useDashOut(s, c, b, t, i) {
+    const A = KA(c, i); if (!rdy(c, i)) return false;
+    const a = awayPoint(s, c, t, A.range || 200); cast(c, i, a.x, a.y); return true;
+  }
+  // Count of foes along a line or inside a ring, for ultimates that want a group.
+  function foesInLine(b, c, t, len, w) { const n = norm(t.x - c.x, t.y - c.y); let k = 0; for (const e of b.foes) if (segDist(e.x, e.y, c.x, c.y, c.x + n.x * len, c.y + n.y * len) < w) k++; return k; }
+  function foesNear(b, x, y, r) { let k = 0; for (const e of b.foes) if (Math.hypot(e.x - x, e.y - y) < r) k++; return k; }
+  function alliesNear(s, c, x, y, r, pred) { let k = 0; for (const a of s.champs) if (a.alive && a.team === c.team && Math.hypot(a.x - x, a.y - y) < r && (!pred || pred(a))) k++; return k; }
+  function lowAlly(s, c, r, below, self = false) { let best = null, lo = below; for (const a of s.champs) if (a.alive && a.team === c.team && (self || a !== c) && dist(a, c) < r && frac(a) < lo) { lo = frac(a); best = a; } return best; }
+  const pinned = t => t.stunT > 0 || t.rootT > 0 || t.polyT > 0 || t.chan || t.charge || (t.slowT > 0 && Math.hypot(t.vx, t.vy) < 220);
+  function genericSlot(s, c, b, t, d, mode, i) {
+    const A = KA(c, i), sh = A.shape;
+    if (sh === 'dash') return mode === 'retreat' ? (t && d < 420 ? useDashOut(s, c, b, t, i) : false) : mode === 'fight' && b.ratio >= 1 && useDashIn(s, c, b, t, d, i);
+    if (mode === 'retreat' && i === 2) return false;
+    if (sh === 'self') { if (A.r) return useSelf(s, c, b, t, d, i, A.r); return !!t && d < Math.max(c.range + 80, 300) && (mode === 'fight' || mode === 'retreat') && (cast(c, i, c.x, c.y), true); }
+    if (mode === 'retreat' && !(t && d < 300)) return false;
+    if (sh === 'line') return useShot(s, c, b, t, d, i, { pierce: A.pierce });
+    if (sh === 'cone') return !!t && rdy(c, i) && d < (A.range || A.r || 250) - 20 && (cast(c, i, t.x, t.y), true);
+    return useBlast(s, c, b, t, d, i);
+  }
+  function genericCombo(s, c, b, t, d, mode) {
+    if (!t) return false;
+    if (mode === 'fight' && rdy(c, 2) && ultWorth(s, c, b, t) && genericSlot(s, c, b, t, d, mode, 2)) return true;
+    for (const i of [0, 1]) { if (mode === 'poke' && KA(c, i).shape === 'dash') continue; if (genericSlot(s, c, b, t, d, mode, i)) return true; }
+    return false;
+  }
+  // 15.0 counterplay a person reads off the coin: wait out a Parry, step off a dug-in Cataclysm with a big Bulwark,
+  // walk out of a Leech before it snaps. Returns true when it took over the frame.
+  function respectKit(s, c, b, t, d) {
+    const iq = b.sk.iq, roll = hash01(t.id + (s.t * 2 | 0), c.id + 211);
+    if (t.champ === 'kade' && t.parryT > 0 && roll < iq * .9) { c.atk = false; c.atkPref = 0; b.castAt = Math.max(b.castAt, s.t + Math.min(.5, t.parryT) + .05); if (KITS[c.champ].melee && d < 170) { const n = norm(c.x - t.x, c.y - t.y); moveDir(b, n.x, n.y); } return true; }
+    if (t.champ === 'cataclysm' && c.champ !== 'paragon' && t.drT > 0 && (t.pstack || 0) >= 3 && d < 230 && roll < iq * .8 && frac(t) > .2) { const n = norm(c.x - t.x, c.y - t.y); moveTo(b, t.x + n.x * 260, t.y + n.y * 260, 30); c.atk = !KITS[c.champ].melee; return true; }
+    const tz = iq > .4 ? s.zones.find(z => z.kind === 'tether' && z.tgt === c.id && z.owner && z.owner.alive) : null;
+    if (tz && b.ratio < .95 && tz.t > .4) { const o = tz.owner, n = norm(c.x - o.x, c.y - o.y); moveTo(b, o.x + n.x * 700, o.y + n.y * 700, 30); c.atk = d - t.r <= c.range; useCombo(s, c, b, t, 'fight'); return true; }
+    return false;
+  }
+  // 15.0 footwork a kit asks for: Vesper plants for Focus when nothing can reach her; Plague keeps her Leech in range.
+  function kitMove(s, c, b, t, d) {
+    if (c.champ === 'vesper' && b.sk.iq > .45 && d <= c.range + t.r - 5 && !c.pready && b.threatT > 1) {
+      if (!b.foes.some(e => dist(e, c) < (e.range || 0) + 120)) noMove(b);
+    } else if (c.champ === 'plague') {
+      const z = s.zones.find(z => z.kind === 'tether' && z.owner === c), e = z && s.champs.find(x => x.id === z.tgt);
+      if (e && e.alive && dist(c, e) > (c.kit[1].range || 405) - 20 && b.sk.iq > .35 && frac(c) > .3) moveTo(b, e.x, e.y, (c.kit[1].range || 405) * .6);
+    }
+  }
   function useCombo(s, c, b, t, mode) {
     if (c.charge || c.chan || (s.t < b.castAt && !b.parry && !(c.recast[0] > 0 || c.recast[1] > 0))) return;
-    if (COMBO[c.champ](s, c, b, t, t ? dist(c, t) : 1e9, mode)) {
+    const d = t ? dist(c, t) : 1e9;
+    let used = (COMBO[c.champ] || genericCombo)(s, c, b, t, d, mode);
+    // A beginner presses what is up in a fight even when the moment is wrong; every kit gets the same clumsy hands.
+    if (!used && t && mode === 'fight' && b.sk.iq < .45 && s.rand() < (.45 - b.sk.iq) * .4) { const i = s.rand() < .5 ? 0 : 1; if (rdy(c, i) && KA(c, i).shape !== 'dash' || b.ratio >= 1) used = genericSlot(s, c, b, t, d, mode, i); }
+    if (used) {
       b.castAt = s.t + b.sk.gap * (.7 + s.rand() * .6);
       const q = c.q[c.q.length - 1]; if (q && q.slot === 2 && botComboOn(s, c, t)) b.st13.combo++;
     }
@@ -1198,7 +1389,7 @@
   const PVE = { vesper: [0], kade: [0], ione: [1, 0], solenne: [], sable: [0], gravel: [1], deadbolt: [1], duelist: [0], hex: [0], plague: [0], shiv: [0], ironjaw: [0, 1], voltaic: [0], tidecaller: [], paragon: [1], mirage: [0], cinder: [0, 1], ravager: [0], cataclysm: [0], puppeteer: [1] };
   function castPve(s, c, b, m, d) {
     if (c.charge || c.chan || s.t < b.castAt) return;
-    for (const i of PVE[c.champ]) {
+    for (const i of PVE[c.champ] || [0]) {
       const a = c.kit[i]; if (!rdy(c, i) || (a.range ? d > a.range - 30 : d > (a.r || 200))) continue;
       cast(c, i, m.x, m.y); b.castAt = s.t + b.sk.gap + .4; return;
     }
@@ -1232,6 +1423,7 @@
     for (const z of s.zones) {
       if (z.team === c.team || z.total - z.t < sk.react * .6) continue;
       if (z.kind === 'blast') { const d = Math.hypot(c.x - z.x, c.y - z.y); if (d < z.r + c.r + 12) { const n = norm(c.x - z.x, c.y - z.y); note(z.t, n.x, n.y, z.id, clamp((z.r + c.r + 16 - d) / Math.max(200, c.msBase || 300) + .06, .24, 1.1)); } }
+      else if (z.kind === 'tripline' && z.arm > 0) { if (segDist(c.x, c.y, z.x1, z.y1, z.x2, z.y2) < c.r + 30) { const n = norm(z.x2 - z.x1, z.y2 - z.y1); let x = -n.y, y = n.x; if (x * (c.x - z.x1) + y * (c.y - z.y1) < 0) { x = -x; y = -y; } note(z.arm, x, y, z.id); } } // a wire still arming under its feet: step off
       else if (z.kind === 'fissure') { if (segDist(c.x, c.y, z.x1, z.y1, z.x2, z.y2) < z.r + c.r + 14) { const n = norm(z.x2 - z.x1, z.y2 - z.y1); let x = -n.y, y = n.x; if (x * (c.x - z.x1) + y * (c.y - z.y1) < 0) { x = -x; y = -y; } note(z.t, x, y, z.id); } }
       else if (z.kind === 'coven' || z.kind === 'lockdown' || z.kind === 'miasma' || z.kind === 'quarantine') {
         if (Math.hypot(c.x - z.x, c.y - z.y) < z.r + c.r - 10 && (z.kind !== 'miasma' || !b.fighting || sk.iq > .7)) { const n = norm(c.x - z.x, c.y - z.y); note(z.t, n.x * (n.l < 1 ? 1 : 1), n.y, z.id + (s.t | 0) * 100000); }
@@ -1601,8 +1793,8 @@
     const nb = nextBuy(s, c), keep = s.t > 720 && sk.iq > .35 ? buybackCost(s, c) * (.5 + .5 * sk.macro) : 0;
     if (nb && c.gold >= nb.cost + keep && s.t >= (b.shopAt || 0)) { c.q.push({ t: 'buy', id: nb.id }); b.shopAt = s.t + Math.pow(1 - sk.v, 1.5) * 30 * s.rand(); }
     botSpend(s, c, b, ai, nb);
-    if (c.lvl >= 4 && c.evolved[0] < 0) c.q.push({ t: 'evolve', tier: 0, choice: botEvolve(c, 0) });
-    if (c.lvl >= 8 && c.evolved[1] < 0) c.q.push({ t: 'evolve', tier: 1, choice: botEvolve(c, 1) });
+    if (c.lvl >= 4 && c.evolved[0] < 0) c.q.push({ t: 'evolve', tier: 0, choice: botEvolve(s, c, 0) });
+    if (c.lvl >= 8 && c.evolved[1] < 0) c.q.push({ t: 'evolve', tier: 1, choice: botEvolve(s, c, 1) });
     if (c.hp < (b.hpWas || c.hp) - .5) b.hurtAt = s.t;
     b.hpWas = c.hp;
     if (c.chan && c.chan.recall) {
@@ -1696,7 +1888,9 @@
         b.diveOk = !tw || sureKill;
         fightMove(s, c, b, t, d, ai);
         c.atk = true; if (d - t.r <= c.range) c.atkPref = t.id;
+        if (respectKit(s, c, b, t, d)) return;
         useCombo(s, c, b, t, 'fight');
+        kitMove(s, c, b, t, d);
         wasteEvade(s, c, b);
         return;
       }
@@ -1756,7 +1950,18 @@
     pyre: [0, 1], ashwalker: [1, 1], wildfire: [0, 0], firestorm: [0, 1], alpha: [1, 0], savage: [0, 0], packleader: [1, 0], hemorrhage: [0, 1],
     bastille: [1, 1], artillery: [0, 0], wreckingcrew: [0, 0], moonquake: [1, 0], marionettist: [0, 1], troupe: [1, 0], maestro: [0, 1], ventriloquist: [1, 0],
   };
-  const botEvolve = (c, tier) => { const v = BOT_EVOLVE[c.build]; return v ? v[tier] : 0; };
+  // A sharp bot takes the Evolve its build wants (and reads the fight it is in for a few); a beginner often picks the other one.
+  function botEvolve(s, c, tier) {
+    const v = BOT_EVOLVE[c.build], base = v ? v[tier] : 0, b = c.bot, sk = b ? b.sk.v : .5;
+    if (hash01(c.id * 13 + tier, (s.seed || 7) + 3) > .45 + .55 * sk) return 1 - base;
+    if (sk > .55) {
+      const foes = s.champs.filter(e => e.team !== c.team), front = foes.filter(e => CLASS[e.champ] === 'front').length;
+      if (c.champ === 'vesper' && tier === 1) return front >= 2 ? 0 : 1; // pierce a front line, else crit off stillness
+      if (c.champ === 'cinder' && tier === 1 && foes.some(e => ['solenne', 'tidecaller', 'plague', 'ravager'].includes(e.champ))) return 0; // block healing
+      if (c.champ === 'gravel' && tier === 0 && c.role !== 'support' && c.build !== 'warden') return 1;
+    }
+    return base;
+  }
 
   // Consumables as reactions: heal in a fight, shrug off a disable, spare gold becomes a war elixir.
   function botConsumables(s, c, b, ai, t, d) {

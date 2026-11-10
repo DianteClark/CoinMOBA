@@ -34,6 +34,10 @@ const { FX, fxEvent } = (() => {
   Object.assign(FX_KIT, { arcdash: 'voltaic', overload: 'voltaic', thunder: 'voltaic', riptide: 'tidecaller', bubble: 'tidecaller', tsunami: 'tidecaller', skyward: 'paragon', solarfist: 'paragon', meteordrop: 'paragon', splitshot: 'mirage', phantom: 'mirage', mirrors: 'mirage', firebolt: 'cinder', scorch: 'cinder', inferno: 'cinder', maul: 'ravager', pounce: 'ravager', frenzy: 'ravager', bombard: 'cataclysm', entrench: 'cataclysm', earthbreak: 'cataclysm', thread: 'puppeteer', puppet: 'puppeteer', dance: 'puppeteer' });
   Object.assign(BOOM_KIT, { thunder: ['voltaic'], bubble: ['tidecaller'], skyward: ['paragon'], meteordrop: ['paragon'], phantom: ['mirage'], scorch: ['cinder'], inferno: ['cinder'], pounce: ['ravager'], bombard: ['cataclysm'], earthbreak: ['cataclysm'], dance: ['puppeteer'] });
   Object.assign(PHIT_KIT, { firebolt: ['cinder'], splitshot: ['mirage'], riptide: ['tidecaller'], thread: ['puppeteer'], mirrors: ['mirage'] });
+  // 15.0 kit revamp wire names
+  Object.assign(FX_KIT, { bullseye: 'vesper', rally: 'kade', starfall: 'ione', dusk: 'solenne', dawn: 'solenne', bedrock: 'gravel', ridebolt: 'voltaic', lobbubble: 'tidecaller', wallslam: 'paragon', meteormark: 'paragon', killzone: 'deadbolt', snap: 'plague', shimmer: 'shiv', hurl: 'ironjaw', emberbolt: 'cinder', scent: 'ravager', bulwark: 'cataclysm', tie: 'puppeteer' });
+  Object.assign(BOOM_KIT, { bullseye: ['vesper'], rally: ['kade'], starfall: ['ione'], dusk: ['solenne'], dawn: ['solenne'], bedrock: ['gravel'], lobbubble: ['tidecaller'], wallslam: ['paragon'], meteormark: ['paragon'], killzone: ['deadbolt'], snap: ['plague'], scent: ['ravager'], bulwark: ['cataclysm'], tie: ['puppeteer'] });
+  Object.assign(PHIT_KIT, { hurl: ['ironjaw'], emberbolt: ['cinder'], shimmer: ['shiv'] });
   const OV_R = { champ: 44, minion: 26, monster: 34 };
 
   let P = [], cursor = 0, trails = new Map(), flyers = [], frameId = 0, OV = [], panel = null, readyFx = [], lastKill = -9, prevCd = [], zoneTeam = new Map(), falls = [], arrive = [], dustN = 0;
@@ -379,7 +383,7 @@ const { FX, fxEvent } = (() => {
 
   // ---------- projectiles ----------
   // [ribbon life, width, alpha]. Minion shots have no trail at all.
-  const TRAIL = { firebolt: [.22, 14, .85], splitshot: [.12, 6, .9], riptide: [.2, 18, .7], thread: [.14, 3, 1], ricochet: [.1, 7, .9], hexbolt: [.16, 9, .8], polymorph: [.14, 7, .8], snipe: [.13, 8, .95], snipeFull: [.2, 14, 1], deadeye: [.32, 22, 1], orb: [.2, 16, .8], ray: [.1, 9, .8], bolt: [.12, 5, .7], tower: [.2, 8, .8] };
+  const TRAIL = { firebolt: [.22, 14, .85], splitshot: [.12, 6, .9], riptide: [.2, 18, .7], thread: [.14, 3, 1], hurl: [.16, 16, .55], emberbolt: [.28, 22, .9], ricochet: [.1, 7, .9], hexbolt: [.16, 9, .8], polymorph: [.14, 7, .8], snipe: [.13, 8, .95], snipeFull: [.2, 14, 1], deadeye: [.32, 22, 1], orb: [.2, 16, .8], ray: [.1, 9, .8], bolt: [.12, 5, .7], tower: [.2, 8, .8] };
   const ROUTINE = { bolt: 1, mbolt: 1, tower: 1 };
   // Reads an owner or target that may be a live unit, a bare id or absent, as it can be on a guest.
   const unitRef = r => r === undefined || r === null ? null : typeof r === 'object' ? r : unitById(r);
@@ -519,6 +523,10 @@ const { FX, fxEvent } = (() => {
       case 'splitshot': { const R = 7 * Z, an = (p.age || 0) * 24; dart(R * 2.4, R * .36, '#ff8ae0'); dart(R * 1.9, R * .22, '#8ae0ff'); dart(R * 1.2, R * .12, '#ffffff'); if (hot) lighter(glow(pal.mid), X, Y, R * 1.8, .7); void an; break; }
       case 'riptide': { const R = (p.w || 66) * .5 * Z, c = -uy, sn = ux; ctx.setTransform(dpr * ux, dpr * uy, dpr * c, dpr * sn, dpr * X, dpr * Y); ctx.fillStyle = pal.out; ctx.globalAlpha = .88; ctx.beginPath(); ctx.moveTo(-R * .4, -R); ctx.quadraticCurveTo(R * 1.3, 0, -R * .4, R); ctx.quadraticCurveTo(R * .4, 0, -R * .4, -R); ctx.fill(); ctx.fillStyle = pal.core; ctx.beginPath(); ctx.moveTo(0, -R * .8); ctx.quadraticCurveTo(R * 1.1, 0, 0, R * .8); ctx.quadraticCurveTo(R * .7, 0, 0, -R * .8); ctx.fill(); ctx.globalAlpha = 1; resetT(); if (hot) lighter(glow(pal.mid), X, Y, R * 1.3, .5); break; }
       case 'thread': { const R = 8 * Z; dart(R * 3, R * .14, pal.core); blob(X, Y, R * .3, '#ffffff'); if (hot) lighter(glow(pal.mid), X, Y, R * 1.2, .7); break; }
+      // Ironjaw's hurled ball: the real spiked iron, spinning hard, with a shadow under it.
+      case 'hurl': { const W = 30 * Z, sp = (p.age || 0) * 22, c = Math.cos(sp) * W, sn = Math.sin(sp) * W, gy = sy(y); ctx.drawImage(Art.shadow(), X - W, gy - W * .36, W * 2, W * .72); if (hot) lighter(glow(pal.mid), X, Y, W * 1.5, .45); ctx.setTransform(dpr * c, dpr * sn, -dpr * sn, dpr * c, dpr * X, dpr * Y); ctx.drawImage(Art.spikeBall(), -1, -1, 2, 2); resetT(); break; }
+      // Cinder's ember bolt: the firebolt, fatter and shedding embers.
+      case 'emberbolt': { const R = 13 * Z; lighter(glow(pal.out), X, Y, R * 3, .8); dart(R * 2.6, R * 1, pal.out); dart(R * 1.9, R * .6, pal.mid); dart(R * 1.1, R * .3, pal.core); if (a === undefined || (frameId & 1) === 0) rise(x, y, 1, Math.random() < .5 ? pal.spark : pal.mid, 14, .42, 8); break; }
       default: if (hot) lighter(glow(pal.mid), X, Y, (p.w || 30) * Z * .7, 1);
     }
   }
@@ -595,12 +603,13 @@ const { FX, fxEvent } = (() => {
   const rdt_ = () => { const last = G.fxLastT === undefined ? G.t : G.fxLastT, d = G.t - last; G.fxLastT = G.t; return d > 0 ? Math.min(.05, d) : 0; };
   function telegraphs(a) {
     const s = G.s, me = G.me, pulse = .85 + Math.sin(G.t * 14) * .15, zones = s.zones || EMPTY_LIST, champs = s.champs || EMPTY_LIST;
+    const zdt = rdt_();
     for (const z of zones) {
       zoneTeam.set(z.x + '|' + z.y, z.team); if (zoneTeam.size > 40) { const k = zoneTeam.keys().next().value; zoneTeam.delete(k); }
       if (!onScreen(z.x, z.y, z.r * Z + 60)) continue;
       const friendly = z.team === me.team, pal = palT(z.team);
       if (!friendly && !litAt(z.x, z.y, z.r)) continue;
-      if (zoneArt(z, friendly, pal, rdt_())) continue;
+      if (zoneArt(z, friendly, pal, zdt)) continue;
       if (z.kind === 'dome') {
         const X = sx(z.x), Y = sy(z.y), R = z.r * Z, Ry = R * TILT;
         ctx.fillStyle = friendly ? 'rgba(90,170,255,.1)' : 'rgba(255,62,40,.12)'; ctx.beginPath(); ctx.ellipse(X, Y, R, Ry, 0, 0, TAU); ctx.fill();
@@ -884,6 +893,7 @@ const { FX, fxEvent } = (() => {
     wrecking: pose(.32, .3, 0, 0, 6, TAU * .5, .8), grab: pose(.3, .22, 10, 22, 2, .3, .8), demolish: pose(.5, .44, 0, 0, 44, 0, 1.3),
   };
   POSES.killspin = pose(.5, .08, 0, 0, 20, TAU, .8);
+  POSES.starfall = pose(.42, .34, 0, 0, 26, TAU * .5, .7); POSES.hurl = pose(.24, .12, 10, 20, 2, .6, .8);
   const DEF_POSE = pose(.22, .2, 4, 6, 4, .3, .4);
   function poseStart(v, fx, dx, dy, u, slot) { const P_ = (slot !== undefined && SIG_POSE[u.champ] && SIG_POSE[u.champ][slot]) || POSES[fx] || DEF_POSE; if (u.kind !== 'champ') return; v.pose = P_; v.poseT = 0; v.poseDx = dx; v.poseDy = dy; v.oyawD = P_.yaw; }
   function poseTick(v, dt) {
@@ -920,7 +930,12 @@ const { FX, fxEvent } = (() => {
     crash(u, dx, dy, p, own) { gather(u.x, u.y, 130, p.mid, 8, .18, 12); pillar(u.x, u.y, p.out, p.mid, .4); ring(u.x, u.y, 140, p.ring, .3); flare(u.x, u.y, 8, p.core, 240, .2); if (own) G.punch = Math.max(G.punch, .024); },
     // ---- Starling: everything is a star. Slow, glittering, then very fast.
     orb(u, dx, dy, p, own, k) { sigil('mark', u.x, u.y, 70 * k + 18, p.mid, .3, 5); ring(u.x, u.y, 66, p.ring, .2, 14); muzzle(u, dx, dy, p, 24 * k); flare(u.x, u.y, 28, p.core, 120 * k, .14); rise(u.x, u.y, own ? 4 : 2, p.spark, 44, .4, 8); },
-    rupture(u, dx, dy, p, own, k, v, e) { const ult = e && e.slot === 2; ring(u.x, u.y, ult ? 110 : 60, p.ring, .2, 12); spark(u.x, u.y, own ? 5 : 2, p.spark, 240, .26, 11, 18); if (ult) { gather(u.x, u.y, 180, p.core, 12, .22, 40); sigil('rupture', u.x, u.y, 160, p.mid, .4, 3, 8); overlay(2, u.x, u.y, 20, .22, { spr: Art.speedLines(p.lines, 2), r: 240, ink: null }); if (own) { cine(.5, .6); G.punch = Math.max(G.punch, .03); } } },
+    rupture(u, dx, dy, p, own) { ring(u.x, u.y, 60, p.ring, .2, 12); spark(u.x, u.y, own ? 5 : 2, p.spark, 240, .26, 11, 18); },
+    // Starfall: she lifts a hand and the sky answers along the line.
+    starfall(u, dx, dy, p, own) { gather(u.x, u.y, 180, p.core, 12, .22, 40); sigil('star', u.x, u.y, 130, p.mid, .4, 3, 8); flare(u.x, u.y, 40, p.core, 200, .2); for (let i = 0; i < 3; i++) later(.06 + i * .07, () => { const X = u.x + dx * (165 + i * 150), Y = u.y + dy * (165 + i * 150); rise(X, Y, 2, p.core, 30, .5, 8); }); overlay(2, u.x, u.y, 20, .22, { spr: Art.speedLines(p.lines, 2), r: 240, ink: null }); if (own) { cine(.5, .6); G.punch = Math.max(G.punch, .03); } },
+    // Ironjaw lets go of the chain.
+    hurl(u, dx, dy, p, own) { const an = Math.atan2(dy, dx); slash(u.x, u.y, dx, dy, 170, p.mid, .2); cut(u.x + dx * 60, u.y + dy * 60, an, 120, '#ffffff', .12, 26); dustRing(u.x, u.y, 60, 3); flare(u.x + dx * 40, u.y + dy * 40, 26, p.spark, 150, .14); if (own) { G.shake = Math.max(G.shake, 3); G.punch = Math.max(G.punch, .02); } },
+    emberbolt(u, dx, dy, p, own, k) { muzzle(u, dx, dy, p, 40 * k); ring(u.x, u.y, 80, p.ring, .2, 8); rise(u.x, u.y, own ? 6 : 2, p.spark, 50, .6, 10); flare(u.x + dx * 30, u.y + dy * 30, 24, p.core, 170 * k, .14); if (own) G.punch = Math.max(G.punch, .014); },
     // ---- Dawnbringer: warm, vertical, slow to fade.
     ray(u, dx, dy, p, own, k) { muzzle(u, dx, dy, p, 28 * k); lineAlong(u, dx, dy, 140, p.mid, 9, .14); flare(u.x + dx * 30, u.y + dy * 30, 26, p.core, 120 * k, .14); rise(u.x, u.y, own ? 6 : 2, HEAL, 30, .55, 9); },
     dome(u, dx, dy, p, own) { ring(u.x, u.y, 120, p.ring, .3); sigil('dome', u.x, u.y, 90, p.mid, .4, 1.6, 10); rise(u.x, u.y, own ? 8 : 3, p.mid, 44, .6, 10); flare(u.x, u.y, 44, p.core, 130, .2); },
@@ -1000,6 +1015,8 @@ const { FX, fxEvent } = (() => {
       (u, dx, dy, p, own, k) => { const a = Math.atan2(dy, dx), X = u.x + dx * 150, Y = u.y + dy * 150; gather(X, Y, 130, p.core, 8, .16, 30); for (let i = 0; i < 5; i++) later(i * .03, () => { const o = (i - 2) * .22; beam(u.x + dx * 22, u.y + dy * 22, X + Math.cos(a + o + 1.57) * 26 * (i - 2), Y + Math.sin(a + o + 1.57) * 26 * (i - 2), i % 2 ? p.mid : '#ffffff', 2.4, .36, 26); }); sigil('salute', X, Y, 130, p.mid, .46, 3, 8); flare(X, Y, 26, p.core, 180 * k, .2); if (own) { cine(.6, .65); G.punch = Math.max(G.punch, .03); } },
     ],
   };
+  // Cinder's Firebolt cast from inside her own Scorched Earth is the ember bolt.
+  { const fb = SIG.cinder[0]; SIG.cinder[0] = (u, ...r) => { const inSc = (G.s.zones || EMPTY_LIST).some(z => z.fx === 'scorch' && z.team === u.team && Math.hypot(z.x - u.x, z.y - u.y) < z.r); (inSc ? CASTFX.emberbolt : fb)(u, ...r); }; }
   const SIG_POSE = {
     voltaic: [pose(.16, .1, 4, 26, 0, .9, .5), pose(.24, .3, 0, 0, 12, TAU * .5, .5), pose(.46, .32, 0, 0, 40, TAU, 1)],
     tidecaller: [pose(.26, .2, 6, 10, 6, .4, .4), pose(.28, .3, 2, 2, 14, .4, .5), pose(.5, .36, 0, 0, 30, TAU, .9)],
@@ -1009,6 +1026,11 @@ const { FX, fxEvent } = (() => {
     ravager: [pose(.18, .1, 8, 28, 2, .7, .7), pose(.3, .3, 6, 0, 8, .3, .9), pose(.5, .2, 0, 14, 10, TAU, .9)],
     cataclysm: [pose(.32, .36, 8, -10, 12, .3, .7), pose(.34, .38, 0, 8, 22, 0, 1.1), pose(.56, .46, 0, 0, 50, 0, 1.5)],
     puppeteer: [pose(.26, .24, 6, -6, 8, .4, .4), pose(.28, .3, 4, 4, 8, .5, .4), pose(.5, .36, 0, 0, 28, TAU, .7)],
+  };
+  // Recasts that need their own beat: Voltaic sets off his trail, Ironjaw hurls the ball.
+  const RECAST = {
+    voltaic: { 2: (u, dx, dy, p, own) => { ring(u.x, u.y, 70, '#ffffff', .18, 20); flare(u.x, u.y, 26, p.mid, 160, .12); arcs(u.x, u.y, 26, u.x - dx * 90, u.y - dy * 90, 10, p.mid, .12, 14); if (own) G.shake = Math.max(G.shake, 2); } },
+    ironjaw: { 0: () => { } }, // the throw itself arrives as a 'fire' event with fx 'hurl'
   };
   function burstOut(u, p, own) { const X = u.x, Y = u.y; ring(X, Y, 90, p.ring, .26); puff(X, Y, own ? 6 : 3, 1, 28, .32, 14, 80); sigil('mark', X, Y, 70, p.mid, .26, -6); cut(X, Y, -Math.PI / 2, 80, p.core, .16, 26); if (own) overlay(2, X, Y, 22, .18, { spr: Art.speedLines(p.lines, 3), r: 120, ink: null }); }
   const shakeIf = (own, s, k) => { if (own) { G.shake = Math.max(G.shake, s); G.punch = Math.max(G.punch, k); } };
@@ -1021,7 +1043,7 @@ const { FX, fxEvent } = (() => {
     tripwire(e, t, p) { sigil('root', e.x, e.y, 70, '#c8ef5a', .32, 0); spark(e.x, e.y, 8, '#c8ef5a', 240, .32, 12, 14); arcs(e.x - 40, e.y, 16, e.x + 40, e.y, 16, '#c8ef5a', .18); },
     feint(e, t, p) { puff(e.x, e.y, 8, 1, 32, .4, 20, 100); ring(e.x, e.y, e.r, p.ring, .3); spark(e.x, e.y, 6, p.spark2, 240, .3, 12, 22); },
     coven(e, t, p, own) { flare(e.x, e.y, 30, '#d8a8ff', e.r * 1.4, .26); wave(e.x, e.y, e.r * 1.4, '#c8ef5a', .5); ring(e.x, e.y, e.r * .4, '#c8ef5a', .22, 20); sigil('coven', e.x, e.y, e.r, '#c8ef5a', .4, -9); burst(e.x, e.y, 20, p, 1.5, true); spark(e.x, e.y, 16, '#c8ef5a', e.r * 2.2, .5, 16, 24); pillar(e.x, e.y, '#2a5a10', '#c8ef5a', .6); shakeIf(own, 7, .04); },
-    demolish(e, t, p, own) { flare(e.x, e.y, 16, p.spark, 260, .24); const x1 = e.x2 === undefined ? e.x : e.x2, y1 = e.y2 === undefined ? e.y : e.y2, x0 = e.x, y0 = e.y; for (let i = 0; i <= 7; i++) { const f = i / 7, X = lerp(x0, x1, f), Y = lerp(y0, y1, f); dustRing(X, Y, 60, 2); chips(X, Y, 3, '#c8a080', 340, 22); spark(X, Y, 2, p.spark, 220, .3, 12, 16); } beam(x0, y0, x1, y1, p.mid, 26, .3, 4); arcs(x0, y0, 10, x1, y1, 10, p.spark2, .24, 26); shakeIf(own, 8, .045); },
+    demolish(e, t, p, own) { flare(e.x, e.y, 16, p.spark, 260, .24); const x1 = e.x2 === undefined ? e.x : e.x2, y1 = e.y2 === undefined ? e.y : e.y2, x0 = 2 * e.x - x1, y0 = 2 * e.y - y1; for (let i = 0; i <= 7; i++) { const f = i / 7, X = lerp(x0, x1, f), Y = lerp(y0, y1, f); dustRing(X, Y, 60, 2); chips(X, Y, 3, '#c8a080', 340, 22); spark(X, Y, 2, p.spark, 220, .3, 12, 16); } beam(x0, y0, x1, y1, p.mid, 26, .3, 4); arcs(x0, y0, 10, x1, y1, 10, p.spark2, .24, 26); shakeIf(own, 8, .045); },
   };
   const PHIT = {
     snipeFull(e, t, p, own) { flash(e.x, e.y, 22, p, 54); ring(e.x, e.y, 84, p.ring, .22, 16); spark(e.x, e.y, own ? 7 : 3, p.spark, 340, .26, 14, 22); },
@@ -1036,7 +1058,8 @@ const { FX, fxEvent } = (() => {
     lockdown(e, t, p) { arcs(e.x, e.y, 160, e.x, e.y, 16, '#ff3a20', .1); flash(e.x, e.y, 20, p, 30); },
   };
 
-  const lineBoom = (e, fn, n = 6) => { const x0 = e.x, y0 = e.y, x1 = e.x2 === undefined ? e.x : e.x2, y1 = e.y2 === undefined ? e.y : e.y2; for (let i = 0; i <= n; i++) { const f = i / n; fn(lerp(x0, x1, f), lerp(y0, y1, f), i); } return [x0, y0, x1, y1]; };
+  // Line blasts report their midpoint as x,y and the far end as x2,y2, so the near end mirrors x2 about x.
+  const lineBoom = (e, fn, n = 6) => { const x1 = e.x2 === undefined ? e.x : e.x2, y1 = e.y2 === undefined ? e.y : e.y2, x0 = 2 * e.x - x1, y0 = 2 * e.y - y1; for (let i = 0; i <= n; i++) { const f = i / n; fn(lerp(x0, x1, f), lerp(y0, y1, f), i); } return [x0, y0, x1, y1]; };
   Object.assign(BOOM, {
     thunder(e, t, p, own) { const [x0, y0, x1, y1] = lineBoom(e, (X, Y, i) => { later(i * .025, () => { skyBolt(X, Y, i % 2 ? p.mid : '#ffffff', .18); ring(X, Y, 62, p.ring, .22, 2); spark(X, Y, 2, p.spark, 300, .22, 11, 14); }); }, 7); beam(x0, y0, x1, y1, p.mid, 22, .24, 8); flare(lerp(x0, x1, .5), lerp(y0, y1, .5), 20, p.core, 360, .24); shakeIf(own, 8, .05); },
     bubble(e, t, p) { ring(e.x, e.y, e.r * 1.3, p.ring, .3); ring(e.x, e.y, e.r * .8, p.core, .22, 20); splash(e.x, e.y, 1.6); flare(e.x, e.y, 30, p.core, 120, .16); rise(e.x, e.y, 6, p.mid, 40, .55, 9); },
@@ -1058,17 +1081,76 @@ const { FX, fxEvent } = (() => {
     mirrors(e, t, p) { const a = Math.random() * TAU; beam(e.x + Math.cos(a) * 180, e.y + Math.sin(a) * 140, e.x, e.y, Math.random() < .5 ? '#ff8ae0' : '#8ae0ff', 6, .16, 22); flare(e.x, e.y, 24, '#ffffff', 90, .1); },
   });
 
+  // ---------- 15.0 kit revamp: one quick, legible beat per new mechanic ----------
+  Object.assign(BOOM, {
+    // Longshot's full charge lands clean: a reticle snaps shut on the target.
+    bullseye(e, t, p, own) { sigil('target', e.x, e.y, 96, p.mid, .3, 0, 22); ring(e.x, e.y, 70, '#ffffff', .2, 22); flare(e.x, e.y, 24, '#ffffff', 150, .14); spark(e.x, e.y, own ? 5 : 2, p.spark, 260, .24, 11, 24); },
+    // Riposte's Rally: a gold wave, then every ally in reach lifts.
+    rally(e, t, p, own) { wave(e.x, e.y, e.r, p.mid, .5); ring(e.x, e.y, e.r, p.ring, .34, 4); for (const c of G.s.champs) if (c.alive && c.team === t && Math.hypot(c.x - e.x, c.y - e.y) < e.r) { ring(c.x, c.y, 52, p.core, .3, 10); rise(c.x, c.y, own ? 3 : 1, p.mid, 26, .5, 8); } },
+    // Starfall: each star drops on its spot from high up.
+    starfall(e, t, p, own) { const b = add(BEAMK, e.x + 70, e.y - 380, 30, .12); b.dx = e.x; b.dy = e.y; b.R = 14; b.col = p.core; later(.03, () => { sigil('star', e.x, e.y, e.r, p.mid, .42, 1.6); ring(e.x, e.y, e.r * 1.05, p.ring, .3); flare(e.x, e.y, 18, '#ffffff', e.r * 1.6, .18); rays(e.x, e.y, 5, p.mid, e.r * 1.1, 5, .2, 14, -1.57); spark(e.x, e.y, own ? 8 : 4, p.spark, e.r * 2.2, .34, 13, 16); }); shakeIf(own, 3, .02); },
+    // Dawnbringer weaves: dusk (next ray burns) is ember red, dawn (next ray heals) is white gold.
+    dusk(e, t, p, own) { gather(e.x, e.y, 70, '#ff7a3a', own ? 6 : 3, .14, 30); ring(e.x, e.y, 54, '#ff8a4a', .28, 24); },
+    dawn(e, t, p, own) { gather(e.x, e.y, 70, '#fff3c8', own ? 6 : 3, .14, 30); ring(e.x, e.y, 54, '#fff3c8', .28, 24); rise(e.x, e.y, own ? 3 : 1, HEAL, 24, .5, 8); },
+    // Bulwark's Bedrock: three hits banked, the ground locks.
+    bedrock(e, t, p, own) { sigil('root', e.x, e.y, e.r * .9, p.mid, .5, 0); ring(e.x, e.y, e.r, '#ffffff', .22, 4); chips(e.x, e.y, own ? 8 : 4, '#c6a78a', e.r * 2, 18); flare(e.x, e.y, 10, p.core, e.r * 1.3, .16); shakeIf(own, 6, .035); },
+    // Tidecaller's lobbed bubble lands with a plip.
+    lobbubble(e, t, p) { splash(e.x, e.y, 1.1); sigil('bubble', e.x, e.y, e.r * 1.1, p.mid, .3, .6); ring(e.x, e.y, e.r * 1.3, p.ring, .26, 4); },
+    // The meteor's landing is drawn by meteordrop; its marker just goes.
+    meteormark() { },
+    // Paragon's Wall Slam: stone takes the hit.
+    wallslam(e, t, p, own) { flash(e.x, e.y, 30, p, 60); chips(e.x, e.y, own ? 9 : 5, '#c6b8a0', 300, 30); dustRing(e.x, e.y, 50, 3); rays(e.x, e.y, 6, '#ffffff', 90, 5, .16, 30, 0); ring(e.x, e.y, 76, p.ring, .26, 24); sigil('crash', e.x, e.y, 60, p.mid, .3, 0, 26); shakeIf(own, 6, .04); if (own) hitStop(.03); },
+    // Plague's tether holds and snaps: an acid X.
+    snap(e, t, p, own) { cut(e.x, e.y, .78, 110, '#b6ec3a', .2, 24); cut(e.x, e.y, -.78, 110, '#ffffff', .18, 24); spark(e.x, e.y, own ? 6 : 3, '#dfff70', 260, .26, 11, 24); ring(e.x, e.y, 66, p.ring, .24, 20); shakeIf(own, 3, .02); },
+    // Ravager catches the scent: lines draw in on the prey.
+    scent(e, t, p, own) { gather(e.x, e.y, 120, p.mid, own ? 8 : 4, .16, 20); sigil('mark', e.x, e.y, 70, p.mid, .3, 4, 18); ring(e.x, e.y, 56, p.ring, .2, 18); },
+    // Cataclysm's stored blast: the harder you hit him, the bigger this is.
+    bulwark(e, t, p, own) { wave(e.x, e.y, e.r * 1.5, p.mid, .5); sigil('bulwark', e.x, e.y, e.r, p.mid, .46, .4, 2); ring(e.x, e.y, e.r * 1.1, '#ffffff', .3, 4); dustRing(e.x, e.y, e.r * .7, 6); chips(e.x, e.y, 8, '#a08878', e.r * 2.4, 22); flare(e.x, e.y, 20, p.core, e.r * 1.6, .22); burst(e.x, e.y, 22, p, 1, true); shakeIf(own, 7, .045); },
+    // Puppeteer's Tie: the thread jumps to a second dancer.
+    tie(e, t, p) { if (e.x2 !== undefined) { beam(e.x2, e.y2, e.x, e.y, p.mid, 4, .28, 24); arcs(e.x2, e.y2, 24, e.x, e.y, 24, p.core, .16, 10); } sigil('root', e.x, e.y, 60, p.mid, .34, 2, 12); flare(e.x, e.y, 22, p.core, 110, .14); },
+  });
+  Object.assign(PHIT, {
+    // Shiv's shimmer: she is close enough to see; the air where she stands bends.
+    shimmer(e, t, p) { ring(e.x, e.y, 46, '#ffffff', .26, 14); ring(e.x, e.y, 76, p.mid, .22, 14); spark(e.x, e.y, 2, '#ffffff', 120, .2, 9, 20); },
+    hurl(e, t, p, own) { flash(e.x, e.y, 24, p, 56); chips(e.x, e.y, own ? 6 : 3, '#9aa3b2', 300, 24); dustRing(e.x, e.y, 50, 3); ring(e.x, e.y, 80, p.ring, .26, 14); shakeIf(own, 5, .03); },
+    emberbolt(e, t, p, own) { flash(e.x, e.y, 22, p, 52); ring(e.x, e.y, 84, p.ring, .26, 16); spark(e.x, e.y, own ? 10 : 5, p.spark, 340, .34, 13, 22); rise(e.x, e.y, own ? 7 : 3, p.mid, 40, .7, 11); puff(e.x, e.y, 1, 1, 30, .55, 26, 40); shakeIf(own, 2.5, .016); },
+  });
+
   // ---------- zones on the ground: sigils and dressed lines, under the units ----------
   function zst(z) { let v = ZST.get(z.id); if (!v) { v = { t: 0, x: z.x, y: z.y }; if (ZST.size > 60) ZST.delete(ZST.keys().next().value); ZST.set(z.id, v); } return v; }
   function drawSig(name, X, Y, R, col, al, rot) { const sp = Art.sigil(name, col), c = Math.cos(rot), sn = Math.sin(rot); ctx.globalCompositeOperation = 'lighter'; ctx.globalAlpha = al * .62; ctx.setTransform(dpr * c * R, dpr * sn * R * TILT, -dpr * sn * R, dpr * c * R * TILT, dpr * X, dpr * Y); ctx.drawImage(sp, -1, -1, 2, 2); resetT(); ctx.globalCompositeOperation = 'source-over'; ctx.globalAlpha = 1; }
   function lineBetween(x0, y0, x1, y1, col, w) { ctx.strokeStyle = col; ctx.lineWidth = w; ctx.beginPath(); ctx.moveTo(sx(x0), sy(y0)); ctx.lineTo(sx(x1), sy(y1)); ctx.stroke(); }
+  // Kill Zone is live while Deadbolt is in reach of an enemy champion standing inside his Lockdown.
+  function killOn(z) { const o = unitRef(z.owner); if (!o || !o.alive) return false; for (const c of G.s.champs) if (c.alive && c.team !== z.team && Math.hypot(c.x - z.x, c.y - z.y) < z.r + 20 && Math.hypot(c.x - o.x, c.y - o.y) < (o.range || 500) + 80) return true; return false; }
   function zoneArt(z, friendly, pal, dt) {
     const X = sx(z.x), Y = sy(z.y), R = z.r * Z, Ry = R * TILT, life = z.total ? clamp01(z.t / z.total) : 1, T = G.t, st = zst(z), col = friendly ? pal.mid : '#ff3e28', fade = clamp01((1 - life) * 8) * clamp01(z.t * 5);
     switch (z.kind) {
+      case 'blast': {
+        const kp = KIT_PAL[FX_KIT[z.fx]], kc = friendly ? (kp ? kp.mid : pal.mid) : '#ff3e28', f = z.total ? 1 - clamp01(z.t / z.total) : 1;
+        if (z.fx === 'meteormark') {
+          // Meteor Drop: a shadow grows where Paragon will land, under a turning reticle. Everyone sees it.
+          const k = .35 + .65 * f, sh = Art.shadow(); ctx.globalAlpha = .4 + .5 * f; ctx.drawImage(sh, X - R * k, Y - Ry * k, R * k * 2, Ry * k * 2); ctx.globalAlpha = 1;
+          drawSig('target', X, Y, R * (1.25 - .25 * f), kc, .55 + .4 * f, T * .8);
+        } else if (z.fx === 'starfall') {
+          // Each star: its sigil tightens, and a point of light falls toward it.
+          drawSig('star', X, Y, R * (1.2 - .2 * f), kc, .4 + .5 * f, T * 1.6);
+          const h = (1 - f) * 300 * Z, gl = Art.glow(friendly ? '#ffffff' : '#ff8a70'), gs = (10 + f * 10) * Z; lighter(gl, X + h * .2, Y - h, gs, .9);
+        } else if (z.fx === 'lobbubble') {
+          // Bubble in flight: an arc from Tidecaller to the spot.
+          const o = unitRef(z.owner); drawSig('bubble', X, Y, R, kc, .5 + .4 * f, T * .6);
+          if (o) { if (st.ox === undefined) { st.ox = o.x; st.oy = o.y; } const bx = sx(lerp(st.ox, z.x, f)), by = sy(lerp(st.oy, z.y, f)) - Math.sin(f * Math.PI) * 130 * Z, br = 15 * Z; ctx.globalAlpha = .9; ctx.fillStyle = rgba(friendly ? '111,232,224' : '255,110,80', .3); ctx.beginPath(); ctx.arc(bx, by, br, 0, TAU); ctx.fill(); ctx.strokeStyle = friendly ? kp.core : '#ffd8c8'; ctx.lineWidth = 2 * Z; ctx.stroke(); ctx.fillStyle = '#ffffff'; ctx.beginPath(); ctx.arc(bx - br * .35, by - br * .35, br * .22, 0, TAU); ctx.fill(); ctx.globalAlpha = 1; }
+        }
+        return false;
+      }
       case 'tripline': {
         // The wire: taut, thin, one moving glint. Enemies see it only as a faint scratch.
         const a = friendly ? 1 : .45, x0 = z.x1, y0 = z.y1, x1 = z.x2, y1 = z.y2, Xa = sx(x0), Ya = sy(y0), Xb = sx(x1), Yb = sy(y1), g = (T * .7 + z.id * .13) % 1;
-        ctx.globalAlpha = fade * a; lineBetween(x0, y0, x1, y1, INK, 3); lineBetween(x0, y0, x1, y1, friendly ? '#c8ef5a' : '#ff8870', 1.2);
+        // 15.0: a fresh wire takes 0.6 s to arm. Until then it is a dashed, flickering line; it snaps taut with a spark.
+        const arming = z.total && z.total - z.t < .6;
+        if (arming) { ctx.globalAlpha = (friendly ? .7 : .55) * (.6 + .4 * Math.sin(T * 40)); ctx.setLineDash([5 * Z, 5 * Z]); lineBetween(x0, y0, x1, y1, friendly ? '#c8ef5a' : '#ff8870', 1.6); ctx.setLineDash(NODASH); }
+        else if (st.armed === false) { spark(x0, y0, 2, '#e8ff9a', 160, .2, 9, 10); spark(x1, y1, 2, '#e8ff9a', 160, .2, 9, 10); beam(x0, y0, x1, y1, friendly ? '#e8ff9a' : '#ff8870', 5, .14, 10); }
+        st.armed = !arming;
+        ctx.globalAlpha = fade * a; if (!arming) { lineBetween(x0, y0, x1, y1, INK, 3); lineBetween(x0, y0, x1, y1, friendly ? '#c8ef5a' : '#ff8870', 1.2); }
         for (const [q, w] of [[Xa, Ya], [Xb, Yb]]) { ctx.fillStyle = friendly ? '#c8ef5a' : '#ff6a54'; ctx.fillRect(q - 1.6, w - 10 * Z, 3.2, 12 * Z); }
         if (friendly || quality >= 1) { const G2 = Art.glint('#ffffff'), sz = 8 * Z + 2; ctx.globalCompositeOperation = 'lighter'; ctx.drawImage(G2, lerp(Xa, Xb, g) - sz, lerp(Ya, Yb, g) - sz, sz * 2, sz * 2); ctx.globalCompositeOperation = 'source-over'; }
         ctx.globalAlpha = 1; return true;
@@ -1076,7 +1158,10 @@ const { FX, fxEvent } = (() => {
       case 'lockdown': {
         drawSig('lockdown', X, Y, R, col, fade * .9, T * .4);
         // the sweep: a thin radar arm
-        ctx.globalAlpha = fade * .75; ctx.strokeStyle = col; ctx.lineWidth = 2; ctx.beginPath(); const an = T * 2.8; ctx.moveTo(X, Y); ctx.lineTo(X + Math.cos(an) * R, Y + Math.sin(an) * Ry); ctx.stroke(); ctx.globalAlpha = 1; return true;
+        ctx.globalAlpha = fade * .75; ctx.strokeStyle = col; ctx.lineWidth = 2; ctx.beginPath(); const an = T * 2.8; ctx.moveTo(X, Y); ctx.lineTo(X + Math.cos(an) * R, Y + Math.sin(an) * Ry); ctx.stroke(); ctx.globalAlpha = 1;
+        // Kill Zone: Deadbolt is on station. A second, faster arm and four closing brackets.
+        if (z.fx === 'killzone' && killOn(z)) { const kc = friendly ? '#c8ef5a' : '#ff3e28', b = .82 + Math.sin(T * 10) * .06; ctx.globalAlpha = fade * .9; ctx.strokeStyle = kc; ctx.lineWidth = 2.6; ctx.beginPath(); const a2 = -T * 5.2; ctx.moveTo(X, Y); ctx.lineTo(X + Math.cos(a2) * R, Y + Math.sin(a2) * Ry); for (let i = 0; i < 4; i++) { const q = i / 4 * TAU + Math.PI / 4; ctx.moveTo(X + Math.cos(q - .2) * R * b, Y + Math.sin(q - .2) * Ry * b); ctx.lineTo(X + Math.cos(q) * R * (b - .1), Y + Math.sin(q) * Ry * (b - .1)); ctx.lineTo(X + Math.cos(q + .2) * R * b, Y + Math.sin(q + .2) * Ry * b); } ctx.stroke(); ctx.globalAlpha = 1; }
+        return true;
       }
       case 'coven': {
         const n = (1 - life); drawSig('coven', X, Y, R * (1 - n * .28), friendly ? '#c8ef5a' : '#ff3e28', fade * .85, -T * (1.4 + n * 5));
@@ -1120,10 +1205,12 @@ const { FX, fxEvent } = (() => {
       }
       case 'tether': {
         const o = unitRef(z.owner), t = unitRef(z.tgt); if (!o || !t) return true; const ax = sx(o.x), ay = sy(o.y) - 24 * Z, bx = sx(t.x), by = sy(t.y) - 22 * Z, Tl = (T * 2.4) % 1;
-        ctx.lineCap = 'round'; ctx.strokeStyle = INK; ctx.lineWidth = 6 * Z + 1; ctx.beginPath(); ctx.moveTo(ax, ay); ctx.quadraticCurveTo((ax + bx) / 2, (ay + by) / 2 - 18 * Z, bx, by); ctx.stroke();
-        ctx.strokeStyle = friendly ? '#b6ec3a' : '#ff6a44'; ctx.lineWidth = 3.4 * Z; ctx.beginPath(); ctx.moveTo(ax, ay); ctx.quadraticCurveTo((ax + bx) / 2, (ay + by) / 2 - 18 * Z, bx, by); ctx.stroke();
+        // 15.0 Snap: the tether pulls tighter (less sag, thicker, whiter) as it nears its full 3 s.
+        const tk = z.total ? clamp01(1 - z.t / z.total) : 0, sag = 18 * Z * (1 - tk * .85), hot = tk > .8 && Math.sin(T * 40) > 0;
+        ctx.lineCap = 'round'; ctx.strokeStyle = INK; ctx.lineWidth = (6 + tk * 2.4) * Z + 1; ctx.beginPath(); ctx.moveTo(ax, ay); ctx.quadraticCurveTo((ax + bx) / 2, (ay + by) / 2 - sag, bx, by); ctx.stroke();
+        ctx.strokeStyle = hot ? '#f4ffd0' : friendly ? '#b6ec3a' : '#ff6a44'; ctx.lineWidth = (3.4 + tk * 2.4) * Z; ctx.beginPath(); ctx.moveTo(ax, ay); ctx.quadraticCurveTo((ax + bx) / 2, (ay + by) / 2 - sag, bx, by); ctx.stroke();
         // fat pips travelling back along the line
-        ctx.fillStyle = '#ffffff'; for (let i = 0; i < 4; i++) { const f = 1 - ((Tl + i / 4) % 1), mx0 = (ax + bx) / 2, my0 = (ay + by) / 2 - 18 * Z, x = (1 - f) * (1 - f) * bx + 2 * (1 - f) * f * mx0 + f * f * ax, y = (1 - f) * (1 - f) * by + 2 * (1 - f) * f * my0 + f * f * ay; ctx.beginPath(); ctx.arc(x, y, 2.4 * Z + .6, 0, TAU); ctx.fill(); }
+        ctx.fillStyle = '#ffffff'; for (let i = 0; i < 4; i++) { const f = 1 - ((Tl + i / 4) % 1), mx0 = (ax + bx) / 2, my0 = (ay + by) / 2 - sag, x = (1 - f) * (1 - f) * bx + 2 * (1 - f) * f * mx0 + f * f * ax, y = (1 - f) * (1 - f) * by + 2 * (1 - f) * f * my0 + f * f * ay; ctx.beginPath(); ctx.arc(x, y, 2.4 * Z + .6, 0, TAU); ctx.fill(); }
         return true;
       }
       case 'tidewave': {
@@ -1160,6 +1247,14 @@ const { FX, fxEvent } = (() => {
         return true;
       }
       case 'fissure': {
+        if (z.fx === 'ridebolt') {
+          // Voltaic's live trail: the whole line hums and crackles, brighter as the fuse runs down.
+          const x0 = z.x1, y0 = z.y1, x1 = z.x2, y1 = z.y2, f = z.total ? 1 - clamp01(z.t / z.total) : 0, kp = KIT_PAL.voltaic, cA = friendly ? kp.mid : '#ff3e28', w = (z.r || 60) * 2 * Z, pul = 1 + Math.sin(T * 34) * .18;
+          ctx.globalAlpha = .07 + f * .1; lineBetween(x0, y0, x1, y1, friendly ? 'rgba(255,232,112,1)' : 'rgba(255,62,40,1)', w); ctx.globalAlpha = 1;
+          lineBetween(x0, y0, x1, y1, INK, (9 + f * 4) * Z * pul); lineBetween(x0, y0, x1, y1, cA, (4 + f * 3) * Z * pul); lineBetween(x0, y0, x1, y1, '#ffffff', 1.4 * Z);
+          if (dt > 0 && (st.t -= dt) <= 0) { st.t = quality >= 2 ? .06 : .12; const q = Math.random(), qx = lerp(x0, x1, q), qy = lerp(y0, y1, q); arcs(qx, qy, 8, qx + rnd(-60, 60), qy + rnd(-40, 40), 8, Math.random() < .5 ? cA : '#ffffff', .1, 12); }
+          return true;
+        }
         const x0 = z.x1 === undefined ? z.x : z.x1, y0 = z.y1 === undefined ? z.y : z.y1, x1 = z.x2 === undefined ? z.x : z.x2, y1 = z.y2 === undefined ? z.y : z.y2, a = fracOf(z.t, z.total);
         const fCol = !friendly ? '#ff3e28' : z.fx === 'thunder' ? '#ffe870' : z.fx === 'earthbreak' ? '#ff9238' : pal.mid;
         lineBetween(x0, y0, lerp(x0, x1, a), lerp(y0, y1, a), INK, 10 * Z); lineBetween(x0, y0, lerp(x0, x1, a), lerp(y0, y1, a), fCol, 4 * Z);
@@ -1593,9 +1688,14 @@ const { FX, fxEvent } = (() => {
         poseStart(v, fx, dx, dy, u, e.slot);
         if (enemy) v.spin = Math.max(v.spin, .5); // a quick half-turn tells you an enemy is casting
         if (!onScreen(u.x, u.y, 180) && !(e.e === 'fire')) return;
-        const R = (e.slot !== undefined && SIG[u.champ] && SIG[u.champ][e.slot]) || CASTFX[fx], k = own ? 1 : .55;
+        // A second cast of the same slot inside its window is the recast (the sim sends no flag for it).
+        const sl = e.slot, ab0 = sl !== undefined && u.kit && u.kit[sl]; if (!v.cAt) v.cAt = [];
+        const re = !e.charge && sl !== undefined && v.cAt[sl] !== undefined && G.t - v.cAt[sl] < ((ab0 && ab0.window) || 2.6) + .15;
+        if (!e.charge && sl !== undefined) v.cAt[sl] = re ? undefined : G.t;
+        const R = (re && RECAST[u.champ] && RECAST[u.champ][sl]) || (sl !== undefined && SIG[u.champ] && SIG[u.champ][sl]) || CASTFX[fx], k = own ? 1 : .55;
         if (R) R(u, dx, dy, pal, own, k, v, e);
-        if (own && (e.slot === 2 || fx === 'deadeye')) { const ab = u.kit && u.kit[2]; cutIn(u, pal, ab && ab.name); G.flashT = 0; }
+        if (re && RECAST[u.champ] && RECAST[u.champ][sl]) { if (own) G.punch = Math.max(G.punch, .012); }
+        else if (own && (e.slot === 2 || fx === 'deadeye')) { const ab = u.kit && u.kit[2]; cutIn(u, pal, ab && ab.name); G.flashT = 0; }
         else if (own) { ring(u.x, u.y, 74, pal.ring, .2); flash(u.x + dx * 40, u.y + dy * 40, 18, pal, 24); G.punch = Math.max(G.punch, .008); }
         break;
       }

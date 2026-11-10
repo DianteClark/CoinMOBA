@@ -455,6 +455,46 @@ function ladder14(games, base, pairs) {
   }
 }
 
+// ---------- 15.0 kit audit. node test_bots.js [games] kits15 [skill] [seedBase] ----------
+// Per champion: games, win%, casts/min, skill-hit share, damage/min, K/D; side wins; and how often each kit's signature
+// hook shows up (boom or fire fx named in kits15.md, counted per game the kit played).
+function kits15(games, skill, base) {
+  const K = {}, side = [0, 0], SIG = ['bullseye', 'rally', 'starfall', 'dusk', 'dawn', 'bedrock', 'ridebolt', 'lobbubble', 'wallslam', 'meteormark', 'twinbolt', 'armwire', 'killzone', 'snap', 'shimmer', 'hurl', 'emberbolt', 'scent', 'bulwark', 'tie', 'salute'];
+  const sig = {}, slotN = {}; let mins = 0, n = 0;
+  for (let g = 0; g < games; g++) {
+    let sd = (base + g) * 977 + 31, r = () => (sd = (sd * 16807) % 2147483647) / 2147483647;
+    const fill = t => { const list = Sim.sensiblePool(t, null, r), roles = Sim.autoRoles(list); return list.map((c, i) => ({ champ: c, role: roles[i], name: 'b' + i, tier: 0, skill })); };
+    const s = Sim.createMatch({ seed: base + g + 900, teams: [fill(0), fill(1)], mode: 'classic' });
+    for (const c of s.champs) if (c.bot && c.bot.setSkill) c.bot.setSkill(skill);
+    const seenZ = new Set();
+    while (!s.over && s.t < 2400) { Sim.step(s); for (const e of s.ev) { if (e.e === 'cast' && !e.charge && e.slot !== undefined) { const u = s.champs.find(c => c.id === e.u); if (u) { const q = slotN[u.champ] || (slotN[u.champ] = [0, 0, 0]); q[e.slot]++; } } const fx = e.fx; if (fx && SIG.includes(fx) && (e.e === 'boom' || e.e === 'fire' || e.e === 'cast' || e.e === 'fx' || e.e === 'phit')) sig[fx] = (sig[fx] || 0) + 1; } s.ev.length = 0; for (const p of s.proj) if (p.fx && !seenZ.has('p' + p.id)) { seenZ.add('p' + p.id); if (SIG.includes(p.fx)) sig[p.fx] = (sig[p.fx] || 0) + 1; } for (const z of s.zones) if (!seenZ.has(z.id)) { seenZ.add(z.id); if (SIG.includes(z.fx)) sig[z.fx] = (sig[z.fx] || 0) + 1; } }
+    if (!s.over) continue; n++; mins += s.t / 60; side[s.over.winner]++;
+    for (const c of s.champs) { const k = K[c.champ] || (K[c.champ] = { n: 0, w: 0, casts: 0, hits: 0, dmg: 0, k: 0, d: 0, m: 0, builds: {} }); k.n++; k.w += c.team === s.over.winner ? 1 : 0; k.casts += c.stats.casts; k.hits += c.stats.skillHits; k.dmg += c.stats.dmg || 0; k.k += c.stats.kills; k.d += c.stats.deaths; k.m += s.t / 60; k.builds[c.build] = (k.builds[c.build] || 0) + 1; }
+  }
+  console.log(`\n=== 15.0 kits, skill ${skill}: ${n} games, avg ${(mins / (n || 1)).toFixed(1)}m, Heroes ${side[0]} - Villains ${side[1]}`);
+  for (const [id, k] of Object.entries(K).sort((a, b) => b[1].w / b[1].n - a[1].w / a[1].n)) console.log(`  ${id.padEnd(10)} ${String(k.n).padStart(3)}g win ${pct(k.w, k.n).padStart(6)}  casts/min ${(k.casts / k.m).toFixed(1).padStart(4)}  hit ${pct(k.hits, k.casts).padStart(6)}  dmg/min ${(k.dmg / k.m).toFixed(0).padStart(5)}  K/D ${avg(k.k, k.d)}  QWR/min ${(slotN[id] || [0, 0, 0]).map(x => (x / k.m).toFixed(1)).join('/')}  builds ${Object.entries(k.builds).map(([b, v]) => b + ':' + v).join(' ')}`);
+  console.log('  signature fx seen:', SIG.map(x => x + ' ' + (sig[x] || 0)).join(', '));
+}
+
+// Per-kit skill gap: node test_bots.js [games] kitgap [hi] [lo] [seedBase]. Paired seeds, skills swapped; for each kit, what the
+// higher-skill copy does against what the lower-skill copy does (kills, deaths, damage per minute, casts per minute, win%).
+function kitgap(games, hi, lo, base) {
+  const K = {}; let w = 0, n = 0;
+  for (let g = 0; g < games; g++) {
+    const swap = g % 2, sk = swap ? [lo, hi] : [hi, lo], seed = base + (g >> 1) * 13;
+    let sd = seed * 977 + 31, r = () => (sd = (sd * 16807) % 2147483647) / 2147483647;
+    const fill = (t) => { const list = Sim.sensiblePool(t, null, r), roles = Sim.autoRoles(list); return list.map((c, i) => ({ champ: c, role: roles[i], name: 'b' + i, tier: 0, skill: sk[t] })); };
+    const s = Sim.createMatch({ seed: seed + 900, teams: [fill(0), fill(1)], mode: 'classic' });
+    for (const c of s.champs) if (c.bot && c.bot.setSkill) c.bot.setSkill(sk[c.team]);
+    while (!s.over && s.t < 2400) { Sim.step(s); s.ev.length = 0; }
+    if (!s.over) continue; n++; const hiT = swap ? 1 : 0; if (s.over.winner === hiT) w++;
+    for (const c of s.champs) { const k = K[c.champ] || (K[c.champ] = [0, 1].map(() => ({ n: 0, w: 0, k: 0, d: 0, dmg: 0, casts: 0, m: 0 }))), x = k[c.team === hiT ? 0 : 1]; x.n++; x.w += c.team === s.over.winner ? 1 : 0; x.k += c.stats.kills; x.d += c.stats.deaths; x.dmg += c.stats.dmg || 0; x.casts += c.stats.casts; x.m += s.t / 60; }
+  }
+  console.log(`\n=== kit skill gap ${hi} v ${lo}: ${n} games, higher skill won ${w}`);
+  const f = x => `${String(x.n).padStart(2)}g ${pct(x.w, x.n).padStart(6)} K/D ${(x.k / x.n).toFixed(1)}/${(x.d / x.n).toFixed(1)} dmg/m ${(x.dmg / (x.m || 1)).toFixed(0).padStart(5)} cast/m ${(x.casts / (x.m || 1)).toFixed(1)}`;
+  for (const [id, k] of Object.entries(K).sort((a, b) => ((a[1][0].k - a[1][0].d) / (a[1][0].n || 1)) - ((b[1][0].k - b[1][0].d) / (b[1][0].n || 1)))) console.log(`  ${id.padEnd(10)} hi ${f(k[0])} | lo ${f(k[1])}`);
+}
+
 async function main() {
   await Promise.resolve();
   if (MODE === 'nav') { auditReport(audit(N, +process.argv[4] || .6, +process.argv[5] || 1200, process.argv[6]), 'skill ' + (+process.argv[4] || .6) + (process.argv[6] ? ' ' + process.argv[6] : '')); return; }
@@ -462,6 +502,8 @@ async function main() {
   if (MODE === 'v13') { const sk = +process.argv[4] || .6; v13Report(v13(N, sk, process.argv[5]), 'skill ' + sk + (process.argv[5] ? ' ' + process.argv[5] : '')); return; }
   if (MODE === 'levels') { levels(N); return; }
   if (MODE === 'v14') { const sk = +process.argv[4] || .55; v14Report(v14(N, sk, process.argv[5] || 'classic', +process.argv[6] || 0), 'skill ' + sk + ' ' + (process.argv[5] || 'classic')); return; }
+  if (MODE === 'kits15') { kits15(N, +process.argv[4] || .7, +process.argv[5] || 0); return; }
+  if (MODE === 'kitgap') { kitgap(N, +process.argv[4] || .95, +process.argv[5] || .75, +process.argv[6] || 0); return; }
   if (MODE === 'ladder14') { ladder14(N, +process.argv[4] || 0, (process.argv[5] || '1,2,3,4').split(',').map(Number)); return; }
   console.log('Sim exports:', ['RANKS', 'rankOf', 'rankDelta', 'botSkills'].map(k => k + ':' + typeof Sim[k]).join(' '));
   if (MODE === 'all' || MODE === 'even') {

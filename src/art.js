@@ -770,6 +770,11 @@ const Art = (() => {
     dome(g) { g.lineWidth = 0.025; for (let r = .32; r < 1; r += .22) pgon(g, 6, r, HALF / 6); g.lineWidth = 0.012; spokes(g, 6, 0, .98, HALF / 6); },
     root(g) { g.lineWidth = 0.050; cir(g, .92); g.lineWidth = 0.062; spokes(g, 3, .55, .92, -HALF / 2); },
     fissure(g) { g.lineWidth = 0.031; g.beginPath(); let x = -1; g.moveTo(x, 0); const r = seeded(7); while (x < 1) { x += .1 + r() * .14; g.lineTo(x, (r() - .5) * .34); } g.stroke(); },
+    // 15.0 kit revamp
+    star(g) { g.lineWidth = 0.031; cir(g, .96); g.lineWidth = 0.019; cir(g, .5); g.beginPath(); for (let i = 0; i <= 8; i++) { const a = -HALF / 2 + i / 8 * TAU, r = i % 2 ? .3 : .86; g[i ? 'lineTo' : 'moveTo'](Math.cos(a) * r, Math.sin(a) * r); } g.closePath(); g.stroke(); g.lineWidth = 0.012; spokes(g, 16, .9, .96, HALF / 16); },
+    target(g) { g.lineWidth = 0.037; cir(g, .96); g.lineWidth = 0.019; cir(g, .62); cir(g, .24); g.lineWidth = 0.05; spokes(g, 4, .7, 1.04, HALF / 4); g.lineWidth = 0.025; spokes(g, 4, .3, .54, HALF / 4); },
+    bubble(g) { g.lineWidth = 0.031; cir(g, .95); g.lineWidth = 0.019; cir(g, .8, 3.6, 4.6); cir(g, .66, .5, 1.3); g.lineWidth = 0.012; for (let i = 0; i < 6; i++) { const a = i / 6 * TAU + .3; g.beginPath(); g.arc(Math.cos(a) * .52, Math.sin(a) * .52, .09, 0, TAU); g.stroke(); } },
+    bulwark(g) { g.lineWidth = 0.037; pgon(g, 8, .96, HALF / 8); g.lineWidth = 0.019; pgon(g, 8, .7, HALF / 8); g.lineWidth = 0.05; spokes(g, 8, .74, .92, 0); g.lineWidth = 0.025; cir(g, .3); },
   };
   function sigil(name, col, S = 256) {
     const id = `sig${name}${col}`; if (cache.has(id)) return cache.get(id);
@@ -820,7 +825,7 @@ const Art = (() => {
     ],
     plague: [
       g => { dot(g, -.42, .24, .34); dot(g, .08, -.1, .42); dot(g, .52, .28, .3); ln(g, -.78, .66, .78, .66); ln(g, -.48, .9, .48, .9); },
-      g => { g.beginPath(); g.moveTo(-.9, .8); g.bezierCurveTo(-.4, -.3, .3, .5, .85, -.8); g.stroke(); poly(g, [[-.98, .98], [-.62, .94], [-.82, .58]]); poly(g, [[.98, -.98], [.62, -.94], [.82, -.58]]); dot(g, -.05, .1, .2); },
+      g => { g.beginPath(); g.moveTo(-.9, .8); g.quadraticCurveTo(-.5, .1, -.2, .2); g.stroke(); g.beginPath(); g.moveTo(.14, -.06); g.quadraticCurveTo(.4, -.1, .85, -.8); g.stroke(); poly(g, [[-.98, .98], [-.62, .94], [-.82, .58]]); poly(g, [[.98, -.98], [.62, -.94], [.82, -.58]]); g.save(); g.lineWidth = .08; ln(g, -.02, .08, -.1, -.3); ln(g, -.02, .08, .3, .36); ln(g, -.02, .08, -.38, .5); g.restore(); },
       g => { arc(g, 0, 0, .86); ln(g, -.56, -.56, .56, .56); ln(g, .56, -.56, -.56, .56); },
     ],
     shiv: [
@@ -829,7 +834,7 @@ const Art = (() => {
       g => { for (const o of [-.58, 0, .58]) ln(g, o + .3, -.86, o - .3, .86); ln(g, -.98, .08, .98, -.2); },
     ],
     ironjaw: [
-      g => { dot(g, .42, .42, .44); arc(g, -.5, -.5, .14); arc(g, -.2, -.2, .14); ln(g, -.05, -.05, .14, .14); ln(g, -.9, -.9, -.62, -.62); },
+      g => { dot(g, .4, -.36, .4); g.save(); g.lineWidth = .1; g.setLineDash([.14, .1]); g.beginPath(); g.arc(-.2, .2, .74, -.4, 2.6); g.stroke(); g.setLineDash([]); ln(g, -.98, -.2, -.3, -.36); ln(g, -.9, -.62, -.24, -.62); g.restore(); poly(g, [[.98, -.98], [.62, -.92], [.92, -.62]]); },
       g => { g.beginPath(); g.arc(.14, -.08, .58, -2.9, 1.2); g.stroke(); poly(g, [[-.52, -.42], [-.94, -.2], [-.58, .05]]); ln(g, .34, .46, .75, .95); },
       g => { poly(g, [[-.95, .72], [-.55, .2], [-.25, .46], [.05, -.32], [.32, .05], [.58, -.76], [.95, .72]]); },
     ],
@@ -846,7 +851,7 @@ const Art = (() => {
     ione: [
       g => { dot(g, 0, 0, .42); g.save(); g.scale(1, .42); arc(g, 0, 0, .9); g.restore(); dot(g, .72, -.3, .1); },
       g => { poly(g, [[0, -.95], [.62, 0], [.08, .02], [.24, .4], [0, .95], [-.62, 0], [-.08, -.02], [-.24, -.4]]); },
-      g => { arc(g, -.62, .55, .3); arc(g, 0, 0, .3); arc(g, .62, -.55, .3); dot(g, -.62, .55, .1); dot(g, 0, 0, .1); dot(g, .62, -.55, .1); },
+      g => { const st = (x, y, r) => { g.beginPath(); for (let i = 0; i <= 8; i++) { const a = -HALF / 2 + i / 8 * TAU, q = i % 2 ? r * .4 : r; g[i ? 'lineTo' : 'moveTo'](x + Math.cos(a) * q, y + Math.sin(a) * q); } g.closePath(); g.fill(); }; for (const [x, y, r] of [[-.5, .52, .46], [.18, .3, .34], [.66, -.28, .28]]) { st(x, y, r); g.save(); g.lineWidth = .1; ln(g, x - r * .3, y - r * 1.1, x - r * .9, y - r * 2.6); g.restore(); } },
     ],
     solenne: [
       g => { poly(g, [[-.17, -.7], [.17, -.7], [.17, -.25], [.62, -.25], [.62, .1], [.17, .1], [.17, .55], [-.17, .55], [-.17, .1], [-.62, .1], [-.62, -.25], [-.17, -.25]]); ln(g, -.85, .88, .85, .88); },
@@ -868,21 +873,21 @@ const Art = (() => {
     voltaic: [
       g => { poly(g, [[.18, -.95], [.72, -.95], [.34, -.2], [.72, -.2], [-.22, .95], [.02, .1], [-.34, .1]]); ln(g, -.95, -.5, -.3, -.5); ln(g, -.95, -.1, -.5, -.1); },
       g => { dot(g, 0, 0, .3); for (let i = 0; i < 4; i++) { g.save(); g.rotate(i * HALF / 2 + HALF / 4); g.lineWidth = .13; ln(g, .42, 0, .6, -.16, .74, .1, .98, 0); g.restore(); } },
-      g => { poly(g, [[.02, -1], [.38, -1], [.14, -.44], [.4, -.44], [-.14, .34], [0, -.24], [-.24, -.24]]); ln(g, -.98, .62, .98, .62); ln(g, -.62, .92, .62, .92); },
+      g => { poly(g, [[-.98, .5], [-.24, -.2], [-.3, .12], [.34, -.5], [.26, -.16], [.62, -.4], [-.04, .36], [.02, .04], [-.62, .62]]); g.save(); g.lineWidth = .13; for (let i = 0; i < 8; i++) { const a = i / 8 * TAU; ln(g, .62 + Math.cos(a) * .14, .5 + Math.sin(a) * .14, .62 + Math.cos(a) * .4, .5 + Math.sin(a) * .4); } g.restore(); },
     ],
     tidecaller: [
       g => { g.beginPath(); g.moveTo(-.95, .4); g.bezierCurveTo(-.4, -.7, .3, -.7, .6, -.05); g.bezierCurveTo(.3, -.32, 0, -.2, -.18, .4); g.closePath(); g.fill(); ln(g, -.9, .78, .9, .78); },
-      g => { arc(g, 0, 0, .82); g.save(); g.lineWidth = .11; g.beginPath(); g.arc(-.24, -.26, .38, 3.2, 4.8); g.stroke(); g.restore(); dot(g, .32, .32, .12); },
+      g => { arc(g, .28, .2, .64); g.save(); g.lineWidth = .1; g.beginPath(); g.arc(.08, 0, .32, 3.3, 4.7); g.stroke(); g.setLineDash([.16, .12]); g.beginPath(); g.moveTo(-.98, .9); g.quadraticCurveTo(-.92, -.9, -.24, -.5); g.stroke(); g.restore(); dot(g, .5, .46, .1); },
       g => { for (let i = 0; i < 3; i++) { const y = -.62 + i * .58, x = -.96 + i * .14; g.beginPath(); g.moveTo(x, y + .3); g.quadraticCurveTo(0, y - .55, -x, y + .3); g.quadraticCurveTo(0, y - .12, x, y + .3); g.closePath(); g.fill(); } },
     ],
     paragon: [
       g => { poly(g, [[0, -1], [.42, -.36], [.16, -.36], [.16, .5], [-.16, .5], [-.16, -.36], [-.42, -.36]]); ln(g, -.6, .84, .6, .84); },
-      g => { g.lineWidth = .14; for (let i = 0; i < 6; i++) { const a = i / 6 * TAU + .26; ln(g, Math.cos(a) * .62, Math.sin(a) * .62, Math.cos(a) * .98, Math.sin(a) * .98); } poly(g, [[-.34, -.34], [.34, -.34], [.4, .3], [-.4, .3]]); },
-      g => { poly(g, [[.48, -.98], [.86, -.62], [.2, .3], [-.14, .02]]); poly(g, [[-.4, .36], [.18, .66], [-.1, .9], [-.72, .78]]); ln(g, -.98, .4, -.62, .1); },
+      g => { poly(g, [[-.5, -.4], [.24, -.4], [.32, .34], [-.46, .34]]); g.save(); g.lineWidth = .1; ln(g, -.98, -.24, -.66, -.24); ln(g, -.98, .18, -.66, .18); g.restore(); poly(g, [[.62, -.98], [.98, -.98], [.98, .98], [.62, .98]]); g.save(); g.lineWidth = .09; ln(g, .4, -.62, .52, -.3); ln(g, .44, .58, .54, .3); g.restore(); },
+      g => { g.save(); g.scale(1, .42); arc(g, -.1, 1.74, .8); g.lineWidth = .1; arc(g, -.1, 1.74, .36); g.restore(); dot(g, .02, -.12, .4); g.save(); g.lineWidth = .12; ln(g, .32, -.42, .86, -.96); ln(g, .44, -.08, .98, -.5); ln(g, -.04, -.56, .4, -.98); g.restore(); },
     ],
     mirage: [
       g => { poly(g, [[.96, 0], [.2, -.26], [.3, 0], [.2, .26]]); ln(g, -.96, -.72, .04, -.1); ln(g, -.96, .72, .04, .1); ln(g, -.98, 0, .1, 0); },
-      g => { dot(g, .42, 0, .34); g.setLineDash([.17, .13]); arc(g, -.42, 0, .34); g.setLineDash([]); ln(g, -.05, .72, .4, .72); },
+      g => { dot(g, -.5, .2, .34); g.setLineDash([.17, .13]); arc(g, .36, -.3, .34); g.setLineDash([]); g.save(); g.lineWidth = .1; ln(g, .2, .32, .8, .32); g.restore(); poly(g, [[.98, .32], [.74, .16], [.74, .48]]); },
       g => { for (const [x, y] of [[-.62, -.62], [.62, -.62], [-.62, .62], [.62, .62]]) { g.save(); g.lineWidth = .12; g.strokeRect(x - .24, y - .3, .48, .6); g.restore(); } dot(g, 0, 0, .22); },
     ],
     cinder: [
@@ -897,11 +902,11 @@ const Art = (() => {
     ],
     cataclysm: [
       g => { dot(g, .36, -.36, .34); ln(g, -.84, .84, .02, .04); g.setLineDash([.14, .14]); ln(g, -.96, .34, -.42, -.2); g.setLineDash([]); },
-      g => { poly(g, [[-.82, -.7], [.82, -.7], [.74, .14], [0, .92], [-.74, .14]]); },
+      g => { g.beginPath(); for (const [x, y] of [[-.82, -.7], [.82, -.7], [.74, .14], [0, .92], [-.74, .14]]) g.lineTo(x, y); g.closePath(); g.stroke(); for (let i = 0; i < 3; i++) { const y = -.36 + i * .34, w = .44 - i * .1; poly(g, [[-w, y], [0, y + .2], [w, y], [w, y + .1], [0, y + .3], [-w, y + .1]]); } },
       g => { g.lineWidth = .15; ln(g, -.98, .1, -.44, -.26, -.12, .24, .32, -.34, .98, .08); poly(g, [[-.3, .5], [.14, .5], [.3, .98], [-.5, .98]]); },
     ],
     puppeteer: [
-      g => { g.lineWidth = .11; ln(g, -.96, .86, .96, -.86); dot(g, .96, -.86, .2); poly(g, [[-.96, .86], [-.5, .38], [-.3, .58]]); },
+      g => { g.lineWidth = .11; ln(g, -.96, .86, .3, -.26); poly(g, [[-.96, .86], [-.5, .38], [-.3, .58]]); dot(g, .44, -.38, .2); g.lineWidth = .08; g.beginPath(); g.moveTo(.44, -.38); g.quadraticCurveTo(.98, -.3, .74, .4); g.stroke(); dot(g, .74, .5, .17); },
       g => { poly(g, [[-.84, -.92], [.84, -.92], [.76, -.72], [-.76, -.72]]); g.lineWidth = .08; ln(g, -.68, -.72, -.5, .12); ln(g, .68, -.72, .5, .12); poly(g, [[0, -.2], [.44, .3], [.28, .92], [-.28, .92], [-.44, .3]]); },
       g => { poly(g, [[-.5, -.26], [.5, -.26], [.42, -.06], [-.42, -.06]]); g.lineWidth = .1; ln(g, 0, -.98, 0, -.26); ln(g, -.46, -.06, -.8, .6); ln(g, .46, -.06, .8, .6); dot(g, -.8, .7, .17); dot(g, .8, .7, .17); dot(g, 0, .44, .28); },
     ],

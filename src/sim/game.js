@@ -94,6 +94,13 @@
 //     Districts (map.districtLayout / s.districts): Bank north of centre, Power south of centre (side -1), plus a Hospital and an Armory per side on the flanks. No subway.
 //     Structures soften about 7 minutes earlier than the full map. Bot matches still run 12 to 18 min (bots are slow to finish a core there). Bots: lane lookups fall back to lane 0.
 //     rayWall/hasLOS follow the active match's map (Sim.useMap(map) is called by createMatch, step, predict and applyFrame; call it yourself if you ray-test another map).
+// 15.0 KIT REVAMP (names final; spec in /home/claude/kits15.md):
+//   FX_CODE gains bullseye rally starfall dusk dawn bedrock ridebolt lobbubble wallslam meteormark killzone snap shimmer hurl emberbolt scent bulwark tie (appended; old indexes unchanged). No new zone kinds or event types.
+//   Zones: Ione's Starfall blasts are blast fx 'starfall'; Voltaic's trail is a fissure fx 'ridebolt' that lingers up to 1.2s (recast slot 2 detonates it; c.recast[2] > 0 meanwhile);
+//     Tidecaller's enemy Bubble is a lobbed blast fx 'lobbubble' (r 75, lands in 0.4s); Paragon's Meteor Drop puts a blast fx 'meteormark' on the landing spot for the flight (its end boom is only a marker);
+//     Deadbolt's Lockdown zone carries fx 'killzone'. Projectiles: Ironjaw's hurled ball fx 'hurl' (recast slot 0, c.recast[0] > 0 while the ball orbits), Cinder's ember bolt fx 'emberbolt'.
+//   pstack: Gravel Bedrock 0..3 (pready at 3), Solenne 1 = next Mending Ray heals 40% more (dawn), 2 = next burns 40% more (dusk). Shiv's stealth is revealed (revealT) to enemies within 200 (phit fx 'shimmer').
+//   Gravel no longer ignores displacement. Curses no longer strip magic resist; each curse slows 4%. Reap: a takedown on its target within 3s refunds 50% (Reaper: full).
 // ==== end NET STATE ====
 const Sim = (() => {
   // c.stats fields added in 11.0 that the slow state has yet to carry to guests.
@@ -294,7 +301,7 @@ const Sim = (() => {
       team: c.team, owner: c, fx: o.fx, pierce: o.pierce, hits: new Set(), filter: o.filter || 'units', hit: o.hit, skill: true, counted: false, age: 0, abil: curAbil,
     });
   }
-  function dashDir(c, dx, dy, d, speed, o = {}) { if (o.forced && c.champ === 'gravel' && c.hp > c.maxHp * .4) return; const len = Math.max(0, Math.min(d, rayWall(c.x, c.y, dx, dy, d + c.r) - c.r)); c.dash = Object.assign({ vx: dx * speed, vy: dy * speed, t: len / speed, hits: new Set(), abil: curAbil }, o); }
+  function dashDir(c, dx, dy, d, speed, o = {}) { const len = Math.max(0, Math.min(d, rayWall(c.x, c.y, dx, dy, d + c.r) - c.r)); c.dash = Object.assign({ vx: dx * speed, vy: dy * speed, t: len / speed, hits: new Set(), abil: curAbil }, o); }
   function blast(s, c, x, y, r, delay, fn, fx) { s.zones.push({ id: s.nid++, kind: 'blast', x, y, r, t: delay, total: delay, team: c.team, owner: c, fn, fx, counted: false, abil: curAbil }); }
   function eachEnemy(s, c, x, y, r, fn, withMinions = true) {
     let n = 0; const test = u => { if (u.alive && !u.air && u.team !== c.team && Math.hypot(u.x - x, u.y - y) <= r + u.r) { fn(u); n++; } };
@@ -535,7 +542,6 @@ const Sim = (() => {
     }
     const champSrc = src && src.kind === 'champ', magic = champSrc && !o.basic && isMag(src);
     let res = magic ? (t.mr !== undefined ? t.mr : t.armor || 0) : (t.armor || 0);
-    if (magic && t.curseN > 0 && t.curseT > 0) res = Math.max(0, res - t.curseN * 6);
     if (champSrc) res *= 1 - (magic ? src.st.mpen : src.st.pen);
     let a = amt * 100 / (100 + res);
     if (champSrc) {
@@ -555,6 +561,7 @@ const Sim = (() => {
       a *= uniqueOut(s, src, t, a, o);
     }
     if (t.drT > 0) a *= .7;
+    if (t.bedT > 0) a *= 1 - .06 * (t.bedN || 0);
     if (champSrc && src.poisonT > 0 && src.poisonBy && src.poisonBy.champ === 'plague') a *= .9;
     if (t.kind === 'champ') {
       if (s.boons[t.team].rally > 0) a *= .92;
@@ -687,7 +694,8 @@ const Sim = (() => {
     if (t.curseN > 0 && t.curseT > 0) spreadCurses(s, t);
     if (t.cuts) { t.cuts = null; t.air = 0; }
     s.ev.push({ e: 'die', u: t.id, kind: t.kind, x: t.x, y: t.y, by: src ? src.id : 0 });
-    if (src && src.reap && src.reap.id === t.id && src.reap.t > 0) { src.cd[2] = 0; src.reap = null; }
+    // Reap: a takedown on its target within 3s refunds half of it (Reaper resets it fully below).
+    for (const c of s.champs) if (c.reap && c.reap.id === t.id && c.reap.t > 0 && src && src.team === c.team) { c.cd[2] *= c.f.reaper ? 0 : .5; c.reap = null; }
     if (src && src.kind === 'champ' && t.bleedT > 0 && src.f.cutthroat) src.cd[0] = 0;
     if (t.kind === 'champ' && src && src.kind === 'champ') for (const c of s.champs) if (c.team === src.team && c.f.reaper && (c === src || (t.assist[c.id] !== undefined && s.t - t.assist[c.id] < 9))) c.cd[2] = Math.min(c.cd[2], 1);
     const et = 1 - t.team;
@@ -1366,7 +1374,7 @@ const Sim = (() => {
   }
 
   // Commands available alive or dead. Bots use exactly the same ones.
-  const STATUS_T = ['stunT', 'slowT', 'markT', 'parryT', 'drT', 'buffT', 'empowerT', 'revealT', 'lock', 'rootT', 'polyT', 'knockT', 'stealthT', 'noHealT', 'hasteT', 'shieldT', 'vulnT', 'dmarkT', 'opener', 'ripT', 'curseT', 'poisonT', 'bleedT', 'pingT', 'dropT', 'stringT', 'kindleT', 'bellT', 'tempoT', 'behindT', 'evT'];
+  const STATUS_T = ['stunT', 'slowT', 'markT', 'parryT', 'drT', 'buffT', 'empowerT', 'revealT', 'lock', 'rootT', 'polyT', 'knockT', 'stealthT', 'noHealT', 'hasteT', 'shieldT', 'vulnT', 'dmarkT', 'opener', 'ripT', 'curseT', 'poisonT', 'bleedT', 'pingT', 'dropT', 'stringT', 'kindleT', 'bellT', 'tempoT', 'behindT', 'evT', 'bedT'];
   function runShared(s, c, q) {
     if (q.t === 'buy') buyItem(s, c, q.id);
     else if (q.t === 'sell') sellItem(s, c, q.slot);
