@@ -83,6 +83,7 @@
 //   CUSTOM MATCH: cfg.custom = true, cfg.levels = [levelId, levelId] per team from Sim.BOT_LEVELS = [{id, name, skill}] (rookie regular veteran elite legend). s.custom = true; the client changes no rank.
 //   PACING: levels 2 to 6 come faster (Sim.xpNeed), early respawns shorter, structures soften 3 minutes sooner: bot matches average about 15.5 min (12 to 18).
 //   EXTRA_STATS gain duels, combos, evades (so synced). Boons gain 'stand'.
+//   14.0: comeback systems are off by default (catch-up, deficit shutdowns, rampage, Last Stand, repeat-death discount, under-level XP). Matches are decided by skill.
 //   BALANCE (13.0): catch-up runs at 55% of its old strength; rampage slams every 24s for 3.5% of a structure; Foreman minions +25% (was 40%);
 //     minions deal 30% less to structures and champions 40% more, so winning fights is what takes towers. cfg.rules = {rampage, stand, catchup} (all true by default; s.rules) switches them off for tests.
 //   BRAWL MAP ("Main Street"): cfg.mode 'brawl' builds Sim.buildMap('brawl'); Sim.buildMap() / buildMap('classic') is the full map. Same W x H coordinates.
@@ -1503,7 +1504,7 @@ const Sim = (() => {
       t: 0, tick: 0, nid: 1, rand: rng(cfg.seed || 7), map: buildMap(mode === 'brawl' ? 'brawl' : 'classic'), champs: [], minions: [], towers: [], monsters: [], proj: [], zones: [], ev: [], over: null,
       nextWave: 8, wave: 0, bossAt: BOSS_FIRST.colossus, kills: [0, 0], buff: [0, 0], camps: [], gaps: {}, navLeft: 2, hope: 50, hopeTeam: -1, sites: [], districts: mode === 'duel' || mode === 'raid' ? [] : buildDistricts(mode === 'brawl' ? 'brawl' : 'classic'), dcount: [blankDistrictCount(), blankDistrictCount()], blackAt: [0, 0], blackT: [0, 0], hunt: [0, 0], cityAt: [0, 0],
       laneInfo: [[{}, {}], [{}, {}]], practice: !!cfg.practice, catchup: [0, 0], seed: cfg.seed || 7, bosses: [], boons: [blankBoons(), blankBoons()], event: null, eventAt: EVENT_FIRST, eventI: 0, eventOrder: [], fog: [1, 1], fund: [0, 0], reinforceAt: [0, 0], reinforceQ: [[0, 0], [0, 0]], votes: [null, null], voteCd: [0, 0],
-      act: 1, rampage: null, stand: [0, 0], duel: null, duelAt: 0, custom: !!cfg.custom, rules: Object.assign({ rampage: true, stand: true, catchup: true }, cfg.rules),
+      act: 1, rampage: null, stand: [0, 0], duel: null, duelAt: 0, custom: !!cfg.custom, rules: Object.assign({ rampage: false, stand: false, catchup: false }, cfg.rules),
       ai: [0, 1].map(() => ({ defend: null, hoard: null, hoardGo: false, push: null, pushUntil: 0, thp: {}, sites: {}, help: {}, focus: 0 })),
     };
     s.fountains = s.map.fountains; useMap(s.map);
@@ -1751,7 +1752,7 @@ const Sim = (() => {
   }
 
   function giveXp(s, c, xp) {
-    if (c.lvl >= MAX_LEVEL) return; if (c.solo) xp *= 1 + .2 * roleK(c, 'top'); xp *= 1 + .22 * (s.catchup ? s.catchup[c.team] : 0); if (s.topLvl && c.lvl < s.topLvl[c.team]) xp *= 1 + Math.min(.5, .12 * (s.topLvl[c.team] - c.lvl)); c.xp += xp;
+    if (c.lvl >= MAX_LEVEL) return; if (c.solo) xp *= 1 + .2 * roleK(c, 'top'); xp *= 1 + .22 * (s.catchup ? s.catchup[c.team] : 0); c.xp += xp;
     while (c.lvl < MAX_LEVEL && c.xp >= xpNeed(c.lvl)) { c.xp -= xpNeed(c.lvl); c.lvl++; applyStats(c, true); s.ev.push({ e: 'level', u: c.id }); }
   }
   const xpNeed = l => (l < 6 ? 118 : 150) + 55 * (l - 1); // 13.0: the first levels come faster
@@ -1804,7 +1805,7 @@ const Sim = (() => {
       if (t.wanted) { s.ev.push({ e: 'wanted', u: t.id, n: 0, bounty, by: src ? src.id : 0 }); t.wanted = 0; }
       if (src && src.kind === 'champ') duelKill(s, src, t);
       // Dying over and over pays less each time, and a side already ahead earns less per kill.
-      const killPay = Math.round(KILL_GOLD * (1 - .35 * ahead) * Math.max(.45, 1 - .18 * Math.max(0, downstreak - 1))), xpK = lv => clamp(1 + .16 * (t.lvl - lv), .55, 1.7);
+      const killPay = Math.round(KILL_GOLD * (1 - .35 * ahead) * 1), xpK = lv => clamp(1 + .16 * (t.lvl - lv), .55, 1.7);
       if (s.practice) t.respawn = .6;
       s.kills[et]++;
       let multi = 1;
