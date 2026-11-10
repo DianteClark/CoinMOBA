@@ -1,12 +1,14 @@
 // Touch controls. Abilities fire on release so the player always has a chance to cancel.
 const { Ctl, applyInput, aimDir } = (() => {
   const Ctl = {
-    p: new Map(), stick: null, aim: null, atk: null, atkMode: 'champ', ping: null, mapHold: null,
-    reset() { if (this.talking) { this.talking = false; Voice.talk(false); } this.p.clear(); this.stick = null; this.aim = null; this.atk = null; this.atkMode = 'champ'; this.ping = null; this.mapHold = null; },
+    p: new Map(), stick: null, aim: null, atk: null, atkMode: 'champ', ping: null, mapHold: null, look: null, ev: null, lockId: 0,
+    reset() { if (this.talking) { this.talking = false; Voice.talk(false); } this.p.clear(); this.stick = null; this.aim = null; this.atk = null; this.atkMode = 'champ'; this.ping = null; this.mapHold = null; this.look = null; this.ev = null; this.lockId = 0; if (G) G.look = null; },
     pt(e) { return rotated ? { x: e.clientY - stageX, y: physW - e.clientX } : { x: e.clientX - stageX, y: e.clientY }; },
   };
   const near = (b, p, pad) => Math.hypot(p.x - b.x, p.y - b.y) < b.r + pad;
-  const STICK = 58, MOVE_PX = 16, FULL_PX = 96, HOLD_MS = 240, RADIAL_DEAD = 20;
+  // 13.0: a shorter throw. The pad is smaller and full speed arrives at about two thirds of it (31 px of thumb travel).
+  const STICK = 46, STICK_FULL = .68, MOVE_PX = 16, FULL_PX = 96, HOLD_MS = 240, RADIAL_DEAD = 20, EVADE_PX = 14;
+  Ctl.STICK = STICK;
   // Higher sensitivity: a shorter drag starts the aim and reaches full range.
   const sens = () => Math.max(.5, Math.min(2, save.aimSens || 1));
 
@@ -32,6 +34,8 @@ const { Ctl, applyInput, aimDir } = (() => {
   }
   function quickTarget(me, a, free) {
     const r = (a.range || 600) + 80, s = G.s, ok = (u, d) => u.alive && !u.air && u.team !== me.team && !(u.delay > 0) && d < r && Sim.canSee(s, me.team, u) && clearShot(me, u, d, free);
+    // The champion your attack is locked onto comes first, when the shot can reach it.
+    const L = lockedUnit(); if (L && ok(L, Math.hypot(L.x - me.x, L.y - me.y))) return L;
     const lowest = list => { let best = null, top = Infinity; for (const u of list) { const d = Math.hypot(u.x - me.x, u.y - me.y); if (!ok(u, d)) continue; const v = hpScore(u); if (v < top) { top = v; best = u; } } return best; };
     const tower = () => { let best = null, bd = Infinity; for (const t of s.towers) { const d = Math.hypot(t.x - me.x, t.y - me.y); if (!ok(t, d) || d >= bd || !Sim.towerOpen(s, t)) continue; bd = d; best = t; } return best; };
     const foe = lowest(s.champs); if (foe) return foe;
@@ -89,6 +93,66 @@ const { Ctl, applyInput, aimDir } = (() => {
     Sound.play('tap');
   }
 
+  // ---------- 13.0: attack lock ----------
+  // Tapping an enemy coin locks your attack (and your tapped abilities) onto it. The sim keeps the real lock; this mirrors it for the HUD and smart cast.
+  function lockedUnit() {
+    const me = G && G.me; if (!me) return null;
+    // The sim's c.lockId is the truth once it exists; the local mirror only covers the tick between a tap and the sim taking it.
+    if (me.lockId !== undefined && me.lockId !== Ctl.lockId && performance.now() - (Ctl.lockAt || 0) > 250) { Ctl.lockId = me.lockId || 0; G.lockId = Ctl.lockId; }
+    const id = Ctl.lockId; if (!id) return null;
+    const u = G.s.champs.find(c => c.id === id);
+    if (!u || !u.alive || u.team === me.team || !Sim.canSee(G.s, me.team, u)) { if (Ctl.lockId === id) { Ctl.lockId = 0; G.lockId = 0; } return null; }
+    return u;
+  }
+  // The enemy champion under a screen point, generous enough for a thumb.
+  function enemyAt(p) {
+    const me = G.me, s = G.s; let best = null, bd = Infinity;
+    for (const u of s.champs) {
+      if (!u.alive || u.team === me.team || !Sim.canSee(s, me.team, u)) continue;
+      const X = sx(u.x), Y = sy(u.y), rr = Math.max(30, (u.r || 30) * Z * 1.25 + 14);
+      // The coin stands on its spot, so the hit area reaches up a little as well.
+      const d = Math.min(Math.hypot(p.x - X, p.y - Y), Math.hypot(p.x - X, p.y - (Y - (u.r || 30) * Z)));
+      if (d < rr && d < bd) { bd = d; best = u; }
+    }
+    return best;
+  }
+  function setLock(u) {
+    if (!u || !G.me.alive) return false;
+    const fresh = Ctl.lockId !== u.id; Ctl.lockId = u.id; G.lockId = u.id; Ctl.lockAt = performance.now();
+    G.me.q.push({ t: 'lock', id: u.id });
+    Hud.locked(u, fresh);
+    if (fresh) Sound.play('lockOn');
+    return true;
+  }
+
+  // ---------- 13.0: evade ----------
+  // A tap dodges the way you are moving (or facing); a drag picks the way. While you are already steering, it goes on the press, no wait.
+  const evadeCd = me => Math.max(0, me.evadeCd !== undefined ? me.evadeCd : me.evCd !== undefined ? me.evCd : 0);
+  function sendEvade(dx, dy) {
+    const me = G.me, l = Math.hypot(dx, dy); if (!l) { dx = me.fx || 1; dy = me.fy || 0; } else { dx /= l; dy /= l; }
+    me.q.push({ t: 'evade', dx, dy }); Hud.evaded(); Sound.play('evade');
+  }
+  function pressEvade(id, p) {
+    const me = G.me;
+    if (!me.alive) return;
+    if (evadeCd(me) > 0 || me.stunT > 0) { Hud.evadeDeny(); Sound.play('cancel'); return; }
+    if (Ctl.stick && (me.mv.x || me.mv.y)) { sendEvade(me.mv.x, me.mv.y); Ctl.p.set(id, { role: 'none' }); return; }
+    Ctl.ev = { id, sx: p.x, sy: p.y, dx: 0, dy: 0 };
+    Ctl.p.set(id, { role: 'evade' });
+    Hud.evadePress();
+  }
+  function releaseEvade(lost) {
+    const E = Ctl.ev; Ctl.ev = null; if (!E || lost || !G.me.alive) return;
+    if (Math.hypot(E.dx, E.dy) > EVADE_PX) sendEvade(E.dx, E.dy / TILT);
+    else { const me = G.me; sendEvade(me.mv.x || me.fx, me.mv.y || me.fy); }
+  }
+
+  // ---------- 13.0: minimap look ----------
+  // Hold the minimap to look anywhere; slide to pan. Let go and the camera snaps back to you.
+  function mapPoint(p) { const M = Hud.ui.map; return { x: Math.max(0, Math.min(Sim.W, (p.x - M.x) / M.w * Sim.W)), y: Math.max(0, Math.min(Sim.H, (p.y - M.y) / M.h * Sim.H)) }; }
+  function lookAt(p) { const w = mapPoint(p); Ctl.look.x = w.x; Ctl.look.y = w.y; G.look = { x: w.x, y: w.y }; }
+  function endLook() { Ctl.look = null; if (G) G.look = null; }
+
   // ---------- pings ----------
   const RADIAL = [['attack', 0, -1], ['omw', 1, 0], ['help', 0, 1], ['retreat', -1, 0]];
   function radialPick(dx, dy) {
@@ -129,7 +193,7 @@ const { Ctl, applyInput, aimDir } = (() => {
     return best;
   }
   const atkList = U => [['champ', U.atk], ['minion', U.atkM], ['tower', U.atkT]];
-  function clusterList(U) { return [...atkList(U), ['ab0', U.ab[0]], ['ab1', U.ab[1]], ['ab2', U.ab[2]]]; }
+  function clusterList(U) { return [...atkList(U), ['ab0', U.ab[0]], ['ab1', U.ab[1]], ['ab2', U.ab[2]], ['ev', U.evade]]; }
   function setAtk(id, mode) {
     Ctl.p.set(id, { role: 'atk' }); Ctl.atk = id; Ctl.atkMode = mode;
     Hud.atkPressed(mode); Sound.play(mode === 'minion' ? 'atkMinion' : mode === 'tower' ? 'atkTower' : 'atkChamp');
@@ -156,36 +220,40 @@ const { Ctl, applyInput, aimDir } = (() => {
       if (near(U.shop, p, 8)) { Hud.squash('shop'); Hud.toggleShop(); return; }
       if (near(U.recall, p, 8)) { Hud.squash('recall'); if (me.alive) { me.q.push({ t: 'recall' }); Sound.play('recall'); } return; }
       if (near(U.chat, p, 8)) { Hud.squash('chat'); Hud.qcToggle(); return; }
-      if (near(U.ping, p, 8)) { Hud.squash('ping'); openRadial(e.pointerId, p, { x: me.x, y: me.y }, false); Ctl.p.set(e.pointerId, { role: 'ping', fromBtn: true }); Sound.play('tap'); return; }
+      if (near(U.ping, p, 8)) { Hud.squash('ping'); openRadial(e.pointerId, p, Ctl.look ? { x: Ctl.look.x, y: Ctl.look.y } : { x: me.x, y: me.y }, false); Ctl.p.set(e.pointerId, { role: 'ping', fromBtn: true }); Sound.play('tap'); return; }
+      if (Hud.qbuyShown() && near(U.qbuy, p, 8)) { Hud.squash('qbuy'); Hud.quickBuy(); return; }
       const hit = closest(p, clusterList(U), 11);
       if (hit === 'champ' || hit === 'minion' || hit === 'tower') { setAtk(e.pointerId, hit); return; }
+      if (hit === 'ev') { pressEvade(e.pointerId, p); return; }
       if (hit) { pressAbility(+hit[2], e.pointerId, p); return; }
       const M = U.map;
-      if (p.x > M.x - 6 && p.x < M.x + M.w + 6 && p.y > M.y - 6 && p.y < M.y + M.h + 8) {
-        const wx = Math.max(0, Math.min(Sim.W, (p.x - M.x) / M.w * Sim.W)), wy = Math.max(0, Math.min(Sim.H, (p.y - M.y) / M.h * Sim.H));
-        Ctl.mapHold = { id: e.pointerId, sx: p.x, sy: p.y, wx, wy, t0: performance.now() };
+      if (p.x > M.x - 8 && p.x < M.x + M.w + 8 && p.y > M.y - 8 && p.y < M.y + M.h + 10) {
+        if (Ctl.look) Ctl.p.delete(Ctl.look.id);
+        Ctl.look = { id: e.pointerId, x: 0, y: 0 }; lookAt(p);
         Ctl.p.set(e.pointerId, { role: 'map' });
+        Sound.play('tick');
         return;
       }
     }
+    // A tap on an enemy coin, away from the movement thumb, switches your lock to it.
+    const zone0 = Hud.left() ? p.x > VW * .45 : p.x < VW * .55;
+    if (!zone0 && G.intro <= 0 && !G.spectator) { const u = enemyAt(p); if (u) { setLock(u); Hud.touchMark(p.x, p.y, true); return; } Hud.touchMark(p.x, p.y, false); }
     const zone = Hud.left() ? p.x > VW * .45 : p.x < VW * .55;
     // A new thumb on the movement side always takes over: iOS can lose the lift of an old touch near the screen edge, which left the stick stuck.
-    if (zone) { if (Ctl.stick) Ctl.p.delete(Ctl.stick.id); Ctl.stick = { id: e.pointerId, sx: p.x, sy: p.y, x: p.x, y: p.y }; Ctl.p.set(e.pointerId, { role: 'stick' }); }
+    if (zone) { if (Ctl.stick) Ctl.p.delete(Ctl.stick.id); Ctl.stick = { id: e.pointerId, sx: p.x, sy: p.y, x: p.x, y: p.y, t0: performance.now(), far: 0 }; Ctl.p.set(e.pointerId, { role: 'stick' }); }
   });
 
   view.addEventListener('pointermove', e => {
     if (!G) return; e.preventDefault();
     const st = Ctl.stick, A = Ctl.aim, r = Ctl.p.get(e.pointerId);
-    if (st && st.id === e.pointerId) { const p = Ctl.pt(e); st.x = p.x; st.y = p.y; }
+    if (st && st.id === e.pointerId) { const p = Ctl.pt(e); st.x = p.x; st.y = p.y; st.far = Math.max(st.far, Math.hypot(p.x - st.sx, p.y - st.sy)); }
+    if (r && r.role === 'evade' && Ctl.ev && Ctl.ev.id === e.pointerId) { const p = Ctl.pt(e); Ctl.ev.dx = p.x - Ctl.ev.sx; Ctl.ev.dy = p.y - Ctl.ev.sy; }
     if (r && r.role === 'atk' && Ctl.atk === e.pointerId) {
       // Slide between the three attack buttons without lifting.
       const hit = closest(Ctl.pt(e), atkList(Hud.ui), 3);
       if (hit && hit !== Ctl.atkMode) { Ctl.atkMode = hit; G.me.atkMode = hit; Hud.atkPressed(hit); Sound.play(hit === 'minion' ? 'atkMinion' : hit === 'tower' ? 'atkTower' : 'atkChamp'); }
     }
-    if (r && r.role === 'map' && Ctl.mapHold && Ctl.mapHold.id === e.pointerId) {
-      const p = Ctl.pt(e), H_ = Ctl.mapHold;
-      if (Math.hypot(p.x - H_.sx, p.y - H_.sy) > 26) { H_.t0 = -1e9; mapHoldTick(); }
-    }
+    if (r && r.role === 'map' && Ctl.look && Ctl.look.id === e.pointerId) lookAt(Ctl.pt(e));
     if (r && r.role === 'ping' && Ctl.ping && Ctl.ping.id === e.pointerId) {
       const p = Ctl.pt(e), P = Ctl.ping, sel = radialPick(p.x - P.sx, p.y - P.sy);
       if (sel !== P.sel) { P.sel = sel; if (sel) Sound.play('tick'); }
@@ -207,13 +275,15 @@ const { Ctl, applyInput, aimDir } = (() => {
     if (!G) return;
     const r = Ctl.p.get(e.pointerId); if (!r) return;
     Ctl.p.delete(e.pointerId);
-    if (r.role === 'stick') Ctl.stick = null;
+    if (r.role === 'stick') {
+      const st = Ctl.stick; Ctl.stick = null;
+      // A quick tap that never steered, landing on an enemy coin, locks onto it even on the movement side.
+      if (st && !lost && st.far < 10 && performance.now() - st.t0 < 260 && G.intro <= 0 && !G.spectator) { const u = enemyAt({ x: st.sx, y: st.sy }); if (u) { setLock(u); Hud.touchMark(st.sx, st.sy, true); } }
+    }
+    else if (r.role === 'evade') releaseEvade(lost);
     else if (r.role === 'ptt') { Ctl.talking = false; Voice.talk(false); }
     else if (r.role === 'atk') { Ctl.atk = null; Ctl.atkMode = 'champ'; G.me.atkMode = 'champ'; }
-    else if (r.role === 'map') {
-      const H_ = Ctl.mapHold;
-      if (H_ && H_.id === e.pointerId) { Ctl.mapHold = null; if (!lost) sendPing('danger', H_.wx, H_.wy); }
-    }
+    else if (r.role === 'map') { if (Ctl.look && Ctl.look.id === e.pointerId) endLook(); }
     else if (r.role === 'ping') {
       const P = Ctl.ping; if (!P || P.id !== e.pointerId) return;
       if (lost) { closeRadial(false); return; }
@@ -248,19 +318,21 @@ const { Ctl, applyInput, aimDir } = (() => {
       const l = Math.hypot(dx, dy);
       if (l > STICK) { st.sx += dx * (1 - STICK / l); st.sy += dy * (1 - STICK / l); dx = st.x - st.sx; dy = st.y - st.sy; }
       const m = Math.hypot(dx, dy) / STICK;
-      if (m > .1) { const wy = dy / TILT, n = Math.hypot(dx, wy) || 1, f = Math.min(1, m * 1.3); me.mv.x = dx / n * f; me.mv.y = wy / n * f; }
+      if (m > .09) { const wy = dy / TILT, n = Math.hypot(dx, wy) || 1, f = Math.min(1, m / STICK_FULL); me.mv.x = dx / n * f; me.mv.y = wy / n * f; }
       else me.mv.x = me.mv.y = 0;
     } else me.mv.x = me.mv.y = 0;
     me.atk = Ctl.atk !== null;
     me.atkMode = Ctl.atk !== null ? Ctl.atkMode : 'champ';
     mapHoldTick();
-    if (!me.alive) { if (Ctl.aim) Ctl.aim = null; }
+    if (!me.alive) { if (Ctl.aim) Ctl.aim = null; if (Ctl.ev) Ctl.ev = null; }
+    lockedUnit();
     if (Ctl.aim && me.charge && me.charge.slot === Ctl.aim.slot) {
       const d = aimDir(), far = me.kit[Ctl.aim.slot].range || 600;
       me.q.push({ t: 'aim', tx: me.x + d.dx * far, ty: me.y + d.dy * far });
     }
   }
   Ctl.radial = RADIAL;
+  Ctl.lockedUnit = lockedUnit; Ctl.evadeCd = evadeCd; Ctl.enemyAt = enemyAt;
 
   return { Ctl, applyInput, aimDir };
 })();
@@ -345,6 +417,30 @@ const Kin = (() => {
   }
   function chainOf(t) { const out = []; for (let e = t && t.closest ? t.closest('.scroll') : null; e; e = e.parentElement && e.parentElement.closest('.scroll')) out.push(e); return out; }
 
+  // ---------- fast taps ----------
+  // Buttons fire on touch-up, from here, instead of waiting for the browser's click. iOS can hold a click back
+  // (double-tap detection, hover emulation, a busy frame); this path does not. The native click that follows is eaten.
+  const TAP_SLOP = 12, TAP_MAX_MS = 900;
+  let tap = null, fastAt = -1e9, fastEl = null;
+  const tappable = t => { const b = t && t.closest ? t.closest('button,[role=button]') : null; return b && !b.disabled && !b.closest('canvas#view') && !b.classList.contains('hk') ? b : null; };
+  document.addEventListener('pointerdown', e => {
+    if (!e.isPrimary || (e.pointerType === 'mouse' && e.button !== 0)) { tap = null; return; }
+    const b = tappable(e.target); tap = b ? { id: e.pointerId, b, p: Ctl.pt(e), t: e.timeStamp } : null;
+    if (!G) window.__inputAt = performance.now();
+  }, true);
+  document.addEventListener('pointermove', e => { if (tap && tap.id === e.pointerId) { const p = Ctl.pt(e); if (Math.hypot(p.x - tap.p.x, p.y - tap.p.y) > TAP_SLOP) tap = null; } }, true);
+  document.addEventListener('pointercancel', e => { if (tap && tap.id === e.pointerId) tap = null; }, true);
+  document.addEventListener('pointerup', e => {
+    const T = tap; tap = null; if (!G) window.__inputAt = performance.now();
+    if (!T || T.id !== e.pointerId || swallow || e.timeStamp - T.t > TAP_MAX_MS) return;
+    // Still over the same button when the finger lifts (the target of a touch pointerup is where it lifted, without capture).
+    const under = document.elementFromPoint(e.clientX, e.clientY);
+    if (under && !T.b.contains(under) && under !== T.b) return;
+    if (!T.b.isConnected || T.b.disabled) return;
+    fastAt = performance.now(); fastEl = T.b;
+    T.b.click();
+  }, true);
+
   document.addEventListener('pointerdown', e => {
     clearTimeout(swallowT); swallow = false;
     if (track && track.id !== e.pointerId) return; // a second finger never disturbs the first
@@ -402,7 +498,11 @@ const Kin = (() => {
   document.addEventListener('pointerup', e => release(e, false), true);
   document.addEventListener('pointercancel', e => release(e, true), true);
   // Anything that was a scroll is not also a tap.
-  document.addEventListener('click', e => { if (swallow) { swallow = false; e.stopPropagation(); e.preventDefault(); } }, true);
+  document.addEventListener('click', e => {
+    // The browser's own click after a fast tap already handled: drop it (synthetic clicks are not trusted, so ours pass).
+    if (e.isTrusted && fastEl && performance.now() - fastAt < 800) { const b = tappable(e.target); if (!b || b === fastEl || fastEl.contains(b) || !fastEl.isConnected || performance.now() - fastAt < 450) { e.stopPropagation(); e.preventDefault(); if (b === fastEl) fastEl = null; return; } }
+    if (swallow && e.isTrusted) { swallow = false; e.stopPropagation(); e.preventDefault(); }
+  }, true);
   // Older Safari will still try to pan the page unless the touch is claimed here.
   document.addEventListener('touchmove', e => { if (track && track.owner) e.preventDefault(); }, { passive: false });
 

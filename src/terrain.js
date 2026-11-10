@@ -45,6 +45,10 @@ const Terrain = (() => {
   }
   const LEAF = [['#0d4a3a', '#16806a', '#3fd2a0'], ['#123e5c', '#1a7a98', '#4ad0e0'], ['#2a2f7a', '#5148b8', '#a07cf0']];
 
+  // 13.0: a per-map paint theme, set by world.js from the match mode before painting ('' = the city, 'brawl' = the Causeway).
+  let THEME = '';
+  const setTheme = t => { THEME = t || ''; };
+  const theme = () => THEME;
   function paint(map, towers, GS, sites = [], mood = 0, camps = [], districts = []) {
     // iOS refuses any canvas over 16.7 million pixels, and the paint happens on one before it's cut into tiles.
     const W = map.W, Ht = Math.ceil(map.H * TILT);
@@ -97,6 +101,43 @@ const Terrain = (() => {
     // Monster camps are ruined bandstands: a ragged disc of old mosaic the moss hasn't finished eating.
     for (const n of camps) { const R = n.big ? 150 : 118, x = n.x, y = Y(n.y); smoothP(g, lobes(x, y, R + 18, TILT, r, 14)); g.fillStyle = n.big ? 'rgba(180,255,120,.5)' : 'rgba(110,255,214,.42)'; g.fill(); smoothP(g, lobes(x, y, R + 6, TILT, r, 14)); g.fillStyle = '#2f5a4e'; g.fill(); g.save(); g.translate(x, y); g.scale(1, TILT); g.strokeStyle = n.big ? 'rgba(200,255,140,.75)' : 'rgba(150,255,226,.6)'; g.lineWidth = 2.4; g.beginPath(); g.arc(0, 0, R * .72, 0, TAU); g.stroke(); g.lineWidth = 1.4; g.beginPath(); for (let i = 0; i < 16; i++) { const a = i / 16 * TAU; g.moveTo(Math.cos(a) * R * .3, Math.sin(a) * R * .3); g.lineTo(Math.cos(a) * R * .7, Math.sin(a) * R * .7); } g.stroke(); g.restore(); for (let i = 0; i < 9; i++) { const a = r() * TAU, d = R * (.7 + r() * .4); blob(x + Math.cos(a) * d, y + Math.sin(a) * d * TILT, 30, 20, '#1b7a5a', .7); } }
 
+    // 13.0 Brawl: Main Street. One grand boulevard (map.band) between solid city blocks. Outside the band you look down on roofs;
+    // inside it is paved kerb to kerb: wide sidewalks lit by shopfronts, tram rails, crossings. No park, no moss.
+    if (THEME === 'brawl' && map.band) {
+      const y0 = Y(map.band.y0), y1 = Y(map.band.y1);
+      // Roofs: a dark grid of blocks and alleys, a few lit skylights and rooftop plant boxes.
+      g.fillStyle = '#080b12'; g.fillRect(0, 0, W, y0); g.fillRect(0, y1, W, Ht - y1);
+      for (const [ya, yb] of [[0, y0], [y1, Ht]]) {
+        for (let x = 0; x < W;) {
+          const bw = 220 + r() * 260; for (let y = ya + 14; y < yb - 14;) {
+            const bh = 120 + r() * 160, h = Math.min(bh, yb - 14 - y); if (h < 40) break;
+            const tone = ['#141a26', '#18202e', '#111722', '#1c2330'][r() * 4 | 0];
+            g.fillStyle = '#04060a'; g.fillRect(x + 8, y + 6, bw - 16, h - 12); g.fillStyle = tone; g.fillRect(x + 12, y + 8, bw - 24, h - 18);
+            g.strokeStyle = 'rgba(150,164,184,.18)'; g.lineWidth = 2; g.strokeRect(x + 18, y + 14, bw - 36, h - 30);
+            for (let k = 0, n = 1 + (r() * 3 | 0); k < n; k++) { const ux = x + 30 + r() * (bw - 90), uy = y + 22 + r() * Math.max(1, h - 60); g.fillStyle = '#0a0e15'; g.fillRect(ux, uy, 34, 22); g.fillStyle = '#2a3446'; g.fillRect(ux + 3, uy + 3, 28, 6); }
+            if (r() < .35) { const lx = x + 40 + r() * (bw - 110), ly = y + 20 + r() * Math.max(1, h - 50); g.globalCompositeOperation = 'lighter'; g.fillStyle = ['rgba(255,210,140,.22)', 'rgba(120,200,255,.18)', 'rgba(255,120,190,.16)'][r() * 3 | 0]; g.fillRect(lx, ly, 46, 16); g.globalCompositeOperation = 'source-over'; }
+            y += bh;
+          }
+          x += bw;
+        }
+      }
+      // The boulevard: asphalt, big pavers, sidewalks and kerbs.
+      const SW = 120; g.fillStyle = '#121824'; g.fillRect(0, y0, W, y1 - y0);
+      g.strokeStyle = 'rgba(70,86,110,.16)'; g.lineWidth = 1.4; g.beginPath(); for (let x = 0; x < W; x += 96) { g.moveTo(x, y0 + SW); g.lineTo(x, y1 - SW); } for (let y = y0 + SW; y < y1 - SW; y += 64) { g.moveTo(0, y); g.lineTo(W, y); } g.stroke();
+      for (const [ya, dir] of [[y0, 1], [y1, -1]]) {
+        const top = dir > 0 ? ya : ya - SW; g.fillStyle = '#2c3446'; g.fillRect(0, top, W, SW); g.strokeStyle = 'rgba(10,14,20,.5)'; g.lineWidth = 1.4; g.beginPath(); for (let x = 0; x < W; x += 54) { g.moveTo(x, top); g.lineTo(x, top + SW); } g.stroke();
+        const kerb = dir > 0 ? ya + SW : ya - SW; g.fillStyle = '#05070b'; g.fillRect(0, kerb - 5, W, 10); g.fillStyle = '#9aaac2'; g.fillRect(0, kerb - 2, W, 3);
+        // Shopfronts spill colour onto the pavement and the wet road; north frontage is lit warmer, south cooler.
+        g.globalCompositeOperation = 'lighter';
+        for (let x = 60 + r() * 120; x < W; x += 180 + r() * 220) { const col = dir > 0 ? ['#ffb46a', '#ff6ab0', '#ffd890', '#7ad8ff'][r() * 4 | 0] : ['#6ab8ff', '#b07aff', '#6affd8', '#ff7a9a'][r() * 4 | 0]; blob(x, ya + dir * 30, 120, 60, col, .2); blob(x, ya + dir * (SW + 70), 90, 46, col, .08); }
+        g.globalCompositeOperation = 'source-over';
+        g.fillStyle = '#04060a'; g.fillRect(0, ya - (dir > 0 ? 6 : 0), W, 6);
+      }
+      // Tram rails either side of the median, and zebra crossings at the old cross streets.
+      const mid = Y(map.H / 2);
+      for (const o of [-250, -210, 210, 250]) { g.fillStyle = '#06080d'; g.fillRect(0, mid + o * TILT - 3, W, 6); g.fillStyle = 'rgba(176,196,222,.55)'; g.fillRect(0, mid + o * TILT - 1, W, 2); }
+      for (const cx of [W * .17, W * .33, W * .67, W * .83]) { g.fillStyle = 'rgba(220,226,236,.5)'; for (let y = y0 + SW + 12; y < y1 - SW - 20; y += 34) g.fillRect(cx - 70, y, 140, 18); }
+    }
     // The canal runs under the avenues: cut stone, a lit coping, black water with the sky lying on it.
     const riverPts = map.river || [[W / 2, -80], [W / 2, map.H + 80]], cen = spline(riverPts, 18), path = new Path2D(); cen.forEach(([x, y], i) => path[i ? 'lineTo' : 'moveTo'](x, Y(y)));
     g.lineCap = 'round'; g.lineJoin = 'round';
@@ -1012,5 +1053,5 @@ const Terrain = (() => {
       return { frames, w: 44, h: 62, ax: 5, ay: 60 };
     });
   }
-  return { DIST_COL, landmark, landRuin, landLit, districtPad, districtScar, districtFlag, arenaProp, nearRoad, litOf, rubble, crowd, generator, bank, vaultDoor, convoy, crate, parachute, heli, beam, ARENA, paint, bake, cliff, tree, lantern, pillar, banner, house, hq, towerCoin, towerCrown, backOf, wave, spark, smoke, bubble, pool, nearRoad, spline, HALF, INK };
+  return { setTheme, theme, DIST_COL, landmark, landRuin, landLit, districtPad, districtScar, districtFlag, arenaProp, nearRoad, litOf, rubble, crowd, generator, bank, vaultDoor, convoy, crate, parachute, heli, beam, ARENA, paint, bake, cliff, tree, lantern, pillar, banner, house, hq, towerCoin, towerCrown, backOf, wave, spark, smoke, bubble, pool, nearRoad, spline, HALF, INK };
 })();

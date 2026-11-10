@@ -647,6 +647,8 @@ const { FX, fxEvent } = (() => {
     for (const z of zones) {
       if (z.team === me.team || z.fx === 'heal' || z.kind === 'dome' || z.line || z.kind === 'tether' || z.kind === 'orbit' || z.kind === 'ring' || z.kind === 'decoy' || !onScreen(z.x, z.y, z.r * Z + 60) || !litAt(z.x, z.y, z.r)) continue;
       dangerCircle(z.x, z.y, z.r, fracOf(z.t, z.total), alive && Math.hypot(mx - z.x, my - z.y) < z.r + 28);
+      // 13.0 boss slams: a closing ring counts down to the impact, so the dodge is about timing as well as place.
+      if (z.team === 2 && z.kind === 'blast' && z.total) { const f = clamp01(1 - z.t / z.total), k = 1 + (1 - outCub(f)) * .45, X = sx(z.x), Y = sy(z.y), R = z.r * Z * k; ctx.globalAlpha = .4 + f * .6; ctx.strokeStyle = INK_A(.8); ctx.lineWidth = 5; ctx.beginPath(); ctx.ellipse(X, Y, R, R * TILT, 0, 0, TAU); ctx.stroke(); ctx.strokeStyle = f > .8 ? '#ffffff' : '#ffb08a'; ctx.lineWidth = 2.6; ctx.stroke(); ctx.globalAlpha = 1; }
     }
     for (const c of champs) {
       if (c.team === me.team || !isUp(c) || !seesU(c)) continue;
@@ -754,7 +756,7 @@ const { FX, fxEvent } = (() => {
     NUMS.set(id, n = { c, w, h, fs }); return n;
   }
   function textLayer(dt) {
-    drawMood(); drawTunnel(dt);
+    drawMood(); drawWash(dt); drawTunnel(dt);
     // flashes and speed lines behind the numbers
     for (let i = OV.length - 1; i >= 0; i--) { if ((OV[i].t += dt) >= OV[i].life) OV.splice(i, 1); }
     drawCine(dt);
@@ -802,6 +804,7 @@ const { FX, fxEvent } = (() => {
       const r = 7 + outCub(a) * 18; ctx.globalCompositeOperation = 'lighter'; ctx.globalAlpha = 1 - a; ctx.drawImage(Art.glint('#ffe69a'), A.x - r, A.y - r, r * 2, r * 2); ctx.globalAlpha = 1; ctx.globalCompositeOperation = 'source-over';
     }
     drawReady(dt);
+    drawPhoto(dt);
   }
 
   // ability-ready glints on the button rims (the button itself is drawn after this, so they sit on its edge)
@@ -1385,9 +1388,130 @@ const { FX, fxEvent } = (() => {
     number(X, Y, 130, 'RIVALS', '#fff4d8', true, 1.2);
     if (mine) { hitStop(.06); slowMo(.3, .45); cine(.6, .7); G.shake = Math.max(G.shake, 8); G.punch = Math.max(G.punch, .06); const foe = a === G.me ? b : a; if (foe && foe.champ) impactFrame(foe.champ, foe.team ? v.mid : h.mid, X, Y); }
   }
+  // ---------- 13.0: acts, evade, last stand, combos, wanted, bosses, duels, entrance, photo finish ----------
+  // Screen washes for the big turns. One small state object, drawn in the text layer under the numbers.
+  const STG = { t: 0, life: 0, col: '#fff', a: 0, bars: 0 };
+  function screenWash(col, a, life) { if (calm) a *= .4; STG.t = 0; STG.life = life; STG.col = col; STG.a = a; }
+  function drawWash(dt) {
+    if (STG.life > 0) { STG.t += dt; const f = STG.t / STG.life; if (f >= 1) STG.life = 0; else { ctx.globalCompositeOperation = 'lighter'; ctx.globalAlpha = STG.a * (1 - f) * (1 - f); ctx.fillStyle = STG.col; ctx.fillRect(0, 0, VW, VH); ctx.globalCompositeOperation = 'source-over'; ctx.globalAlpha = 1; } }
+  }
+  const camX = () => G.cam.x, camY = () => G.cam.y;
+  // The act turns. City War: the searchlights snap on with one amber pulse. Final Hour: the sky goes, the city shakes once.
+  function actFx(n) {
+    if (n === 2) { screenWash('#ffb45a', .16, .7); wave(camX(), camY(), 1100, '#ffc890', .9); G.spotSnap = 1; G.shake = Math.max(G.shake, 3); }
+    else if (n >= 3) {
+      screenWash('#ff2c34', .32, 1.3); wave(camX(), camY(), 1400, '#ff3a2a', 1.1); later(.18, () => wave(camX(), camY(), 900, '#ffb08a', .8));
+      G.shake = Math.max(G.shake, 9); G.punch = Math.max(G.punch, .05); cine(1.1, 1); G.spotSnap = 1; G.bolt = 1;
+    }
+  }
+  // Evade: the coin leaves a line of afterimages and a puff where it stood. Yours is crisp and immediate, nothing slows down.
+  function evadeFx(u, x0, y0, x1, y1) {
+    if (!u) return; const own = u === G.me, pal = palK(u), vis = own || u.team === G.me.team || seesU(u);
+    if (!vis || !(onScreen(x0, y0, 160) || onScreen(x1, y1, 160))) return;
+    const dx = x1 - x0, dy = y1 - y0, L = Math.hypot(dx, dy) || 1, ux = dx / L, uy = dy / L, spr = worldSprite(u), R = artR(u);
+    ghostLine(spr, R, x0, y0, x1, y1);
+    dustAt(x0, y0, 26, .34, -ux * 120, -uy * 120); dust(x0, y0, own ? 1.3 : .9);
+    cut(lerp(x0, x1, .5), lerp(y0, y1, .5), Math.atan2(uy, ux), L * .6, pal.mid, .14, 18);
+    if (own) { cut(lerp(x0, x1, .5) - uy * 22, lerp(y0, y1, .5) + ux * 22, Math.atan2(uy, ux), L * .4, '#ffffff', .1, 26); overlay(2, x1, y1, 22, .16, { spr: Art.speedLines(pal.lines, 3), r: 110, ink: null }); ring(x1, y1, 64, '#ffffff', .18, 10); G.punch = Math.max(G.punch, .012); }
+    const v = visOf(u); v.squash = Math.max(v.squash, .6); v.evadeT = .32;
+  }
+  // A dodge that mattered: something went through you while you were untouchable.
+  function dodgedFx(u) { if (!u || !onScreen(u.x, u.y, 140)) return; const own = u === G.me; number(u.x, u.y, 70, 'EVADED', own ? '#bfe8ff' : '#e6eef8', own, .7, 'evd' + u.id); if (own) { ring(u.x, u.y, 90, '#bfe8ff', .22, 16); spark(u.x, u.y, 5, '#ffffff', 260, .22, 10, 24); } }
+  // Last Stand: the core calls everything it has left. Towers overcharge (world.js reads G.stand), saved civilians pour in, the team surges.
+  function lastStandFx(team) {
+    const s = G.s, mine = team === G.me.team, col = team === 0 ? '#ffe08a' : '#ff4a3a', core = (s.towers || []).find(t => t.sub === 'core' && t.team === team);
+    G.stand = G.stand || [0, 0]; G.stand[team] = 1;
+    G.standAt = G.standAt || [0, 0]; G.standAt[team] = G.t;
+    if (core) {
+      const X = core.x, Y = core.y, near = onScreen(X, Y, 500);
+      if (near) { pillar(X, Y, col, '#ffffff', 1.4); wave(X, Y, 1200, col, 1.2); later(.15, () => wave(X, Y, 700, '#ffffff', .6)); ring(X, Y, 420, col, .6, 8); rays(X, Y, 14, col, 520, 12, .5, 60, .1); spark(X, Y, 26, col, 640, .7, 18, 80); civRun(X, Y, 10, false); }
+      for (const t of s.towers || []) if (t.team === team && isUp(t) && t !== core && onScreen(t.x, t.y, 200)) { arcs(t.x, t.y, 110, t.x + rnd(-30, 30), t.y, 220, col, .3, 22); ring(t.x, t.y, 160, col, .4, 30); }
+    }
+    for (const c of s.champs) if (c.team === team && isUp(c) && onScreen(c.x, c.y, 140)) { ring(c.x, c.y, 100, col, .45, 10); rise(c.x, c.y, 8, col, 40, .9, 11); }
+    screenWash(mine ? '#ffd27a' : '#ff2c34', mine ? .26 : .2, 1); G.shake = Math.max(G.shake, mine ? 8 : 5); G.punch = Math.max(G.punch, .04); if (mine) { hitStop(.06); cine(.9, .9); }
+  }
+  // Two ultimates on one target: both casters' colours run in and cross at the target, then it detonates.
+  function comboFx(e) {
+    const a = unitById(e.a), b = unitById(e.b), t = unitById(e.t), X = t ? t.x : e.x, Y = t ? t.y : e.y; if (X === undefined) return;
+    if (!onScreen(X, Y, 260)) return; const mine = (a && a === G.me) || (b && b === G.me), team = a ? a.team : b ? b.team : 0, pa = palK(a || b), pb = palK(b || a);
+    if (a && onScreen(a.x, a.y, 600)) beam(a.x, a.y, X, Y, pa.mid, 26, .26, 30);
+    if (b && onScreen(b.x, b.y, 600)) beam(b.x, b.y, X, Y, pb.mid, 26, .26, 30);
+    gather(X, Y, 200, pa.core, 10, .12, 30);
+    later(.1, () => {
+      cut(X, Y, -.75, 280, pa.mid, .28, 34); cut(X, Y, .75, 280, pb.mid, .28, 34); cut(X, Y, 0, 160, '#ffffff', .18, 34);
+      if (a && a.champ) seal(a.champ, X - 40, Y, 150, pa.mid, .4); if (b && b.champ) seal(b.champ, X + 40, Y, 150, pb.mid, .4);
+      wave(X, Y, 560, pa.mid, .6); wave(X, Y, 380, pb.mid, .45); ring(X, Y, 260, '#ffffff', .3, 20); flare(X, Y, 40, '#ffffff', 460, .3);
+      rays(X, Y, 12, team === 0 ? GOLD : pb.mid, 360, 10, .36, 30, .2); spark(X, Y, 20, pa.spark, 620, .55, 16, 40); spark(X, Y, 14, pb.spark, 560, .5, 14, 40); dustRing(X, Y, 120, 8);
+      if (mine) { hitStop(.07); slowMo(.3, .4); cine(.6, .8); G.shake = Math.max(G.shake, 10); G.punch = Math.max(G.punch, .06); impactFrame((a === G.me ? b : a) ? (a === G.me ? b : a).champ : null, pa.mid, X, Y); }
+      else { G.shake = Math.max(G.shake, 4); G.punch = Math.max(G.punch, .02); }
+    });
+  }
+  // A champion becomes Wanted: a red searchlight finds them and the plaque drops on. world.js keeps the light on them after this.
+  function wantedFx(u) {
+    if (!u || !onScreen(u.x, u.y, 200) || !(u.team === G.me.team || seesU(u))) return;
+    const col = Art.cb ? Art.PAL.enemy : '#ff3f3a'; ring(u.x, u.y, 140, col, .4, 4); wave(u.x, u.y, 380, col, .5); flare(u.x, u.y, 60, '#ffd0c8', 240, .2);
+    visOf(u).wantedIn = 0;
+  }
+  // Boss phases: each one is a roar, a ring of dust and a short shake. Steals are marked by the existing boss events.
+  function bossPhaseFx(m, n) {
+    if (!m || !onScreen(m.x, m.y, 300)) return; const col = Art.BOSS_COL[m.bossKind] || '#ffb04a', near = Math.hypot(m.x - G.me.x, m.y - G.me.y) < 900;
+    wave(m.x, m.y, 620, col, .7); ring(m.x, m.y, 260, '#ffffff', .3, 30); ring(m.x, m.y, 380, col, .5, 8); dustRing(m.x, m.y, 170, 10); spark(m.x, m.y, 16, col, 520, .5, 16, 50); chips(m.x, m.y, 8, '#3a4250', 420, 26);
+    number(m.x, m.y, 170, n === 0 ? 'RAMPAGE' : n >= 3 ? 'ENRAGED' : 'PHASE ' + n, col, true, 1);
+    if (near) { G.shake = Math.max(G.shake, 7); G.punch = Math.max(G.punch, .04); }
+    const v = visOf(m); v.roar = 1;
+  }
+  // Nemesis duel: world.js draws the spotlight from G.duel; this is the clash that opens it and the verdict that closes it.
+  function duelFx(e) {
+    const a = unitById(e.u || e.a), b = unitById(e.v || e.b), phase = e.phase || 'start';
+    if (phase === 'start') { G.duel = { u: a ? a.id : 0, v: b ? b.id : 0, t: 0, end: 0 }; rivalAt = -99; rivalFx({ u: a && a.id, v: b && b.id, x: e.x, y: e.y }); }
+    else if (G.duel) {
+      G.duel.end = G.duel.end || G.t; const w = unitById(e.w || e.winner || e.by);
+      if (w && onScreen(w.x, w.y, 200)) { const p = palK(w); pillar(w.x, w.y, p.out, p.mid, .8); ring(w.x, w.y, 200, p.ring, .5); rise(w.x, w.y, 10, p.mid, 50, 1, 12); number(w.x, w.y, 120, 'DUEL WON', p.mid, true, 1.1); if (w === G.me) { G.punch = Math.max(G.punch, .04); G.shake = Math.max(G.shake, 5); } }
+    }
+  }
+  // Champion entrance at match start: a beam finds the landing spot, the coin slams in, its mark burns into the street.
+  function entrance(c, mine) {
+    const p = palK(c), X = c.x, Y = c.y;
+    if (mine) {
+      const b = add(BEAMK, X + 20, Y - 640, 40, .3); b.dx = X; b.dy = Y; b.R = 70; b.col = p.mid;
+      seal(c.champ, X, Y, 240, p.mid, .55); const d = add(SIGILK, X, Y, 2, 1.8); d.spr = Art.seal(c.champ, p.mid); d.R = 150; d.rot = 0; d.vr = 0; d.alpha = .3;
+      wave(X, Y, 620, p.mid, .8); ring(X, Y, 220, '#ffffff', .3, 10); ring(X, Y, 320, p.ring, .55, 6); rays(X, Y, 10, p.mid, 300, 9, .32, 24, .3); flare(X, Y, 30, '#ffffff', 420, .26);
+      spark(X, Y, 18, p.spark, 560, .5, 15, 30); dustRing(X, Y, 120, 9); coins(X, Y, 8, { sp: 260, vz: 700, size: 11 });
+      screenWash(p.mid, .14, .45); G.shake = Math.max(G.shake, 7); G.punch = Math.max(G.punch, .04);
+    } else { seal(c.champ, X, Y, 130, p.mid, .4); wave(X, Y, 300, p.mid, .5); spark(X, Y, 6, p.spark, 320, .36, 11, 24); }
+  }
+  function entranceCue(c) { const p = palK(c); gather(c.x, c.y, 220, p.core, 10, .3, 30); ring(c.x, c.y, 200, p.ring, .5, 2); }
+  // Photo finish: a slit of light scans the frame, a shutter flash, letterbox bars. world.js slows time.
+  const PHOTO = { t: -1 };
+  function photoStart() { PHOTO.t = 0; screenWash('#ffffff', .55, .35); }
+  function drawPhoto(dt) {
+    if (PHOTO.t < 0 || !G.outro) { PHOTO.t = -1; return; } PHOTO.t += dt; const t = PHOTO.t;
+    const barIn = outExpo(clamp01(t / .18)), barOut = t > 2.1 ? outCub(clamp01((t - 2.1) / .4)) : 0, bh = VH * .085 * barIn * (1 - barOut);
+    if (bh > .5) { ctx.fillStyle = '#05070b'; ctx.fillRect(0, 0, VW, bh); ctx.fillRect(0, VH - bh, VW, bh); ctx.fillStyle = 'rgba(240,223,176,.7)'; ctx.fillRect(0, bh - 1, VW, 1); ctx.fillRect(0, VH - bh, VW, 1); }
+    if (t < .32) { const x = outCub(t / .32) * (VW + 80) - 40; ctx.globalCompositeOperation = 'lighter'; ctx.fillStyle = 'rgba(255,248,230,.9)'; ctx.fillRect(x - 1.5, 0, 3, VH); ctx.globalAlpha = .25; ctx.fillRect(x - 24, 0, 24, VH); ctx.globalAlpha = 1; ctx.globalCompositeOperation = 'source-over'; }
+    // Time code ticks in the corner, as on a finish-line camera.
+    if (t < 1.6 && bh > 4) { const s = 'FINISH  ' + (G.s.t / 60 | 0) + ':' + String((G.s.t % 60).toFixed(2)).padStart(5, '0'), sp = numSprite(s, '#f0dfb0', false), h = Math.min(bh * .6, 16), w = sp.w * h / sp.h; ctx.globalAlpha = barIn * (1 - clamp01((t - 1.3) / .3)); ctx.drawImage(sp.c, VW - w - 14, VH - bh / 2 - h / 2, w, h); ctx.globalAlpha = 1; }
+  }
+
   function fxEvent(e) {
     const s = G.s, me = G.me; if (!s || !me) return;
     switch (e.e) {
+      case 'act': if ((e.n | 0) >= 2) { G.actN = e.n | 0; actFx(e.n | 0); } break;
+      case 'evade': {
+        const u = unitById(e.u); if (!u) break;
+        const ddx = e.dx || u.fx || 1, ddy = e.dy || u.fy || 0, dl = Math.hypot(ddx, ddy) || 1, len = e.len || (Sim.EVADE && Sim.EVADE.dist) || 200;
+        const x0 = e.x !== undefined ? e.x : u.x, y0 = e.y !== undefined ? e.y : u.y, x1 = e.x1 !== undefined ? e.x1 : e.tx !== undefined ? e.tx : x0 + ddx / dl * len, y1 = e.y1 !== undefined ? e.y1 : e.ty !== undefined ? e.ty : y0 + ddy / dl * len;
+        evadeFx(u, x0, y0, x1, y1); break;
+      }
+      case 'dodge': case 'evaded': case 'dodged': dodgedFx(unitById(e.u)); break;
+      case 'laststand': lastStandFx(e.team | 0); break;
+      case 'combo': comboFx(e); break;
+      case 'wanted': { const u = unitById(e.u); if (!u) break; if ((e.n | 0) > 0) wantedFx(u); else if (onScreen(u.x, u.y, 200)) { const by = unitById(e.by), p = palK(by || u); wave(u.x, u.y, 520, GOLD, .6); rays(u.x, u.y, 10, GOLD, 300, 9, .34, 30, .1); coins(u.x, u.y, 14, { sp: 340, vz: 760, size: 12 }); number(u.x, u.y, 140, 'BOUNTY CLAIMED', GOLD, true, 1.1); if (by === G.me) { G.shake = Math.max(G.shake, 7); G.punch = Math.max(G.punch, .04); } } break; }
+      case 'slam': { const m = unitById(e.u); if (m) { const v = visOf(m); v.slamAt = G.t; v.slamT = e.t || 1; } if (e.x !== undefined && onScreen(e.x, e.y, (e.r || 150) + 100)) { const col = m && Art.BOSS_COL[m.bossKind] || '#ff3e28'; ring(e.x, e.y, e.r || 150, '#ff3e28', .3, 2); if (m) beam(m.x, m.y, e.x, e.y, col, 10, .22, 40); } break; }
+      case 'rampage': { const m = (s.monsters || []).find(q => q.boss && q.bossKind === 'colossus'); if (e.phase === 'start' && m && onScreen(m.x, m.y, 400)) { bossPhaseFx(m, 0); } if (e.phase === 'start') screenWash('#ff3a2a', .12, .6); break; }
+      case 'steal': { const u = unitById(e.u); if (u && onScreen(u.x, u.y, 200)) { const p = palK(u), own = u === G.me; pillar(u.x, u.y, p.out, p.mid, .7); ring(u.x, u.y, 180, p.ring, .45, 10); number(u.x, u.y, 120, 'STOLEN', p.mid, true, 1); if (own) { hitStop(.08); slowMo(.4, .4); cine(.8, .9); G.shake = Math.max(G.shake, 9); G.punch = Math.max(G.punch, .06); } } break; }
+      case 'bossphase': { const m = unitById(e.u || e.id); bossPhaseFx(m, e.n || e.phase || 2); break; }
+      case 'duel': duelFx(e); break;
       case 'hit': {
         const u = unitById(e.u); if (!u) return; const v = visOf(u);
         if (u.team !== me.team && u.kind !== 'tower' && !seesU(u)) return;
@@ -1583,5 +1707,5 @@ const { FX, fxEvent } = (() => {
   }
 
   const goldCoin = () => coinSp();
-  return { FX: { districtFlip, districtWork, minionHit, wave, cine, later, fireworks, bossFall, finisher, goldCoin, poseStart, poseTick, cosmeticTick, sigil, beam, arcs, cut, reset, spark, puff, dust, drawDust, coins, ring, slash, ghost, ghostLine, corpse, shatter, leaves, splash, rise, popCoin, chips, pillar, burst, draw, projectiles, telegraphs, danger, textLayer, tickWarn, towerFall, finale }, fxEvent };
+  return { FX: { districtFlip, districtWork, minionHit, wave, cine, later, fireworks, bossFall, finisher, goldCoin, poseStart, poseTick, cosmeticTick, sigil, beam, arcs, cut, reset, spark, puff, dust, drawDust, coins, ring, slash, ghost, ghostLine, corpse, shatter, leaves, splash, rise, popCoin, chips, pillar, burst, draw, projectiles, telegraphs, danger, textLayer, tickWarn, towerFall, finale, entrance, entranceCue, photoStart, screenWash, evadeFx }, fxEvent };
 })();

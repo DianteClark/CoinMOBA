@@ -639,7 +639,7 @@ const Art = (() => {
 
   // Warm-up: a coin shown in the lobby quietly prepares the sizes the versus splash and the HUD ask for, so pressing start never hitches.
   const WARM = [], WARMED = new Set(); let warmOn = false;
-  function warmPump() { const j = WARM.shift(); if (!j) { warmOn = false; return; } j(); setTimeout(warmPump, 45); }
+  function warmPump() { if (typeof window !== 'undefined' && window.__inputAt && performance.now() - window.__inputAt < 450) { setTimeout(warmPump, 150); return; } const j = WARM.shift(); if (!j) { warmOn = false; return; } j(); setTimeout(warmPump, 45); } // UI: menus stamp window.__inputAt on every touch, so a warm-up job never lands under a tap
   function warmUp(fn, key) { if (WARMED.has(key)) return; WARMED.add(key); WARM.push(fn); if (!warmOn && typeof setTimeout !== 'undefined') { warmOn = true; setTimeout(warmPump, 120); } }
   function champCoin(id, team, tier, R = 52, finishId) {
     const side = team === 1 ? 'v' : 'h', spec = gatherSpec(id, team, tier === undefined ? 0 : tier, finishId), key = `cc${side}${spec.key}|`, tk = `${spec.tier}|${finishId || ''}`;
@@ -1085,6 +1085,20 @@ const Art = (() => {
     if (grade >= 2) { g.fillStyle = INK; g.beginPath(); g.moveTo(-6, -7); g.lineTo(-6.5, -12.5); g.lineTo(-2.8, -9.8); g.lineTo(0, -13.5); g.lineTo(2.8, -9.8); g.lineTo(6.5, -12.5); g.lineTo(6, -7); g.closePath(); g.fill(); g.fillStyle = '#ffd86a'; g.beginPath(); g.moveTo(-4.6, -8.2); g.lineTo(-5, -11); g.lineTo(-2.6, -9); g.lineTo(0, -11.8); g.lineTo(2.6, -9); g.lineTo(5, -11); g.lineTo(4.6, -8.2); g.closePath(); g.fill(); }
     const out = { c, w: W, h: W }; cache.set(id, out); return out;
   }
+  // 13.0 Wanted: a deco plaque with a crosshair, worn high over the coin. Grade 0..3 adds pips and a gold edge.
+  function wantedMark(grade, col = '#ff3f3a') {
+    const id = 'wanted' + grade + col; if (cache.has(id)) return cache.get(id);
+    const S = 3, W = 72, H = 30, c = cv(W * S, H * S), g = c.getContext('2d'); g.scale(S, S); g.lineJoin = 'miter';
+    const plate = (i) => { g.beginPath(); g.moveTo(8 + i, 2 + i); g.lineTo(W - 8 - i, 2 + i); g.lineTo(W - 2 - i, 11); g.lineTo(W - 8 - i, 20 - i); g.lineTo(8 + i, 20 - i); g.lineTo(2 + i, 11); g.closePath(); };
+    plate(0); g.fillStyle = INK; g.fill();
+    plate(1.6); g.fillStyle = grade >= 2 ? '#3a0a10' : '#250a0e'; g.fill(); g.strokeStyle = grade >= 3 ? '#ffd86a' : col; g.lineWidth = 1.4; g.stroke();
+    g.font = '800 9.5px "Barlow Semi Condensed",sans-serif'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillStyle = '#ffe9d8'; g.fillText('WANTED', W / 2 + 6, 11.5);
+    // crosshair on the left
+    g.strokeStyle = col; g.lineWidth = 1.3; g.beginPath(); g.arc(13, 11, 4.2, 0, TAU); g.moveTo(13, 4.8); g.lineTo(13, 8); g.moveTo(13, 14); g.lineTo(13, 17.2); g.moveTo(6.8, 11); g.lineTo(10, 11); g.moveTo(16, 11); g.lineTo(19.2, 11); g.stroke();
+    // pips under the plate: one per grade
+    for (let i = 0; i <= grade; i++) { const x = W / 2 - grade * 4 + i * 8; g.fillStyle = INK; g.beginPath(); g.moveTo(x, 21); g.lineTo(x + 3.4, 24.6); g.lineTo(x, 28.2); g.lineTo(x - 3.4, 24.6); g.closePath(); g.fill(); g.fillStyle = grade >= 3 ? '#ffd86a' : col; g.beginPath(); g.moveTo(x, 22.4); g.lineTo(x + 2.1, 24.6); g.lineTo(x, 26.8); g.lineTo(x - 2.1, 24.6); g.closePath(); g.fill(); }
+    const out = { c, w: W, h: H }; cache.set(id, out); return out;
+  }
 
   // ---------- 11.0 minted medals ----------
   // Art.medal(id, tier, R): tier 0/1/2 (or 'Bronze'/'Silver'/'Gold'), -1 for not yet earned. Returns a canvas that fits a 2R x 2R box, and paints 2R CSS px when placed in the page.
@@ -1505,5 +1519,5 @@ const Art = (() => {
   }
   // ---------- end 11.0 art ----------
 
-  return { medal, medalInto, medalReady, medalDraw, medalURL, medalMeta, MEDAL_EMB, CARDS, cardArt, playerCard, shareCard, origin, originCount, originText, ORIGINS, PAL, setCB, onCB, get cb() { return cbNow; }, setPalette, potg, flare, minionGear, bossCoin, bossTurn, BOSS_COL, seal, shock, bountyMark, TEAM, TEAM_DARK, METAL, TILT, TAU, INK, COSMETICS, champCoin, champTurn, minionCoin, minionTurn, monsterCoin, monsterTurn, civCoin, coin, glow, shadow, drawEmblemIcon, abilityCoin, iconURL, sheen, vignette, seeded, mix, mixH, cv, reed, puff, leaf, shardsOf, impact, speedLines, sparkSp, dustCel, chip, glint, pillar, hazard, koCoin, pump, defer, frameAt, ensure, sigil, spikeBall, stats, buildFace, shade, canvasFrom, reliefStack, FINISH };
+  return { medal, medalInto, medalReady, medalDraw, medalURL, medalMeta, MEDAL_EMB, CARDS, cardArt, playerCard, shareCard, origin, originCount, originText, ORIGINS, PAL, setCB, onCB, get cb() { return cbNow; }, setPalette, potg, flare, minionGear, bossCoin, bossTurn, BOSS_COL, seal, shock, bountyMark, wantedMark, TEAM, TEAM_DARK, METAL, TILT, TAU, INK, COSMETICS, champCoin, champTurn, minionCoin, minionTurn, monsterCoin, monsterTurn, civCoin, coin, glow, shadow, drawEmblemIcon, abilityCoin, iconURL, sheen, vignette, seeded, mix, mixH, cv, reed, puff, leaf, shardsOf, impact, speedLines, sparkSp, dustCel, chip, glint, pillar, hazard, koCoin, pump, defer, frameAt, ensure, sigil, spikeBall, stats, buildFace, shade, canvasFrom, reliefStack, FINISH };
 })();

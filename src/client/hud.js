@@ -136,6 +136,7 @@ const Hud = {
     ab: [{ x: 0, y: 0, r: 33 }, { x: 0, y: 0, r: 33 }, { x: 0, y: 0, r: 37 }],
     atkM: { x: 0, y: 0, r: 19 }, atkT: { x: 0, y: 0, r: 19 },
     cancel: { x: 0, y: 70, r: 34 }, pause: { x: 0, y: 20, r: 14 },
+    evade: { x: 0, y: 0, r: 24 }, qbuy: { x: 63, y: 128, r: 20 },
     shop: { x: 63, y: 76, r: 17 }, recall: { x: 106, y: 76, r: 17 }, ping: { x: 149, y: 76, r: 17 }, chat: { x: 192, y: 76, r: 17 }, ptt: { x: 235, y: 76, r: 17 },
     map: { x: 0, y: 6, w: 140, h: 84 },
     stripX: 400, miniR: 8, miniGap: 20, midHalf: 40, hpW: 104, compact: false,
@@ -195,9 +196,10 @@ const { hud, initHud, hudDraw, uiEvent } = (() => {
 
   // ---------- layout ----------
   // Every movable control, with its default offset from the attack coin (or its fixed spot) at full size.
-  const CLUSTER = { atk: [0, 0, 46], atkM: [-66, -20, 19], atkT: [-26, -64, 19], ab0: [-106, 20, 33], ab1: [-82, -76, 33], ab2: [2, -114, 37] };
-  const CORNER = { shop: [63, 76, 17], recall: [106, 76, 17], ping: [149, 76, 17], chat: [192, 76, 17], ptt: [235, 76, 17] };
-  const LABELS = { atk: 'Attack', atkM: 'Minion', atkT: 'Tower', ab0: 'Ability 1', ab1: 'Ability 2', ab2: 'Ultimate', shop: 'Shop', recall: 'Recall', ping: 'Ping', chat: 'Chat', ptt: 'Talk' };
+  // Evade sits on the outer arc past the first two abilities: a deliberate reach, so it is never pressed by a thumb rolling between skills.
+  const CLUSTER = { atk: [0, 0, 46], atkM: [-66, -20, 19], atkT: [-26, -64, 19], ab0: [-106, 20, 33], ab1: [-82, -76, 33], ab2: [2, -114, 37], evade: [-162, -54, 24] };
+  const CORNER = { shop: [63, 76, 17], recall: [106, 76, 17], ping: [149, 76, 17], chat: [192, 76, 17], ptt: [235, 76, 17], qbuy: [63, 128, 20] };
+  const LABELS = { atk: 'Attack', atkM: 'Minion', atkT: 'Tower', ab0: 'Ability 1', ab1: 'Ability 2', ab2: 'Ultimate', evade: 'Evade', shop: 'Shop', recall: 'Recall', ping: 'Ping', chat: 'Chat', ptt: 'Talk', qbuy: 'Quick buy' };
   const hudOf = () => save.hud || (save.hud = { left: false, pos: {} });
   const left = () => !!hudOf().left;
   // Default position of a control for this screen and handedness, before the player's own offset.
@@ -221,6 +223,7 @@ const { hud, initHud, hudDraw, uiEvent } = (() => {
     stage.classList.toggle('lh', left());
     put2(U.atk, 'atk'); put2(U.atkM, 'atkM'); put2(U.atkT, 'atkT');
     put2(U.ab[0], 'ab0'); put2(U.ab[1], 'ab1'); put2(U.ab[2], 'ab2');
+    put2(U.evade, 'evade'); put2(U.qbuy, 'qbuy');
     put2(U.shop, 'shop'); put2(U.recall, 'recall'); put2(U.ping, 'ping'); put2(U.chat, 'chat'); put2(U.ptt, 'ptt');
     const cx = VW - 250; U.cancel.x = left() ? VW - cx : cx; U.cancel.y = 122;
     const M = U.map; M.w = U.compact ? 88 : 112; M.h = Math.round(M.w * Sim.H / Sim.W); M.x = VW - 44 - M.w; M.y = 6;
@@ -254,7 +257,8 @@ const { hud, initHud, hudDraw, uiEvent } = (() => {
       hpTrail: me.hp, hpHold: 0, hurt: 0, hpPrev: me.hp, goldShow: me.gold, goldStr: String(Math.floor(me.gold)), goldGain: 0, goldGainT: 0, goldGainStr: '', lvlFx: 0, first: save.hints < 1, guide: save.hints < 2, netStr: '', netKey: -2,
       prev: [0, 0, 0], cdMax: [1, 1, 1], recPrev: [0, 0, 0], recMax: [1, 1, 1], pop: [0, 0, 0], press: [0, 0, 0], deny: [0, 0, 0], flash: [0, 0, 0], spark: [.4, 1.2, 2.0],
       atkPress: 0, atkMax: 1, atkPrev: 0, cancelIn: 0,
-      feed: [], banner: null, queue: [], pings: [], pingAt: {}, towerAt: -99, mapC: null, kills: [s.kills[0], s.kills[1]], killBump: [0, 0], lvl: me.lvl, lvlBump: 0, sq: { shop: 0, recall: 0, pause: 0, ping: 0, chat: 0, ptt: 0 }, emotes: [], sayLog: [], recap: null, bountyShow: 0, objK: '', objStr: '', objSub: '', buffs: [], svKey: '',
+      feed: [], banner: null, queue: [], pings: [], pingAt: {}, towerAt: -99, mapC: null, kills: [s.kills[0], s.kills[1]], killBump: [0, 0], lvl: me.lvl, lvlBump: 0, sq: { shop: 0, recall: 0, pause: 0, ping: 0, chat: 0, ptt: 0, qbuy: 0 },
+      ev: { press: 0, pop: 0, deny: 0, prev: 0, max: 10, fired: 0 }, lock: { id: 0, t: 0, spr: null }, marks: [], qb: { id: '', k: 0, price: 0, str: '', pop: 0 }, act: s.act || 1, duel: null, wantedSeen: new Set(), hitAt: -9, emotes: [], sayLog: [], recap: null, bountyShow: 0, objK: '', objStr: '', objSub: '', buffs: [], svKey: '',
       clockSec: -1, clockStr: '0:00', hoardKey: -2, hoardStr: '', frame: 0,
       hint: save.hints < 2 ? { i: 0, t: 0, n: 0 } : null,
     };
@@ -304,6 +308,17 @@ const { hud, initHud, hudDraw, uiEvent } = (() => {
     if (k === 'district' && e.phase === 'flip') { const nm = (Sim.DISTRICT_INFO[e.kind] || {}).name || 'A district'; newsPush(e.team === 1 ? `${nm} falls to the villains` : `Heroes secure the ${nm}`); return; }
     if (k === 'city') { newsPush(e.kind === 'rally' ? 'The city rallies behind the heroes' : 'Panic spreads across the city'); return; }
     if (k === 'blackout') { newsPush('Blackout hits the city'); return; }
+    if (k === 'act') { onAct(e); return; }
+    if (k === 'laststand') { onLastStand(e); return; }
+    if (k === 'rampage') { if (e.phase === 'start') { const us = e.team === me.team; banner('The Colossus rampages', { pri: 7, hot: us, team: us ? -1 : me.team, sub: us ? 'It is coming for our towers' : 'It marches on their towers', dur: 2.4 }); newsPush(`The Colossus marches on the ${Sim.TEAM_NAMES[e.team]}`); } return; }
+    if (k === 'wanted') { onWanted(e); return; }
+    if (k === 'duel') { onDuel(e); return; }
+    if (k === 'combo') { if (e.a === me.id || e.b === me.id) { const o = champBy(e.a === me.id ? e.b : e.a); banner('Team combo', { pri: 5, team: me.team, spr: o ? H.mini.get(o.id) : null, sub: o ? `With ${nameOf(o)}` : '', dur: 1.6 }); } return; }
+    if (k === 'hit' && e.by === me.id) {
+      // Your own hits on a champion land with a hair of hit-stop and a crisp tick.
+      const u = H.byId.get(e.u);
+      if (u && u.kind === 'champ' && u.team !== me.team && G.s.t - H.hitAt > .09) { H.hitAt = G.s.t; hitStop(e.sk || e.crit ? .03 : .016); Sound.play('hitCrisp', undefined, 60); }
+    }
     if (k === 'rival') { if (e.u === me.id || e.v === me.id) banner('Your nemesis', { pri: 3, team: me.team, dur: 1.5 }); return; }
     if (k === 'hit') {
       const u = H.byId.get(e.u); if (!u || u.team !== me.team) return;
@@ -412,12 +427,13 @@ const { hud, initHud, hudDraw, uiEvent } = (() => {
       label(H.goldGainStr, GOLD_X + 20 + gw, GOLD_Y - (calm ? 0 : q * 7) + .5, GOLD); ctx.globalAlpha = 1;
     }
     // A price on your own head reads like a warning tag next to your purse.
-    const bty = Math.round(me.bounty || 0);
-    if (bty > 0) {
-      if (bty !== H.bountyShow || H.bountyC !== U.compact) { H.bountyShow = bty; H.bountyC = U.compact; H.bountyStr = U.compact ? `+${bty}` : `Bounty ${bty}`; }
+    const bty = Math.round(me.bounty || 0), wtd = wantedOf(me);
+    if (bty > 0 || wtd) {
+      if (bty !== H.bountyShow || H.bountyC !== U.compact || wtd !== H.bountyW) { H.bountyShow = bty; H.bountyC = U.compact; H.bountyW = wtd; H.bountyStr = wtd ? (U.compact ? `+${bty}` : `WANTED ${bty}`) : U.compact ? `+${bty}` : `Bounty ${bty}`; }
       ctx.font = fw(600, 11.5); ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
       const bw = Math.ceil(ctx.measureText(H.bountyStr).width) + 12, bx0 = GOLD_X + gw + 22;
-      put(panel(bw, 16, 4, 'rgba(141,20,37,.9)', null), bx0, GOLD_Y - 8);
+      put(panel(bw, 16, 4, 'rgba(141,20,37,.9)', wtd ? '#ff8a9a' : null), bx0, GOLD_Y - 8);
+      if (wtd && !calm) { ctx.globalAlpha = .25 + .25 * Math.sin(H.t * 5); ctx.fillStyle = '#ff3a52'; ctx.fillRect(bx0, GOLD_Y - 8, bw, 16); ctx.globalAlpha = 1; }
       ctx.fillStyle = WHITE; ctx.fillText(H.bountyStr, bx0 + 6, GOLD_Y + .5);
     }
     // The shop only draws the eye when something can be bought.
@@ -492,7 +508,8 @@ const { hud, initHud, hudDraw, uiEvent } = (() => {
     ctx.font = fd(Math.round(big * sc1)); ctx.fillStyle = CRIM; ctx.fillText(num(s.kills[1]), cx + kx, cy + .5);
     const sec = Math.floor(s.t);
     if (sec !== H.clockSec) { H.clockSec = sec; H.clockStr = `${Math.floor(sec / 60)}:${String(sec % 60).padStart(2, '0')}`; }
-    ctx.font = fw(600, U.compact ? 11.5 : 13); ctx.fillStyle = PAPER; ctx.fillText(H.clockStr, cx, cy + .5);
+    ctx.font = fw(600, U.compact ? 11.5 : 13); ctx.fillStyle = ACT_COL[actOf(s)]; ctx.fillText(H.clockStr, cx, cy - .5);
+    drawActPips(cx, cy, s);
     for (const c of s.champs) {
       const dir = c.team ? 1 : -1, x = cx + dir * (mid + gap * (c.slot + .5)), y = cy, spr = H.mini.get(c.id);
       ctx.globalAlpha = c.alive ? 1 : .32; blit(spr, x, y, r); ctx.globalAlpha = 1;
@@ -638,7 +655,10 @@ const { hud, initHud, hudDraw, uiEvent } = (() => {
       if (c.team !== me.team) H.lastSeen.set(c.id, { x: c.x, y: c.y, t: s.t });
       disc(X, Y, mine ? 4.2 : 3.2); ctx.fillStyle = mine ? PAPER : TEAM_DOT[c.team === me.team ? 0 : 1]; ctx.fill(); ctx.strokeStyle = INK; ctx.lineWidth = 1; ctx.stroke();
     }
+    drawMapWanted(s, me, M, kx, ky);
     drawMapAim(s, me, M, kx, ky);
+    // While you hold the map to look, the frame you are looking through is bright.
+    if (Ctl.look) { ctx.strokeStyle = SIDE_ACC[me.team]; ctx.lineWidth = 1.6; ctx.strokeRect(M.x + Ctl.look.x * kx - vw / 2, M.y + Ctl.look.y * ky - vh / 2, vw, vh); }
     ctx.restore();
     if (Hud.isLive()) drawNetDot(M);
   }
@@ -949,17 +969,18 @@ const { hud, initHud, hudDraw, uiEvent } = (() => {
     if (st) H.stickAt = { sx: st.sx, sy: st.sy, x: st.x, y: st.y };
     const P = H.stickAt, k = calm ? (st ? 1 : 0) : H.stickK;
     if (P && k > .02) {
-      const acc = SIDE_ACC[G.me.team], R = 58 * (.86 + .14 * k), dx = P.x - P.sx, dy = P.y - P.sy, l = Math.min(58, Math.hypot(dx, dy)), an = Math.atan2(dy, dx), nx = P.sx + Math.cos(an) * l, ny = P.sy + Math.sin(an) * l;
+      const acc = SIDE_ACC[G.me.team], SR = Ctl.STICK || 58, R = SR * (.86 + .14 * k), dx = P.x - P.sx, dy = P.y - P.sy, l = Math.min(SR, Math.hypot(dx, dy)), an = Math.atan2(dy, dx), nx = P.sx + Math.cos(an) * l, ny = P.sy + Math.sin(an) * l;
       ctx.globalAlpha = k;
       disc(P.sx, P.sy, R); ctx.fillStyle = 'rgba(6,7,11,.32)'; ctx.fill(); ctx.strokeStyle = 'rgba(233,237,244,.34)'; ctx.lineWidth = 1.2; ctx.stroke();
       if (l > 8) arcLine(P.sx, P.sy, R, an - .55, an + .55, acc, 2.5);
-      disc(nx, ny, 23); ctx.fillStyle = 'rgba(233,237,244,.84)'; ctx.fill(); ctx.strokeStyle = 'rgba(5,6,10,.35)'; ctx.lineWidth = 1; ctx.stroke();
+      disc(nx, ny, 20); ctx.fillStyle = 'rgba(233,237,244,.84)'; ctx.fill(); ctx.strokeStyle = 'rgba(5,6,10,.35)'; ctx.lineWidth = 1; ctx.stroke();
       ctx.globalAlpha = 1;
     } else if (!st && H.guide && s.t < 20) { disc(left() ? VW - 122 : 122, VH - 86, 52); ctx.strokeStyle = 'rgba(233,237,244,.22)'; ctx.lineWidth = 1.2; ctx.stroke(); }
   }
 
   function drawFeed(dt) {
     let y = U.shop.y + U.shop.r + (H.first ? 26 : 19);
+    if (H.qb.k > .3 && Math.abs(U.qbuy.x - U.shop.x) < 60 && U.qbuy.y > U.shop.y) y = Math.max(y, U.qbuy.y + U.qbuy.r + 19);
     const lh = left();
     ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
     for (let i = 0; i < H.feed.length; i++) {
@@ -996,6 +1017,8 @@ const { hud, initHud, hudDraw, uiEvent } = (() => {
     { s: () => 'Hold the small coin to hit only minions, for last hits', done: () => Ctl.atk !== null && Ctl.atkMode === 'minion', hold: .3 },
     { s: () => 'Hold the tower button to hit towers', done: () => Ctl.atk !== null && Ctl.atkMode === 'tower', hold: .3 },
     { s: () => 'Drag an ability to aim, then let go', done: me => me.stats.casts > 0, hold: 0 },
+    { s: () => 'Tap Evade to dodge. Drag it to pick the way', done: () => H.ev.used, hold: 0 },
+    { s: () => 'Tap an enemy to lock your attacks onto them', done: () => !!(Ctl.lockedUnit && Ctl.lockedUnit()), hold: 0 },
     { s: () => 'Tap the shop to buy items', done: () => shopOpen(), hold: 0 },
     { s: () => 'Hold the flag and slide to ping your team', done: () => H.pingLog.length > 0, hold: 0 },
     { s: () => 'All set. Stay as long as you like', done: () => false, hold: 0, end: 4 },
@@ -1031,6 +1054,209 @@ const { hud, initHud, hudDraw, uiEvent } = (() => {
     else { f.classList.remove('dead', 'solo'); if (H.shopAuto) f.classList.add('hide'); H.shopAuto = false; H.recap = null; $('recap').classList.add('hide'); }
   }
 
+
+  // ---------- 13.0: evade, quick buy, attack lock, touch marks, acts, last stand, wanted, duels ----------
+  const nameOf = c => c ? Sim.charOf(c.team, c.champ).name : '';
+  const champBy = id => G && G.s.champs.find(c => c.id === id) || null;
+  // Item glyphs are SVG for the shop; the canvas HUD gets a baked image of the same shape.
+  const itemImgs = new Map();
+  function itemImg(it) {
+    let e = itemImgs.get(it.id); if (e) return e.ok ? e.img : null;
+    e = { img: new Image(), ok: false }; itemImgs.set(it.id, e);
+    e.img.onload = () => { e.ok = true; };
+    e.img.src = 'data:image/svg+xml,' + encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="64" height="64" fill="${isLeg(it) ? GOLD : PAPER}">${GLYPH[glyphOf(it)] || GLYPH.gem}</svg>`);
+    return null;
+  }
+  // Quick buy: the next step of your build, one tap, shown only when you can afford it right now.
+  function qbuyItem(me) { if (!me.alive || G.spectator || shopOpen() || G.outro) return null; const it = nextRec(me); return it && canBuy(me, it) ? it : null; }
+  function drawQbuy(dt, me) {
+    const Q = H.qb, B = U.qbuy;
+    if (H.frame % 6 === 0 || Q.dirty) { Q.dirty = false; const it = qbuyItem(me); if (it !== Q.it) { Q.it = it; if (it) { Q.show = it; Q.pop = Math.max(Q.pop, .6); } } if (it) { const pr = Math.ceil(costOf(me, it)); if (pr !== Q.price) { Q.price = pr; Q.str = String(pr); } } }
+    Q.k += ((Q.it ? 1 : 0) - Q.k) * Math.min(1, dt * 14); Q.pop = Math.max(0, Q.pop - dt * 3);
+    H.sq.qbuy = Math.max(0, H.sq.qbuy - dt * 7);
+    if (Q.bought) { Q.bought.t -= dt; if (Q.bought.t <= 0) Q.bought = null; else { ctx.globalAlpha = Math.min(1, Q.bought.t * 3); ctx.font = fw(600, 11.5); ctx.textAlign = 'left'; ctx.textBaseline = 'middle'; label(Q.bought.name, B.x + B.r + 8, B.y - (1 - Q.bought.t) * 8, GOLD); ctx.globalAlpha = 1; } }
+    if (Q.k < .03 || !Q.show) return;
+    const acc = SIDE_ACC[me.team], r = B.r * (.7 + .3 * Q.k) * (1 - H.sq.qbuy * .16 + (calm ? 0 : Math.sin(Q.pop * Math.PI) * .12));
+    ctx.globalAlpha = Q.k;
+    disc(B.x, B.y, r); ctx.fillStyle = 'rgba(6,8,13,.92)'; ctx.fill(); ctx.strokeStyle = acc; ctx.lineWidth = 1.6; ctx.stroke();
+    if (!calm) { const p = (Math.sin(H.t * 3.6) + 1) / 2; ctx.globalAlpha = Q.k * (.35 + p * .4); arcLine(B.x, B.y, r + 2.5 + p * 2.5, 0, TAU, acc, 1.1); ctx.globalAlpha = Q.k; }
+    const img = itemImg(Q.show); if (img) { const w = r * 1.08; ctx.drawImage(img, B.x - w / 2, B.y - w / 2 - 2.5, w, w); }
+    ctx.font = fw(700, 10.5); ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    const tw = Math.ceil(ctx.measureText(Q.str).width) + 15;
+    put(panel(tw, 13, 3, INK, null), B.x - tw / 2, B.y + r - 6);
+    diamond(B.x - tw / 2 + 6, B.y + r + .5, 2.6); ctx.fillStyle = GOLD; ctx.fill();
+    ctx.fillStyle = GOLD; ctx.fillText(Q.str, B.x + 3.5, B.y + r + 1);
+    ctx.globalAlpha = 1;
+  }
+  Hud.qbuyShown = () => !!(H && G && H.qb.it && H.qb.k > .4);
+  Hud.quickBuy = () => {
+    if (!H || !G) return;
+    const me = G.me, it = qbuyItem(me), B = U.qbuy;
+    if (!it) { Sound.play('cancel'); return; }
+    me.q.push({ t: 'buy', id: it.id });
+    Sound.play(isLeg(it) ? 'buyLegendary' : 'quickBuy'); Sound.play('coin', undefined, 34, { vol: .7 });
+    ripple(B.x, B.y, B.r, GOLD); H.qb.pop = 1; H.qb.bought = { name: it.name, t: 1.1 }; H.qb.it = null; H.qb.dirty = true; G.goldBump = .55;
+    if (shopOpen()) setTimeout(() => shopSync(true), 40);
+  };
+
+  // Evade: a separate coin with its own cooldown sweep; it pops and rings when it comes back.
+  function drawEvadeGlyph(x, y, k, col) {
+    ctx.strokeStyle = col; ctx.fillStyle = col; ctx.lineWidth = 1.9 * k; ctx.lineCap = 'round';
+    disc(x + 4.5 * k, y, 5.2 * k); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(x - 9 * k, y - 4 * k); ctx.lineTo(x - 2.5 * k, y - 4 * k); ctx.moveTo(x - 11 * k, y); ctx.lineTo(x - 3 * k, y); ctx.moveTo(x - 9 * k, y + 4 * k); ctx.lineTo(x - 2.5 * k, y + 4 * k); ctx.stroke();
+    ctx.lineCap = 'butt';
+  }
+  function drawEvade(dt, me) {
+    const B = U.evade, E = H.ev, cd = Ctl.evadeCd(me), acc = SIDE_ACC[me.team];
+    if (cd > E.prev + .001) E.max = Math.max(1, cd);
+    if (cd <= 0 && E.prev > 0 && me.alive) { E.pop = 1; Sound.play('evadeReady'); }
+    E.prev = cd;
+    E.press = pressStep(E.press, !!Ctl.ev, dt); E.pop = Math.max(0, E.pop - dt * 2.4); E.deny = Math.max(0, E.deny - dt * 5); E.fired = Math.max(0, E.fired - dt * 4);
+    const shake = calm ? 0 : Math.sin(E.deny * 22) * 3 * E.deny, x = B.x + shake, y = B.y, r = B.r * (1 - Math.max(E.press, E.fired) * .12 + (calm ? 0 : Math.sin(E.pop * Math.PI) * .1));
+    const ready = cd <= 0 && me.alive;
+    disc(x, y, r); ctx.fillStyle = 'rgba(6,8,13,.9)'; ctx.fill();
+    drawEvadeGlyph(x, y, r / 24, ready ? PAPER : 'rgba(233,237,244,.38)');
+    if (cd > 0) {
+      const f = clamp01(cd / E.max), hand = -HPI + TAU * (1 - f);
+      ctx.fillStyle = 'rgba(6,7,11,.55)'; ctx.beginPath(); ctx.moveTo(x, y); ctx.arc(x, y, r, hand, -HPI + TAU); ctx.closePath(); ctx.fill();
+      arcLine(x, y, r, -HPI, hand, acc, 2);
+      ctx.font = fd(cd > 3 ? 19 : 17); ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; label(cd > 3 ? num(Math.ceil(cd)) : TENTH[Math.min(30, Math.ceil(cd * 10))], x, y + 1, WHITE, 3);
+    }
+    disc(x, y, r); ctx.strokeStyle = ready ? acc : HAIR; ctx.lineWidth = ready ? 1.7 : 1.2; ctx.stroke();
+    if (E.pop > 0) { ctx.globalAlpha = E.pop; arcLine(B.x, B.y, B.r + 2 + (1 - E.pop) * 14, 0, TAU, acc, 1.5); ctx.globalAlpha = 1; }
+    if (H.first) { ctx.font = fw(500, 10); ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; label('Evade', B.x, B.y + B.r + 8, WHITE); }
+    // Dragging shows the way you'll go.
+    const D = Ctl.ev;
+    if (D) {
+      const l = Math.hypot(D.dx, D.dy), on = l > 14, an = on ? Math.atan2(D.dy, D.dx) : Math.atan2((me.mv.y || me.fy) * TILT, me.mv.x || me.fx), R0 = B.r + 6, L = R0 + 16;
+      arcLine(B.x, B.y, B.r + 4, 0, TAU, on ? acc : 'rgba(233,237,244,.5)', 1.6);
+      ctx.fillStyle = acc; ctx.beginPath(); ctx.moveTo(B.x + Math.cos(an) * L, B.y + Math.sin(an) * L); ctx.lineTo(B.x + Math.cos(an + .45) * R0, B.y + Math.sin(an + .45) * R0); ctx.lineTo(B.x + Math.cos(an - .45) * R0, B.y + Math.sin(an - .45) * R0); ctx.closePath(); ctx.fill();
+    }
+  }
+  Hud.evadePress = () => { if (H) { H.ev.press = 1; ripple(U.evade.x, U.evade.y, U.evade.r, SIDE_ACC[G.me.team]); } };
+  Hud.evaded = () => { if (H) { H.ev.fired = 1; H.ev.used = true; ripple(U.evade.x, U.evade.y, U.evade.r, SIDE_ACC[G.me.team]); } };
+  Hud.evadeDeny = () => { if (H) H.ev.deny = 1; };
+
+  // Attack lock: the locked champion's face sits on the edge of the attack coin, so you always know who a hold will hit.
+  function drawLockChip(dt, me) {
+    const L = Ctl.lockedUnit && Ctl.lockedUnit(), K = H.lock;
+    if (!L) { K.id = 0; return; }
+    if (L.id !== K.id) { K.id = L.id; K.t = 0; }
+    K.t += dt;
+    const A = U.atk, e = calm ? 1 : clamp01(K.t / .16), r = (U.compact ? 10 : 11.5) * (e >= 1 ? 1 : outBack(e)), x = A.x - A.r * .74, y = A.y - A.r * .74, col = CRIM;
+    disc(x, y, r + 2.2); ctx.fillStyle = INK; ctx.fill();
+    const spr = H.mini.get(L.id); if (spr) blit(spr, x, y, r);
+    arcLine(x, y, r + 1.2, 0, TAU, col, 1.8);
+    // Lock brackets: the same corner language the world marker uses.
+    ctx.strokeStyle = col; ctx.lineWidth = 1.6; ctx.beginPath(); for (let i = 0; i < 4; i++) { const a0 = Math.PI / 4 + i * HPI - .3; ctx.moveTo(x + Math.cos(a0) * (r + 4.5), y + Math.sin(a0) * (r + 4.5)); ctx.arc(x, y, r + 4.5, a0, a0 + .6); } ctx.stroke();
+  }
+  Hud.locked = (u, fresh) => { if (!H) return; if (fresh) { H.lock.id = 0; ripple(U.atk.x, U.atk.y, U.atk.r, CRIM); } };
+  // Every touch on the field answers at once: a small ring where the finger landed, red when it locked a target.
+  Hud.touchMark = (x, y, hit) => { if (!H || calm) return; if (H.marks.length > 5) H.marks.shift(); H.marks.push({ x, y, hit, t: 0 }); };
+  function drawMarks(dt) {
+    for (let i = H.marks.length - 1; i >= 0; i--) {
+      const m = H.marks[i]; m.t += dt * (m.hit ? 3 : 4.5); if (m.t >= 1) { H.marks.splice(i, 1); continue; }
+      const e = 1 - (1 - m.t) * (1 - m.t); ctx.globalAlpha = (1 - m.t) * (m.hit ? .95 : .5);
+      arcLine(m.x, m.y, 7 + e * (m.hit ? 22 : 13), 0, TAU, m.hit ? CRIM : PAPER, m.hit ? 2 : 1.3); ctx.globalAlpha = 1;
+    }
+  }
+
+  // Acts: the clock carries the act's colour; the turn itself is a title card.
+  const ACT_COL = [PAPER, PAPER, '#ffb45a', '#ff5a5a'];
+  const ACT_CARD = {
+    2: ['Act II: City War', 'Districts and city events heat up'],
+    3: ['Act III: Final Hour', 'Respawns run long. The Colossus hunts the side ahead'],
+  };
+  const actOf = s => Math.max(1, Math.min(3, (s.act | 0) || (H && H.act) || 1));
+  function onAct(e) {
+    const n = e.n | 0; if (n < 2 || n === H.actShown) return;
+    H.act = n; H.actShown = n; H.actFx = 1;
+    const A = Sim.ACTS && Sim.ACTS[n - 1], c = A ? [`Act ${n === 2 ? 'II' : 'III'}: ${A.name}`, (A.d || (ACT_CARD[n] || ACT_CARD[3])[1]).replace(/\.$/, '')] : ACT_CARD[n] || ACT_CARD[3], sub = n >= 3 && e.why === 'core' ? 'A core is open. Respawns run long' : c[1];
+    banner(c[0], { pri: 9, sub, hot: n >= 3, dur: 2.8 });
+    newsPush(n >= 3 ? 'Final Hour: the city holds its breath' : 'City War breaks out across the districts');
+  }
+  function drawActPips(cx, cy, s) {
+    const n = actOf(s); if (n !== H.act) H.act = n;
+    H.actFx = Math.max(0, (H.actFx || 0) - .02);
+    for (let i = 0; i < 3; i++) { const x = cx - 7 + i * 7, on = i < n; ctx.fillStyle = on ? ACT_COL[n] : 'rgba(233,237,244,.22)'; ctx.fillRect(x - 2, cy + 8, 4, 1.6); }
+  }
+
+  // Last Stand: once a match per team. A title card, a headline, and the boon diamond (Sim's boon 'stand' or 'laststand') while it lasts.
+  function onLastStand(e) {
+    const mine = e.team === G.me.team, n = e.n || e.civ || e.rally || 0;
+    if (mine) banner('Last Stand', { pri: 9, team: G.me.team, sub: n ? `Towers overcharge. ${n} rescued citizens rally to the core` : 'Towers overcharge. The city rallies to the core', dur: 3 });
+    else banner('They make a last stand', { pri: 8, hot: true, sub: 'Their towers overcharge. Hold your nerve', dur: 2.6 });
+    newsPush(`${Sim.TEAM_NAMES[e.team]} make a last stand at the core`);
+  }
+
+  // Wanted: a big streak puts a price on a head. It is shown on the minimap for everyone and makes the headlines.
+  const wantedOf = c => c && c.alive && c.wanted > 0;
+  function onWanted(e) {
+    const c = champBy(e.u); if (!c) return;
+    const b = Math.round(e.bounty || c.bounty || 0);
+    if (!(e.n > 0)) {
+      // Brought down: the headline goes to whoever cashed it in.
+      const k = champBy(e.by); H.wantedSeen.delete(c.id);
+      if (k) newsPush(`${nameOf(k)} brings down Wanted ${nameOf(c)}${b ? ` for ${b} gold` : ''}`);
+      if (k === G.me) banner('Bounty claimed', { pri: 6, team: G.me.team, spr: H.mini.get(c.id), sub: b ? `+${b} gold` : '', dur: 2 });
+      return;
+    }
+    newsPush(e.n >= 3 ? `${nameOf(c)} is the most Wanted in the city: ${b} gold` : e.n === 2 ? `The price on ${nameOf(c)} climbs to ${b} gold` : `WANTED: ${nameOf(c)}, ${b} gold on their head`);
+    if (H.wantedSeen.has(c.id) && c !== G.me) return;
+    H.wantedSeen.add(c.id);
+    if (c === G.me) banner('You are Wanted', { pri: 5, hot: true, sub: b ? `Bounty ${b}. Everyone can see you on the map` : 'Everyone can see you on the map', dur: 2.2 });
+    else if (c.team !== G.me.team) banner(`${nameOf(c)} is Wanted`, { pri: 3, spr: H.mini.get(c.id), team: G.me.team, sub: b ? `Take them down for ${b} gold` : 'Take them down for the bounty', dur: 2 });
+  }
+  function drawMapWanted(s, me, M, kx, ky) {
+    for (const c of s.champs) {
+      if (!wantedOf(c)) continue;
+      const X = M.x + c.x * kx, Y = M.y + c.y * ky, p = calm ? .5 : (H.t * 1.6) % 1, col = c.team === me.team ? GOLD : CRIM;
+      ctx.globalAlpha = 1 - p; disc(X, Y, 4 + p * 7); ctx.strokeStyle = col; ctx.lineWidth = 1.3; ctx.stroke(); ctx.globalAlpha = 1;
+      ctx.strokeStyle = col; ctx.lineWidth = 1.2; ctx.beginPath(); ctx.moveTo(X - 6.5, Y); ctx.lineTo(X - 3.5, Y); ctx.moveTo(X + 3.5, Y); ctx.lineTo(X + 6.5, Y); ctx.moveTo(X, Y - 6.5); ctx.lineTo(X, Y - 3.5); ctx.moveTo(X, Y + 3.5); ctx.lineTo(X, Y + 6.5); ctx.stroke();
+      if (!sees(s, c)) { disc(X, Y, 2.6); ctx.fillStyle = col; ctx.fill(); }
+    }
+  }
+
+  // Nemesis duel: when rivals meet late, a slim spotlight card with both faces and health while it lasts.
+  function onDuel(e) {
+    const a = champBy(e.a || e.u), b = champBy(e.b || e.v), me = G.me, phase = e.phase || 'start';
+    if (phase === 'start') {
+      if (!a || !b) return;
+      const mine = a === me || b === me;
+      H.duel = { a: mine && b === me ? b : a, b: mine && b === me ? a : b, t: 0, end: -1, w: 0, mine };
+      if (mine) { const foe = a === me ? b : a; banner('Nemesis duel', { pri: 6, spr: H.mini.get(foe.id), team: me.team, sub: `Beat ${nameOf(foe)} for a bonus`, dur: 1.8 }); }
+      else newsPush(`Rivals clash: ${nameOf(a)} against ${nameOf(b)}`);
+      return;
+    }
+    const D = H.duel; if (!D) return;
+    if (D.end >= 0) return;
+    const w = phase === 'win' ? champBy(e.w || e.winner || e.by) : null; D.end = 0; D.w = w ? w.id : 0;
+    const g = Math.round(e.gold || e.bonus || Sim.DUEL_GOLD || 0);
+    if (w === me) banner('Duel won', { pri: 7, team: me.team, spr: H.mini.get(me.id), sub: g ? `Nemesis beaten, +${g} gold` : 'Nemesis beaten', dur: 2.2 });
+    else if (D.mine && w) banner('Duel lost', { pri: 4, hot: true, sub: `${nameOf(w)} wins this one`, dur: 1.6 });
+    else if (w) newsPush(`${nameOf(w)} wins the rivals' duel`);
+  }
+  function drawDuel(dt) {
+    const D = H.duel; if (!D) return;
+    D.t += dt; if (D.end >= 0) D.end += dt;
+    if (D.end > 1.4 || D.t > 20 || !D.a || !D.b || (D.end < 0 && (!D.a.alive || !D.b.alive) && D.t > 1)) { if (D.end < 0 && D.t > 1) D.end = 1.4; if (D.end >= 1.4 || D.t > 20) { H.duel = null; return; } }
+    if (!D.mine && !(onScreen(D.a) || onScreen(D.b))) return;
+    const k = Math.min(1, D.t * 6) * (D.end >= 0 ? 1 - clamp01((D.end - .9) / .5) : 1), cx = VW / 2, y = U.compact ? 104 : 118, bw = U.compact ? 58 : 70, R = U.compact ? 10 : 11.5;
+    ctx.globalAlpha = k;
+    const w = bw * 2 + R * 4 + 46; put(panel(w, R * 2 + 8, 5, GLASS, null), cx - w / 2, y - R - 4);
+    ctx.font = fd(U.compact ? 12 : 13); ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillStyle = GOLD; ctx.fillText('VS', cx, y + .5);
+    const side = (c, dir) => {
+      const x0 = cx + dir * (w / 2 - R - 5), spr = H.mini.get(c.id), f = clamp01(c.hp / c.maxHp), won = D.w === c.id, lost = D.w && !won;
+      ctx.globalAlpha = k * (lost ? .45 : 1); if (spr) blit(spr, x0, y, R); arcLine(x0, y, R + 1, 0, TAU, won ? GOLD : TEAM_DOT[c.team === G.me.team ? 0 : 1], won ? 2 : 1.3);
+      const bx = dir < 0 ? x0 + R + 5 : x0 - R - 5 - bw;
+      ctx.fillStyle = WELL; ctx.fillRect(bx, y - 2.5, bw, 5); ctx.fillStyle = TEAM_DOT[c.team === G.me.team ? 0 : 1];
+      if (dir < 0) ctx.fillRect(bx, y - 2.5, bw * f, 5); else ctx.fillRect(bx + bw * (1 - f), y - 2.5, bw * f, 5);
+    };
+    side(D.a, -1); side(D.b, 1);
+    ctx.globalAlpha = 1;
+  }
+  const onScreen = c => { const X = sx(c.x), Y = sy(c.y); return X > -40 && X < VW + 40 && Y > -40 && Y < VH + 40; };
+
   // ---------- frame ----------
   function hudDraw(dt) {
     if (!H || !G || G.replay) return;
@@ -1050,8 +1276,9 @@ const { hud, initHud, hudDraw, uiEvent } = (() => {
     offset(-300 * away, 0); drawFrame(dt, me); drawBuffs(dt, s, me); drawFeed(dt);
     offset(0, -90 * away); drawStrip(dt, s, me); drawPeople(dt, s); drawObjective(dt, s, me);
     offset(300 * away, 0); drawMap(dt, s, me); drawCancel(dt);
-    offset((left() ? -320 : 320) * away, 0); if (!G.spectator) { lastHitTick(dt, me, s); drawAttack(dt, me); for (let i = 0; i < 3; i++) drawAbility(i, dt, me); } drawRipples(dt);
-    offset(0, 0);
+    offset((left() ? -320 : 320) * away, 0); if (!G.spectator) { lastHitTick(dt, me, s); drawAttack(dt, me); drawLockChip(dt, me); for (let i = 0; i < 3; i++) drawAbility(i, dt, me); drawEvade(dt, me); } drawRipples(dt);
+    offset(-300 * away, 0); if (!G.spectator) drawQbuy(dt, me);
+    offset(0, 0); drawMarks(dt); drawDuel(dt);
     if (want) drawWorldPings(dt, s, me);
     if (!G.spectator) { deathShop(me); if (!me.alive) drawDeath(me); }
     drawEmotes(dt, s, me); drawChat(dt); if (!G.spectator) { drawHint(dt, me); drawTips(dt, me); drawAimCard(me); } drawBanner(dt); drawRadial(dt);
@@ -1206,7 +1433,7 @@ const { hud, initHud, hudDraw, uiEvent } = (() => {
     }
   }
   // Team boons and timed tonics: small diamonds beside the purse, each draining as it runs out.
-  const BUFF_COL = { warlord: '#ff8a4c', foreman: GOLD, sentinel: BLUE, colossus: '#ffc454', heist: '#7fd6a4', convoy: '#7fd6a4', blackout: STEEL, drop: '#7fd6a4', pot: '#ff7a8a', elix: '#d2a3ff', tonic: '#9fe8ff' };
+  const BUFF_COL = { stand: '#ffd27a', laststand: '#ffd27a', surge: '#ffd27a', warlord: '#ff8a4c', foreman: GOLD, sentinel: BLUE, colossus: '#ffc454', heist: '#7fd6a4', convoy: '#7fd6a4', blackout: STEEL, drop: '#7fd6a4', pot: '#ff7a8a', elix: '#d2a3ff', tonic: '#9fe8ff' };
   Art.onCB((on, P) => {
     BLUE = on ? P.ally : Deco.BLUE; CRIM = on ? P.enemy : Deco.CRIM; LOSS_BAR = on ? P.teamDark[1] : '#7d1626';
     SIDE_ACC[1] = CRIM; TEAM_DOT[0] = BLUE; TEAM_DOT[1] = CRIM; PING.danger[1] = CRIM; PING.omw[1] = BLUE; BUFF_COL.sentinel = BLUE;
@@ -1214,7 +1441,7 @@ const { hud, initHud, hudDraw, uiEvent } = (() => {
   });
   function teamBuffs(s, me) {
     const out = [], b = s.boons && s.boons[me.team];
-    if (b) for (const k of Object.keys(b)) if (b[k] > 0) out.push({ kind: k, left: b[k], max: 120 });
+    if (b) for (const k of Object.keys(b)) if (b[k] > 0) out.push({ kind: k, left: b[k], max: k === 'stand' ? (Sim.STAND_T || 20) : 120 });
     for (const [k, f, m] of [['pot', 'potT', 12], ['elix', 'elixT', 60], ['tonic', 'tonicT', 60]]) if (me[f] > 0) out.push({ kind: k, left: me[f], max: m });
     return out;
   }

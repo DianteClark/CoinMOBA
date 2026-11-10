@@ -105,7 +105,7 @@ const { initMenus, animMenus, showEnd } = (() => {
     Sound.play('coin');
   }
   // The side is random. The player's seat setup travels with them.
-  function rollSide() { L.team = Math.random() < .5 ? 0 : 1; rollSeats(); }
+  function rollSide() { const fixed = L.custom && (L.custom.side === 0 || L.custom.side === 1); L.team = fixed ? L.custom.side : Math.random() < .5 ? 0 : 1; rollSeats(); }
   function autoFill() { L.seats.forEach(row => { const r = Sim.autoRoles(row.map(s => s.champ)); row.forEach((s, i) => { s.role = r[i]; }); }); }
   // On your own team the friend's champion and role are off limits.
   // Duel keeps one seat a side and Raid has no enemy players, which is what Sim.normalizeTeams will do to these seats.
@@ -119,7 +119,16 @@ const { initMenus, animMenus, showEnd } = (() => {
   const friendHolds = (key, val) => !!N.mode && L.seats[L.team].some(o => o.who !== N.pid && o[key] === val);
   const isBanned = id => !!N.mode && !!N.draft && bannedFrom(N.draft, L.team).includes(id);
   const seatOut = s => ({ champ: s.champ, role: s.role, tier: seatTier(s), name: s.name, build: s.build, prof: seatProf(s), targetPref: isMe(s) ? save.targetPref : undefined, finish: s.finish, trail: s.trail, recall: s.recall });
-  const buildCfg = () => { wearMine(mine()); return withSkills({ seed: skillSeed(), practice: L.practice || undefined, mode: L.practice ? undefined : L.mode || 'classic', teams: L.seats.map(row => row.map(s => Object.assign(seatOut(s), { human: s.human }))) }, myRank()); };
+  const buildCfg = () => {
+    wearMine(mine());
+    const cfg = withSkills({ seed: skillSeed(), practice: L.practice || undefined, mode: L.practice ? undefined : L.mode || 'classic', teams: L.seats.map(row => row.map(s => Object.assign(seatOut(s), { human: s.human }))) }, myRank());
+    if (L.custom && !L.practice) {
+      // Custom: every bot plays at its team's chosen level (Sim applies cfg.levels; the skills here match, for anything that reads them).
+      cfg.custom = true; cfg.levels = customLevels();
+      cfg.teams.forEach((row, t) => { const lv = BOT_LV().find(l => l.id === cfg.levels[t]); if (lv) row.forEach(p => { if (!p.human) p.skill = lv.skill; }); });
+    }
+    return cfg;
+  };
 
   // ---------- side ----------
   // Every menu colours itself from these two classes on the stage.
@@ -130,7 +139,8 @@ const { initMenus, animMenus, showEnd } = (() => {
     const seat = mine(), id = seat.champ, p = pts(id), tier = Sim.tierOf(p), next = TIERS[tier + 1], base = TIERS[tier].at, prog = next ? (p - base) / (next.at - base) : 1;
     const who = Sim.charOf(L.team, id), nm = $('wN');
     if (nm.textContent !== who.name) { nm.textContent = who.name; nm.classList.toggle('long', who.name.length > 11); nm.classList.remove('pop'); void nm.offsetWidth; nm.classList.add('pop'); }
-    $('mission').innerHTML = `<b>${L.practice ? 'Practice' : Sim.TEAM_NAMES[L.team]}</b><span${N.mode ? ' class="hide"' : ''}>${L.practice ? `${Sim.TEAM_NAMES[L.team]}, no pressure` : MISSION[L.team]}</span>`;
+    const cuLine = L.custom && !L.practice && !N.mode ? (() => { const nm = id => (BOT_LV().find(l => l.id === id) || {}).name || id; return `Custom: ${nm(L.custom.ally)} allies, ${nm(L.custom.enemy)} enemies`; })() : '';
+    $('mission').innerHTML = `<b>${L.practice ? 'Practice' : Sim.TEAM_NAMES[L.team]}</b><span${N.mode ? ' class="hide"' : ''}>${L.practice ? `${Sim.TEAM_NAMES[L.team]}, no pressure` : cuLine || MISSION[L.team]}</span>`;
     $('wB').textContent = who.title;
     // Net-driven repaints land here too, so the panel's entrance plays only when the champion or lane actually changed.
     const whoKey = `${id}|${seat.role}`; renderWho(whoKey !== L.whoKey); L.whoKey = whoKey;
@@ -375,7 +385,7 @@ const { initMenus, animMenus, showEnd } = (() => {
   function setLeft(on) {
     const h = hudSave(); if (!!h.left === !!on) return;
     h.left = !!on;
-    for (const k of Object.keys(h.pos)) if (!['shop', 'recall', 'ping'].includes(k)) h.pos[k][0] *= -1;
+    for (const k of Object.keys(h.pos)) if (!['shop', 'recall', 'ping', 'chat', 'ptt', 'qbuy'].includes(k)) h.pos[k][0] *= -1;
     persist(); hud();
   }
   const edge = (a, b) => Math.hypot(a.x - b.x, a.y - b.y) - a.r - b.r;
@@ -434,7 +444,7 @@ const { initMenus, animMenus, showEnd } = (() => {
       b.className = 'stc' + (c.id === St.sel ? ' sel' : '') + (eq ? ' eq' : '') + (owned ? '' : ' lockd');
       b.append(coinCanvas(previewCoin(c, 46), 92));
       b.insertAdjacentHTML('beforeend', `<span class="t"><b>${c.name}</b><small${owned ? '' : c.mastery ? ' class="lock"' : ' class="cost"'}>${eq ? 'Equipped' : owned ? 'Owned' : c.mastery ? 'Mastery' : `${c.cost} Marks`}</small></span>`);
-      b.onclick = () => { St.sel = c.id; Sound.play('tick'); renderStore(); };
+      b.onclick = () => { St.sel = c.id; Sound.play('tick'); grid.querySelectorAll('.stc.sel').forEach(x => x.classList.remove('sel')); b.classList.add('sel'); paintSel(); };
       grid.append(b);
     }
     paintSel();
@@ -758,6 +768,8 @@ const { initMenus, animMenus, showEnd } = (() => {
   // ---------- end screen ----------
   let E = null;
   function showEnd(r) {
+    // Custom matches are unranked: whatever the match settled, the rank goes back to where it was.
+    if (G && G.cfg && G.cfg.custom && !r.spectator && r.rankBefore !== undefined && !r.cuKept) { r.cuKept = true; save.rank = r.rankBefore; persist(); r.rankAfter = r.rankBefore; r.rankDelta = 0; r.unranked = true; }
     const st = Object.assign({ kills: 0, deaths: 0, assists: 0, skillHits: 0, casts: 0, parries: 0 }, r.me.stats), tier = Sim.tierOf(r.before);
     for (const id of ['shop', 'evo', 'subw', 'prac', 'pause', 'recap', 'qc', 'sv', 'specBar', 'vox']) hide(id); Ctl.reset();
     L.team = r.me.team; applySide();
@@ -785,7 +797,7 @@ const { initMenus, animMenus, showEnd } = (() => {
     if (ranked) {
       const d = Math.round(r.rankAfter - r.rankBefore), box = $('rDelta');
       paintRank($('endRank'), r.rankBefore);
-      box.textContent = d > 0 ? `+${d}` : d < 0 ? `\u2212${-d}` : '0'; box.classList.toggle('down', d < 0);
+      box.textContent = r.unranked ? 'Unranked' : d > 0 ? `+${d}` : d < 0 ? `\u2212${-d}` : '0'; box.classList.toggle('down', d < 0);
     }
     // Marks were banked by finishMatch; this rolls the number up.
     const earned = Math.max(0, Math.round((r.marks || 0) + ms.gain));
@@ -947,8 +959,10 @@ const { initMenus, animMenus, showEnd } = (() => {
   }
   // Rolling a new side always plays the coin flip.
   function enterLobby() {
-    rollSide(); applySide(); renderLobby(); show('lobby');
+    // The flip covers the screen at once; the lobby builds behind it after that first frame is on the glass.
+    rollSide(); applySide();
     flipStart(L.team, lobbyEnter);
+    soon(() => { renderLobby(); show('lobby'); });
   }
   function begin(reroll) {
     if (V.on || F.on || W.on) return false;
@@ -963,11 +977,29 @@ const { initMenus, animMenus, showEnd } = (() => {
 
   // ---------- screens ----------
   let curScr = null, pressed = null;
+  // Run heavy work after the next paint, so a tap always answers on screen first.
+  function soon(fn) { requestAnimationFrame(() => setTimeout(fn, 0)); }
+  // Bake the coins the menus draw while nobody is touching anything, one at a time, so first opens are light.
+  const PRE = []; let preOn = false;
+  function prewarm() {
+    if (preOn || PRE.done) return; PRE.done = true;
+    for (const side of [0, 1]) for (const id of rosterOf(side)) { const t = Sim.tierOf(pts(id)); PRE.push(() => Art.champCoin(id, side, t, 34), () => Art.champCoin(id, side, t, 54), () => Art.champCoin(id, side, t, 46)); }
+    for (const c of catalog()) PRE.push(() => previewCoin(c, 46));
+    for (const kit of rosterOf(0).concat(rosterOf(1))) PRE.push(() => Art.champCoin(kit, 0, 2, 44));
+    preOn = true; setTimeout(prePump, 400);
+  }
+  function prePump() {
+    if (G) { preOn = false; return; }
+    if (window.__inputAt && performance.now() - window.__inputAt < 450) { setTimeout(prePump, 150); return; }
+    const j = PRE.shift(); if (!j) { preOn = false; return; }
+    try { j(); } catch (e) { }
+    setTimeout(prePump, 30);
+  }
   function scr(id) {
     if (curScr === id) return;
     const out = curScr; curScr = id;
-    if (out) { const o = $(out); o.classList.remove('in'); o.classList.add('out'); setTimeout(() => { if (curScr !== out) o.classList.add('hide'); o.classList.remove('out'); }, 170); }
-    if (id === 'menu') { paintRank($('mRank'), myRank()); paintMarks(); paintRejoin(); }
+    if (out) { const o = $(out); o.classList.remove('in'); o.classList.add('out'); setTimeout(() => { if (curScr !== out) o.classList.add('hide'); o.classList.remove('out'); }, 110); }
+    if (id === 'menu') { L.custom = null; paintRank($('mRank'), myRank()); paintMarks(); paintRejoin(); prewarm(); }
     if (id) { const e = $(id); e.classList.remove('hide', 'out', 'in'); e.classList.toggle('back', id === 'menu' && !!out); void e.offsetWidth; e.classList.add('in'); if (id === 'menu') fitLogo(); }
   }
   function shake(el) { el.classList.remove('shake'); void el.offsetWidth; el.classList.add('shake'); setTimeout(() => el.classList.remove('shake'), 320); }
@@ -1518,7 +1550,7 @@ const { initMenus, animMenus, showEnd } = (() => {
   // ---------- wiring ----------
   function playBots() {
     if (F.on || W.on || V.on) return;
-    netDrop(); L.practice = false; L.slot = 0; L.team = 0; L.mode = curMode(); rollSeats();
+    netDrop(); L.practice = false; L.custom = null; L.slot = 0; L.team = 0; L.mode = curMode(); rollSeats();
     Sound.play('tap');
     scr(null);
     enterLobby();
@@ -1533,14 +1565,65 @@ const { initMenus, animMenus, showEnd } = (() => {
       b.onclick = () => { save.mode = m.id; persist(); paintMarks(); playBots(); };
       box.append(b);
     });
-    const p = document.createElement('button'); p.className = 'dk moc stick'; p.style.setProperty('--i', MODES.length);
-    p.innerHTML = `<b>Practice</b><small>Free gold and levels, no pressure. Try anything.</small>`;
+    const duo = document.createElement('div'); duo.className = 'moduo stick'; duo.style.setProperty('--i', MODES.length);
+    const p = document.createElement('button'); p.className = 'dk moc';
+    p.innerHTML = `<b>Practice</b><small>Free gold and levels, no pressure.</small>`;
     p.onclick = startPractice;
-    box.append(p);
+    const cu = document.createElement('button'); cu.className = 'dk moc'; cu.id = 'moCustom';
+    cu.innerHTML = `<b>Custom</b><small>Pick every bot's level. Unranked.</small>`;
+    cu.onclick = openCustom;
+    duo.append(p, cu); box.append(duo);
   }
+
+  // ---------- 13.0: Custom match ----------
+  // Bot levels per team, Rookie to Legend. Nothing here touches rank; normal matches keep their rank-scaled bots.
+  const BOT_LV = () => Sim.BOT_LEVELS || [{ id: 'rookie', name: 'Rookie', skill: .12 }, { id: 'regular', name: 'Regular', skill: .35 }, { id: 'veteran', name: 'Veteran', skill: .55 }, { id: 'elite', name: 'Elite', skill: .75 }, { id: 'legend', name: 'Legend', skill: .95 }];
+  const LV_D = { rookie: 'Still learning. Easy to read, slow to punish.', regular: 'Knows the basics, plays it safe.', veteran: 'Solid. Trades well and takes objectives.', elite: 'Sharp. Dodges, ganks and punishes mistakes.', legend: 'Near flawless. Bring your best.' };
+  const CU_MODES = () => (Sim.MODES || []).filter(m => !m.coop);
+  const cuSave = () => { const c = save.custom || (save.custom = {}); if (!c.mode) c.mode = 'classic'; if (!c.ally) c.ally = 'veteran'; if (!c.enemy) c.enemy = 'veteran'; if (c.side === undefined) c.side = -1; return c; };
+  function segBtns(host, list, cur, pick) {
+    host.textContent = '';
+    for (const [id, name] of list) { const b = document.createElement('button'); b.textContent = name; b.setAttribute('aria-pressed', id === cur); b.onclick = () => { if (id === cur) return; pick(id); Sound.play('tick'); renderCustom(); }; host.append(b); }
+  }
+  function lvPicker(host, title, sub, cur, pick) {
+    host.textContent = '';
+    const h = document.createElement('h3'); h.innerHTML = `${title}<small>${sub}</small>`; host.append(h);
+    const g = document.createElement('div'); g.className = 'culv';
+    BOT_LV().forEach((L0, i) => {
+      const b = document.createElement('button'); b.className = 'dk'; b.setAttribute('aria-pressed', L0.id === cur); b.setAttribute('aria-label', `${title}: ${L0.name}`);
+      b.innerHTML = `<b>${L0.name}</b><i>${[0, 1, 2, 3, 4].map(k => `<u${k <= i ? ' class="on"' : ''}></u>`).join('')}</i>`;
+      b.onclick = () => { if (L0.id === cur) return; pick(L0.id); Sound.play('tick'); renderCustom(); };
+      g.append(b);
+    });
+    const d = document.createElement('p'); d.className = 'cud'; d.style.margin = '0'; d.textContent = LV_D[cur] || ''; host.append(d, g);
+  }
+  function renderCustom() {
+    const c = cuSave(), modes = CU_MODES();
+    if (!modes.some(m => m.id === c.mode)) c.mode = 'classic';
+    segBtns($('cuMode'), modes.map(m => [m.id, m.name]), c.mode, v => { c.mode = v; persist(); });
+    segBtns($('cuSide'), [[-1, 'Random'], [0, Sim.TEAM_NAMES[0]], [1, Sim.TEAM_NAMES[1]]], c.side, v => { c.side = v; persist(); });
+    const solo = (modes.find(m => m.id === c.mode) || {}).teamSize === 1;
+    lvPicker($('cuT0'), 'Your team', solo ? 'No allies in Duel' : 'Your three allies', c.ally, v => { c.ally = v; persist(); });
+    lvPicker($('cuT1'), 'Enemy team', solo ? 'Your opponent' : 'All four enemies', c.enemy, v => { c.enemy = v; persist(); });
+    $('cuT0').classList.toggle('off', solo);
+    const nm = id => (BOT_LV().find(l => l.id === id) || {}).name || id;
+    $('cuNote').textContent = solo ? `${nm(c.enemy)} opponent.` : `${nm(c.ally)} allies against ${nm(c.enemy)} enemies.`;
+  }
+  function openCustom() { Sound.play('menuOpen'); renderCustom(); scr('custom'); }
+  function startCustom() {
+    if (F.on || W.on || V.on) return;
+    const c = cuSave();
+    netDrop(); L.practice = false; L.slot = 0; L.mode = c.mode; L.custom = { side: c.side, ally: c.ally, enemy: c.enemy };
+    L.team = c.side === 0 || c.side === 1 ? c.side : 0; rollSeats();
+    Sound.play('tap');
+    scr(null);
+    enterLobby();
+  }
+  // cfg.levels is per team index: your team's level on your side.
+  const customLevels = () => { const C = L.custom; return L.team === 0 ? [C.ally, C.enemy] : [C.enemy, C.ally]; };
   function startPractice() {
     if (F.on || W.on || V.on) return;
-    netDrop(); L.practice = true; L.mode = 'classic'; L.slot = 0; L.team = Math.random() < .5 ? 0 : 1; rollSeats();
+    netDrop(); L.practice = true; L.custom = null; L.mode = 'classic'; L.slot = 0; L.team = Math.random() < .5 ? 0 : 1; rollSeats();
     Sound.play('menuOpen');
     const go = () => { scr(null); applySide(); renderLobby(); show('lobby'); lobbyEnter(); };
     if (!wipe(go)) go();
@@ -1975,13 +2058,15 @@ const { initMenus, animMenus, showEnd } = (() => {
     $('mBots').onclick = playBots;
     $('mModes').onclick = () => { Sound.play('menuOpen'); renderModes(); scr('modes'); };
     $('moBack').onclick = () => { Sound.play('menuBack'); scr('menu'); };
-    $('mStore').onclick = () => { Sound.play('menuOpen'); renderStore(); scr('store'); };
+    $('cuBack').onclick = () => { Sound.play('menuBack'); renderModes(); scr('modes'); };
+    $('cuGo').onclick = startCustom;
+    $('mStore').onclick = () => { Sound.play('menuOpen'); scr('store'); soon(renderStore); };
     if (save.cb && Art.setCB) Art.setCB(true);
     if (hasNet()) Net.on('card', () => { if (curScr === 'room') renderRoom(); });
     Hud.loadoutFor = id => { const lo = activeLo(id); return lo ? { path: lo.path | 0, evo: Array.isArray(lo.evo) ? lo.evo : [] } : null; };
     $('mArm').onclick = () => { Sound.play('menuOpen'); renderArmory(); scr('armory'); };
     $('arBack').onclick = () => { Sound.play('menuBack'); paintMarks(); scr('menu'); };
-    $('mProf').onclick = () => { Sound.play('menuOpen'); renderProfile(); scr('profile'); };
+    $('mProf').onclick = () => { Sound.play('menuOpen'); scr('profile'); soon(renderProfile); };
     $('pfBack').onclick = () => { Sound.play('menuBack'); paintMarks(); scr('menu'); };
     document.querySelectorAll('#pfTab [data-p]').forEach(b => { b.onclick = () => { if (Pf.tab === b.dataset.p) return; Pf.tab = b.dataset.p; Sound.play('tick'); renderProfile(); }; });
     $('nOk').onclick = saveName; $('nNo').onclick = () => { $('nIn').blur(); hide('nameD'); Sound.play('tap'); };
@@ -2001,7 +2086,7 @@ const { initMenus, animMenus, showEnd } = (() => {
     document.querySelectorAll('#stTab [data-k]').forEach(b => { b.onclick = () => { St.tab = b.dataset.k; St.sel = null; Sound.play('tap'); renderStore(); }; });
     $('mHost').onclick = () => { Sound.play('coin'); startHost(); };
     $('mJoin').onclick = () => { Sound.play('coin'); openJoin(''); };
-    $('mMiss').onclick = () => { Sound.play('menuOpen'); renderMissions(); scr('missions'); };
+    $('mMiss').onclick = () => { Sound.play('menuOpen'); scr('missions'); soon(renderMissions); };
     $('msBack').onclick = () => { Sound.play('menuBack'); paintMarks(); scr('menu'); };
     $('mRejoin').onclick = () => { const c = hasNet() && Net.resumable && Net.resumable(); if (!c) { paintRejoin(); return; } Sound.play('coin'); N.input = c; joinGo(); };
     $('rMode').onclick = () => {
@@ -2012,7 +2097,7 @@ const { initMenus, animMenus, showEnd } = (() => {
     };
     $('rShuf').onclick = () => { if (N.mode !== 'host') return; try { Net.shuffle(); } catch (e) { } N.sel = null; Sound.play('flipSpin'); renderRoom(); };
     $('pSur').onclick = () => { if (!G) return; Hud.surrender(); $('resume').click(); };
-    $('mHow').onclick = () => { Sound.play('menuOpen'); buildHow(); scr('how'); };
+    $('mHow').onclick = () => { Sound.play('menuOpen'); scr('how'); soon(buildHow); };
     $('mSet').onclick = () => { Sound.play('menuOpen'); syncToggles(); show('settings'); };
     // The coin is a toy: flip it and it answers.
     const QUIPS = [['Hold the line', 'The city is watching', 'Someone has to stand up', 'Not tonight'], ['Everyone has a price', 'The city sleeps. We do not', 'Flip it again. I dare you', 'Heads or tails, you lose']];

@@ -53,6 +53,7 @@ const { initWorld, render, introTick, outroStart, outroTick, drawCoin, visOf, wo
   function initWorld(g) {
     const s = g.s, map = s.map, GS = quality >= 2 ? 1.2 : 1;
     ZB = VW / CAM_SPAN; Z = ZB;
+    Terrain.setTheme && Terrain.setTheme(map.kind === 'brawl' && map.band ? 'brawl' : '');
     g.ground = Terrain.paint(map, s.towers, GS, s.sites || [], g.me.team === 1 ? 1 : 0, s.camps || [], s.districts || []);
     g.vis = new Map();
     g.text = []; g.punch = 0; g.punchS = 0; g.lead = { x: 0, y: 0 }; g.goldBump = 0; g.goldAnchor = g.goldAnchor || null;
@@ -112,8 +113,9 @@ const { initWorld, render, introTick, outroStart, outroTick, drawCoin, visOf, wo
     for (const w of map.walls) if (w.big) { for (let y = w.y + 50; y < w.y + w.h - 10; y += 180 + r() * 50) for (let x = w.x + 70; x < w.x + w.w - 30; x += 190 + r() * 60) { if (inRiver(x, y, Terrain.HALF + 80)) continue; const spr = Terrain.house(Math.floor(r() * 4) * 2 + 1 + (y < w.y + w.h / 2 ? 2 : 0), x > W / 2 ? 1 : 0); out.push({ x, y, spr, kind: 2, fade: true, half: 62, tall: spr.h * .9, al: 1, ph: r() * 6, smk: r() * 2 }); } }
     // The jungle's own trees grow on the terraces, which are solid ground in every sense.
     for (const o of g.walls) if (o.spr.style === 0) { const w = o.w, n = Math.max(1, Math.round(w.w * w.h / 34000)); for (let i = 0; i < n; i++) tree(w.x + 14 + r() * Math.max(1, w.w - 28), w.y + w.h - 6 - r() * Math.min(w.h * .4, 40)); }
-    for (let x = 240; x < W - 240; x += 200 + r() * 160) { if (inRiver(x, H - 30, Terrain.HALF + 80)) continue; if (r() > .4) { const spr = Terrain.house(Math.floor(r() * 2) * 2, x > W / 2 ? 1 : 0); out.push({ x, y: H - 24 - r() * 14, spr, kind: 2, fade: true, half: 62, tall: spr.h * .9, al: 1, ph: r() * 6, smk: r() * 2 }); } else tree(x, H - 14 - r() * 26); }
-    for (let y = 300; y < H - 300; y += 170 + r() * 120) { tree(14 + r() * 16, y); tree(W - 14 - r() * 16, y); }
+    const sea = Terrain.theme && Terrain.theme() === 'brawl'; // Main Street: no park trees on the map edges
+    if (!sea) for (let x = 240; x < W - 240; x += 200 + r() * 160) { if (inRiver(x, H - 30, Terrain.HALF + 80)) continue; if (r() > .4) { const spr = Terrain.house(Math.floor(r() * 2) * 2, x > W / 2 ? 1 : 0); out.push({ x, y: H - 24 - r() * 14, spr, kind: 2, fade: true, half: 62, tall: spr.h * .9, al: 1, ph: r() * 6, smk: r() * 2 }); } else tree(x, H - 14 - r() * 26); }
+    if (!sea) for (let y = 300; y < H - 300; y += 170 + r() * 120) { tree(14 + r() * 16, y); tree(W - 14 - r() * 16, y); }
     // The skyline: deco towers along the north edge, behind everything you can walk on.
     for (let x = 240; x < W - 160; x += 190 + r() * 110) {
       if (inRiver(x, 90, Terrain.HALF + 70)) continue;
@@ -215,15 +217,23 @@ const { initWorld, render, introTick, outroStart, outroTick, drawCoin, visOf, wo
   function introTick() {
     for (const c of G.s.champs) {
       if (G.introLanded.has(c.id)) continue;
-      const t = INTRO_LEN - G.intro - (.2 + G.introIdx.get(c.id) * .1);
+      const t = INTRO_LEN - G.intro - (.2 + G.introIdx.get(c.id) * .1), mine = c === G.me;
+      // 13.0 entrance: your landing spot is lit a beat before you hit it.
+      if (mine && t >= FALL - .3 && !G.introCue) { G.introCue = 1; if (onScreen(c.x, c.y, 120)) FX.entranceCue(c); }
       if (t < FALL) continue;
       G.introLanded.add(c.id);
       visOf(c).squash = 1;
-      if (onScreen(c.x, c.y, 120)) { const mine = c === G.me; FX.ring(c.x, c.y, mine ? 110 : 70, mine ? REL_COL.me : c.team === G.me.team ? REL_COL.ally : REL_COL.enemy, mine ? .5 : .32); FX.dust(c.x, c.y, mine ? 1.6 : 1); if (mine) { FX.coins(c.x, c.y, 3, { sp: 120, vz: 300, size: 8, life: .7 }); G.shake = Math.max(G.shake, 3); G.punch = Math.max(G.punch, .012); } Sound.play('clink'); }
+      if (onScreen(c.x, c.y, 120)) {
+        FX.ring(c.x, c.y, mine ? 110 : 70, mine ? REL_COL.me : c.team === G.me.team ? REL_COL.ally : REL_COL.enemy, mine ? .5 : .32); FX.dust(c.x, c.y, mine ? 1.6 : 1);
+        if (mine || c.team === G.me.team) FX.entrance(c, mine);
+        Sound.play('clink'); if (mine) Sound.play('entrance');
+      }
     }
   }
   function outroStart() {
     const o = G.outro; G.punch = .1; G.shake = 11; G.outroN = 0; G.outroB = 0;
+    // 13.0 photo finish: the winning blow plays out in slow motion behind a shutter flash, then the city celebrates at full speed.
+    G.photoT = 0; FX.photoStart(); Sound.play('photo');
     FX.ring(o.x, o.y, 460, '#ffd777', .95); FX.ring(o.x, o.y, 260, '#fff5c6', .6); FX.spark(o.x, o.y, 34, '#ffd777', 520, .8, 16, 60); FX.towerFall(o.x, o.y, G.s.over && G.s.over.winner === 0 ? 1 : 0, true, true); FX.finale(!!(G.s.over && G.s.over.winner === G.me.team), o.x, o.y);
   }
   function outroTick(dt) {
@@ -236,12 +246,23 @@ const { initWorld, render, introTick, outroStart, outroTick, drawCoin, visOf, wo
   // ---------- camera ----------
   function camera(dt, a) {
     const me = G.me, p = posNow(me, a); let tx = p.x, ty = p.y;
-    const L = G.lead; let lx = (me.vx || 0) * .16, ly = (me.vy || 0) * .16;
-    if (Ctl.aim && me.alive) { const ad = aimDir(); if (ad) { lx += ad.dx * 130; ly += ad.dy * 84; } }
-    const kl = 1 - Math.exp(-dt * 4); L.x += (lx - L.x) * kl; L.y += (ly - L.y) * kl; tx += L.x; ty += L.y;
+    // 13.0 lead: the view leans toward where you're heading. It builds quickly when you move, holds steady
+    // through small corrections, and settles back when you stop, so the space ahead of you is always on screen.
+    const L = G.lead, sp = Math.hypot(me.vx || 0, me.vy || 0), up = isUp(me) && !G.outro;
+    let lx = 0, ly = 0;
+    if (up && sp > 30) { const k = Math.min(1, sp / 380), n = 1 / sp; lx = (me.vx || 0) * n * 190 * k; ly = (me.vy || 0) * n * 120 * k; }
+    if (Ctl.aim && up) { const ad = aimDir(); if (ad) { lx = lx * .4 + ad.dx * 150; ly = ly * .4 + ad.dy * 96; } }
+    const moving = lx * lx + ly * ly > 1, kl = 1 - Math.exp(-dt * (moving ? 5.5 : 2.6)); L.x += (lx - L.x) * kl; L.y += (ly - L.y) * kl;
+    // Holding the minimap looks around (UI sets G.look = {x, y}); letting go snaps straight back.
+    const look = G.look && !G.outro ? G.look : null;
+    G.lookK = (G.lookK || 0) + ((look ? 1 : 0) - (G.lookK || 0)) * (1 - Math.exp(-dt * (look ? 14 : 18)));
+    if (look) { G.lookX = look.x; G.lookY = look.y; }
+    tx += L.x; ty += L.y;
+    if (G.lookK > .002 && G.lookX !== undefined) { tx += (G.lookX - tx) * G.lookK; ty += (G.lookY - ty) * G.lookK; }
     if (G.intro > 0) { const k = 1 - G.intro / INTRO_LEN; ty -= (1 - k) * (1 - k) * 120; }
     if (G.outro) { tx = G.outro.x; ty = G.outro.y; }
-    const k = 1 - Math.exp(-dt * (G.outro ? 2.6 : 9));
+    // Follow is tight (the coin never drifts off-centre while you steer); the look jump is near-instant both ways.
+    const k = 1 - Math.exp(-dt * (G.outro ? 2.6 : G.lookK > .05 ? 16 : 12));
     G.cam.x += (tx - G.cam.x) * k; G.cam.y += (ty - G.cam.y) * k;
     const hw = VW / 2 / Z, hh = VH / 2 / (Z * TILT);
     G.cam.x = hw * 2 >= Sim.W ? Sim.W / 2 : Math.max(hw, Math.min(Sim.W - hw, G.cam.x));
@@ -292,22 +313,60 @@ const { initWorld, render, introTick, outroStart, outroTick, drawCoin, visOf, wo
     if (dark > .015) { ctx.globalAlpha = dark; ctx.fillStyle = G.black > .5 ? '#02030a' : G.villain ? '#1a0408' : '#05060e'; ctx.fillRect(0, 0, VW, VH); ctx.globalAlpha = 1; }
     if (sk.up > .05 && quality >= 1) { ctx.globalCompositeOperation = 'lighter'; ctx.globalAlpha = sk.up * .05; ctx.fillStyle = '#e6c98e'; ctx.fillRect(0, 0, VW, VH); ctx.globalCompositeOperation = 'source-over'; ctx.globalAlpha = 1; }
   }
+  // ---------- 13.0: three acts ----------
+  // Laning is the city as it was. City War puts both searchlights up for good. Final Hour turns the sky: a crimson grade on the
+  // ground, a burning horizon at the top of the frame, embers in the air, red searchlights and dry lightning.
+  function actNow() { const s = G.s; return Math.max(s.act | 0, G.actN | 0, 1); }
+  function actTick(dt) {
+    const n = actNow();
+    G.act2K = (G.act2K || 0) + ((n >= 2 ? 1 : 0) - (G.act2K || 0)) * (1 - Math.exp(-dt * 1.4));
+    G.act3K = (G.act3K || 0) + ((n >= 3 ? 1 : 0) - (G.act3K || 0)) * (1 - Math.exp(-dt * (n >= 3 ? .9 : 3)));
+    if (G.act3K < .002) G.act3K = 0;
+    G.spotSnap = Math.max(0, (G.spotSnap || 0) - dt * 2.2);
+    if (G.act3K > .6 && dt > 0 && G.bolt <= 0 && Math.random() < dt * .045 * G.act3K) {
+      G.bolt = 1; G.thunderIn = rnd(.25, .6); const pts = []; let x = rnd(VW * .1, VW * .9), y = -10; const g_ = rnd(VH * .3, VH * .6);
+      while (y < g_) { pts.push(x, y); x += rnd(-30, 30); y += rnd(22, 50); } pts.push(x, g_); G.boltPts = pts; G.boltRed = 1;
+    }
+  }
+  let horizC = null, horizH = 0;
+  function actGrade() {
+    const k = G.act3K || 0; if (k < .01) return;
+    ctx.globalAlpha = k * .26; ctx.fillStyle = '#1c0410'; ctx.fillRect(0, 0, VW, VH);
+    ctx.globalCompositeOperation = 'lighter'; ctx.globalAlpha = k * (.05 + Math.sin(G.t * 1.3) * .012); ctx.fillStyle = '#ff3020'; ctx.fillRect(0, 0, VW, VH);
+    // The horizon: a band of fire light across the top, one cached gradient.
+    if (!horizC || horizH !== VH) { horizH = VH; horizC = Art.cv(4, 128); const g = horizC.getContext('2d'), gr = g.createLinearGradient(0, 0, 0, 128); gr.addColorStop(0, 'rgba(255,90,40,.9)'); gr.addColorStop(.25, 'rgba(200,30,40,.45)'); gr.addColorStop(.6, 'rgba(90,10,40,.12)'); gr.addColorStop(1, 'rgba(0,0,0,0)'); g.fillStyle = gr; g.fillRect(0, 0, 4, 128); }
+    ctx.globalAlpha = k * (.55 + Math.sin(G.t * .7) * .08); ctx.drawImage(horizC, 0, 0, VW, VH * .34);
+    ctx.globalCompositeOperation = 'source-over'; ctx.globalAlpha = 1;
+  }
+  const EMBERS = [];
+  function embers(dt) {
+    const k = G.act3K || 0; if (k < .05 || quality < 1) return;
+    const n = quality >= 2 ? 26 : 14; while (EMBERS.length < n) EMBERS.push({ x: Math.random() * VW, y: Math.random() * VH, v: rnd(30, 80), ph: Math.random() * 6, s: rnd(2, 4.5) });
+    const gl = Art.glow('#ff8a3a'); ctx.globalCompositeOperation = 'lighter';
+    for (let i = 0; i < n; i++) {
+      const p = EMBERS[i]; p.y -= p.v * dt; p.x += (Math.sin(G.t * 1.1 + p.ph) * 22 + 18) * dt; p.ph += dt;
+      if (p.y < -10 || p.x > VW + 10) { p.y = VH + rnd(0, 40); p.x = Math.random() * VW; }
+      const r = p.s * (1 + Math.sin(p.ph * 5) * .3); ctx.globalAlpha = k * (.4 + .5 * Math.max(0, Math.sin(p.ph * 2.3))); ctx.drawImage(gl, p.x - r * 2, p.y - r * 2, r * 4, r * 4);
+    }
+    ctx.globalCompositeOperation = 'source-over'; ctx.globalAlpha = 1;
+  }
+
   // Searchlights over the city. They sweep the streets while the people have hope, turn red when they don't, and die in a blackout.
   // A live event pulls the first beam onto it.
   const SWEEP = [{ a: .17, b: .29, ph: 0 }, { a: .13, b: .23, ph: 2.1 }];
   function searchlights() {
     if (quality < 1) return;
     const off = G.black; if (off > .92) return;
-    const h = G.hopeS, red = h < 38, on = red ? 2 : h > 62 ? 2 : 1, col = red ? '#ff3a3e' : G.villain ? '#ffc890' : '#ffe6b8', spr = Terrain.pool(col), bm = Terrain.beam(col), ev = G.evv, hw = VW / 2 / Z, hh = VH / 2 / (Z * TILT);
+    const h = G.hopeS, a3 = (G.act3K || 0) > .5, red = h < 38 || a3, on = red || (G.act2K || 0) > .5 ? 2 : h > 62 ? 2 : 1, col = red ? '#ff3a3e' : G.villain ? '#ffc890' : '#ffe6b8', spr = Terrain.pool(col), bm = Terrain.beam(col), ev = G.evv, hw = VW / 2 / Z, hh = VH / 2 / (Z * TILT);
     const flicker = off > .02 ? (Math.sin(G.t * 53) > .2 ? 1 - off : (1 - off) * .4) : 1;
     ctx.globalCompositeOperation = 'lighter';
     for (let i = 0; i < on; i++) {
       const q = SWEEP[i], lock = i === 0 && ev && !ev.ended && ev.kind !== 'blackout' && onScreen(ev.x, ev.y, 100);
       G.spotK[i] += ((lock ? 1 : 0) - G.spotK[i]) * .05;
-      const k = G.spotK[i], wx0 = G.cam.x + Math.sin(G.t * q.a + q.ph) * hw * .8, wy0 = G.cam.y + Math.cos(G.t * q.b + q.ph * 1.7) * hh * .66, wx = k > .01 && ev ? wx0 + (ev.x - wx0) * k : wx0, wy = k > .01 && ev ? wy0 + (ev.y - wy0) * k : wy0;
+      const sp = a3 ? 1.8 : 1, k = G.spotK[i], wx0 = G.cam.x + Math.sin(G.t * q.a * sp + q.ph) * hw * .8, wy0 = G.cam.y + Math.cos(G.t * q.b * sp + q.ph * 1.7) * hh * .66, wx = k > .01 && ev ? wx0 + (ev.x - wx0) * k : wx0, wy = k > .01 && ev ? wy0 + (ev.y - wy0) * k : wy0;
       const X = sx(wx), Y = sy(wy), R = 118 * Z * (1 - k * .15), X0 = VW * (.16 + i * .68) + Math.sin(G.t * .07 + i * 3) * 34, Y0 = -26, dx = X - X0, dy = Y - Y0, L = Math.hypot(dx, dy) || 1, c = dy / L, sn = -dx / L, w = R * 1.9;
-      ctx.globalAlpha = .42 * flicker; ctx.drawImage(spr, X - R, Y - R * TILT, R * 2, R * 2 * TILT);
-      ctx.globalAlpha = .16 * flicker; ctx.setTransform(dpr * c, dpr * -sn, dpr * sn, dpr * c, dpr * X0, dpr * Y0); ctx.drawImage(bm, -w / 2, 0, w, L + R * .4); ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      const snap = 1 + (G.spotSnap || 0) * 1.4; ctx.globalAlpha = Math.min(1, .42 * flicker * snap); ctx.drawImage(spr, X - R, Y - R * TILT, R * 2, R * 2 * TILT);
+      ctx.globalAlpha = Math.min(1, .16 * flicker * snap); ctx.setTransform(dpr * c, dpr * -sn, dpr * sn, dpr * c, dpr * X0, dpr * Y0); ctx.drawImage(bm, -w / 2, 0, w, L + R * .4); ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     }
     ctx.globalAlpha = 1; ctx.globalCompositeOperation = 'source-over';
   }
@@ -324,7 +383,7 @@ const { initWorld, render, introTick, outroStart, outroTick, drawCoin, visOf, wo
       G.bolt = 1; G.thunderIn = rnd(.2, .55);
       const pts = []; let x = rnd(VW * .1, VW * .9), y = -10; const ground_ = rnd(VH * .55, VH * .9);
       while (y < ground_) { pts.push(x, y); x += rnd(-36, 36); y += rnd(22, 54); }
-      pts.push(x, ground_); G.boltPts = pts;
+      pts.push(x, ground_); G.boltPts = pts; G.boltRed = 0;
     }
     if (G.thunderIn > 0 && (G.thunderIn -= dt) <= 0) Sound.play('thunder');
   }
@@ -356,10 +415,10 @@ const { initWorld, render, introTick, outroStart, outroTick, drawCoin, visOf, wo
   function lightning() {
     if (G.bolt <= 0) return;
     ctx.globalCompositeOperation = 'lighter';
-    ctx.globalAlpha = G.bolt * .06; ctx.fillStyle = '#c8d2e6'; ctx.fillRect(0, 0, VW, VH); ctx.globalAlpha = 1;
+    ctx.globalAlpha = G.bolt * .06; ctx.fillStyle = G.boltRed ? '#ff8a70' : '#c8d2e6'; ctx.fillRect(0, 0, VW, VH); ctx.globalAlpha = 1;
     if (G.boltPts && G.bolt > .35) {
       const p = G.boltPts; ctx.beginPath(); ctx.moveTo(p[0], p[1]); for (let i = 2; i < p.length; i += 2) ctx.lineTo(p[i], p[i + 1]);
-      ctx.lineJoin = 'miter'; ctx.strokeStyle = `rgba(190,206,240,${G.bolt * .6})`; ctx.lineWidth = 3; ctx.stroke(); ctx.strokeStyle = `rgba(255,255,255,${G.bolt})`; ctx.lineWidth = 1.2; ctx.stroke(); ctx.lineJoin = 'round';
+      ctx.lineJoin = 'miter'; ctx.strokeStyle = G.boltRed ? `rgba(255,110,90,${G.bolt * .6})` : `rgba(190,206,240,${G.bolt * .6})`; ctx.lineWidth = 3; ctx.stroke(); ctx.strokeStyle = `rgba(255,255,255,${G.bolt})`; ctx.lineWidth = 1.2; ctx.stroke(); ctx.lineJoin = 'round';
     }
     ctx.globalCompositeOperation = 'source-over';
   }
@@ -653,6 +712,7 @@ const { initWorld, render, introTick, outroStart, outroTick, drawCoin, visOf, wo
     const izf = introZ(c), air = Math.abs(Math.sin(v.hop)), knockZ = c.knockT > 0 && !c.z ? Math.sin(Math.min(1, 1 - c.knockT / (c.knockMax || c.knockT)) * Math.PI) * 54 : 0, z = 9 + air * hopH + (c.z || 0) + izf + (v.oz || 0) + knockZ, R = artR(c);
     const spinAng = v.spin > 0 ? v.spin * TAU : 0, ringR = (R + 6) * Z, Rp = R * Z;
     spotlight(X, Y, R * Z, mine ? '#fff0c8' : ally ? '#8ec2f2' : (Art.cb ? Art.PAL.enemy : '#ff6a5a'), mine ? .42 : .3);
+    const wl = wantedLv(c); if (wl >= 0) wantedLight(c, v, X, Y, R, wl);
     if (mine) meMarker(X, Y, ringR); else teamRing(X, Y, ringR, ally);
     if (c.tier >= 3 && mine) { const gl = Art.glow(AURA[c.tier]), r = (40 + (c.tier - 3) * 5) * Z; ctx.globalCompositeOperation = 'lighter'; ctx.globalAlpha = .18 + Math.sin(G.t * 3 + v.phase) * .05; ctx.drawImage(gl, X - r, Y - z * Z - r, r * 2, r * 2); ctx.globalCompositeOperation = 'source-over'; ctx.globalAlpha = 1; }
     // Stealth: you and your friends see a shimmer of the coin; enemies have nothing to see unless the sim says so.
@@ -662,6 +722,7 @@ const { initWorld, render, introTick, outroStart, outroTick, drawCoin, visOf, wo
     if (c.polyT > 0) top = drawCoin(FX.goldCoin(), X, Y, z, R * .9, coinOpt(Math.cos(G.t * 14), v.flash, 0, 0, undefined, 1, .9, '#6a5428'));
     else top = drawCoin(sprOf(c, v), X, Y, z, R, coinOpt(1, v.flash, v.lean, Math.max(v.squash, 0) * .9 + (v.osq || 0) - (moving ? air * .1 : 0), undefined, alpha, clamp01(1 - izf / 900) * .9, undefined, undefined, v.yaw + (v.oyaw || 0) + spinAng));
     statusMarks(c, v, X, top, me, Rp);
+    if (evading(c, v)) evadeShimmer(c, v, X, top, Rp);
     // A price on their head: a small seal pinned to the upper rim, bigger and brighter as the bounty grows.
     if (c.bounty >= BOUNTY_AT[0] && !c.polyT) { const grade = c.bounty >= BOUNTY_AT[2] ? 2 : c.bounty >= BOUNTY_AT[1] ? 1 : 0, b = Art.bountyMark(grade), w = (15 + grade * 2) * (1 + Math.max(0, Math.sin(G.t * 4 + v.phase)) * .08), bx = X + Rp * .72, by = top - Rp * 1.02; ctx.globalAlpha = hidden; ctx.drawImage(b.c, bx - w / 2, by - w / 2, w, w); ctx.globalAlpha = 1; }
     if (c.chan && c.chan.recall && c.chan.total) { ctx.strokeStyle = TEAM[c.team]; ctx.lineWidth = 2.6; ctx.beginPath(); ctx.arc(X, top, 36 * Z, -Math.PI / 2, -Math.PI / 2 + TAU * (1 - c.chan.t / c.chan.total)); ctx.stroke(); }
@@ -687,6 +748,7 @@ const { initWorld, render, introTick, outroStart, outroTick, drawCoin, visOf, wo
     ctx.globalAlpha = 1;
     if (v.flash > 0) { ctx.globalCompositeOperation = 'lighter'; ctx.globalAlpha = v.flash * .4 * al; ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.ellipse(X, Y - shown * step * .5, R * k, (shown * step + R * k * .7) * .55, 0, 0, TAU); ctx.fill(); ctx.globalCompositeOperation = 'source-over'; ctx.globalAlpha = 1; }
     if (open) { const gl = Art.glow(Art.PAL.towerLight[t.team ? 1 : 0]), gr = (core ? 44 : 32) * k, gy = topY - (core ? 74 : 54) * k, X_ = X + (shown - 1) * step * lean; ctx.globalCompositeOperation = 'lighter'; ctx.globalAlpha = (.32 + Math.sin(G.t * 3) * .08) * al; ctx.drawImage(gl, X_ - gr, gy - gr, gr * 2, gr * 2); ctx.globalCompositeOperation = 'source-over'; ctx.globalAlpha = 1; }
+    if (standOn(t.team)) overcharge(t, X + (shown - 1) * step * lean, topY, core, al);
     if (core) drawCoin(v.coreS || (v.coreS = Art.coin('corecoin' + t.team, 56, 'boss', Art.METAL['minion' + t.team], t.team, 3)), X + (shown - 1) * step * lean, topY - 96 * k, 0, 24, coinOpt(Math.cos(G.t * 1.3), 0, 0, 0, undefined, al, undefined, '#6a5428', true));
   }
   // What's left of a tower. While it falls the stack sinks into its own footing; after that there's only flat rubble on the ground layer.
@@ -767,6 +829,7 @@ const { initWorld, render, introTick, outroStart, outroTick, drawCoin, visOf, wo
         const lt = lvlTag(u.lvl | 0); ctx.drawImage(lt.c, x - lt.w + 2, y + h / 2 - lt.h / 2, lt.w, lt.h);
         if (!mine && !ally) { const nm = charName(u); if (nm) { const t = nameTag(nm, 0, REL_COL.enemyName); ctx.drawImage(t.c, x - 5, y - 15, t.w, t.h); } }
         else if (mine && b_meTop) meChevron(X, y - 9);
+        { const wl = wantedLv(u); if (wl >= 0) wantedPlaque(u, v, X, y - (!mine && !ally ? 17 : mine ? 18 : 4), wl, dt); }
       } else if (u.kind === 'tower') {
         const art = artOf(u), open = towerOpenU(u), y = Y - (art.n * art.R * STEP + art.crown) * Z - 6;
         if (u.hp < u.maxHp || open) bar(X - 34 * Z, y, 68 * Z, 5, f, open ? (ally ? REL_COL.ally : REL_COL.enemy) : 'rgba(150,158,170,.7)');
@@ -799,10 +862,16 @@ const { initWorld, render, introTick, outroStart, outroTick, drawCoin, visOf, wo
   // Boss presence: the kind's own ring turns slowly under it. Everything loud happens when it dies.
   const BOSS_SIG = { warlord: 'crash', foreman: 'stomp', sentinel: 'hex', colossus: 'rupture' };
   function drawMonster(u, v, px, py) {
-    const X = sx(px + v.rx), Y = sy(py + v.ry), z = u.boss ? 16 + Math.sin(G.t * 1.8) * 3 : 6 + Math.abs(Math.sin(v.hop)) * 3, R = artR(u);
+    const lift = u.boss ? bossLift(u) : 0, X = sx(px + v.rx), Y = sy(py + v.ry), z = u.boss ? 16 + Math.sin(G.t * 1.8) * 3 + lift : 6 + Math.abs(Math.sin(v.hop)) * 3, R = artR(u);
     if (u.boss) {
-      const kind = u.bossKind || 'colossus', sig = Art.sigil(BOSS_SIG[kind] || 'mark', Art.BOSS_COL[kind] || '#ffb04a'), rr = (R + 44) * Z, rot = G.t * .4, c = Math.cos(rot) * rr, sn = Math.sin(rot) * rr;
-      ctx.globalCompositeOperation = 'lighter'; ctx.globalAlpha = .55; ctx.setTransform(dpr * c, dpr * sn * TILT, -dpr * sn, dpr * c * TILT, dpr * X, dpr * Y); ctx.drawImage(sig, -1, -1, 2, 2); ctx.setTransform(dpr, 0, 0, dpr, 0, 0); ctx.globalAlpha = 1; ctx.globalCompositeOperation = 'source-over';
+      bossWatch(u, v);
+      // Later phases turn the ring faster and hotter; the last one burns.
+      const ph = Math.max(1, u.phase | 0), kind = u.bossKind || 'colossus', bc = Art.BOSS_COL[kind] || '#ffb04a', sig = Art.sigil(BOSS_SIG[kind] || 'mark', ph >= 3 ? '#ff4a2a' : bc), rr = (R + 44 + (ph - 1) * 10) * Z, rot = G.t * (.4 + (ph - 1) * .5), c = Math.cos(rot) * rr, sn = Math.sin(rot) * rr;
+      v.roar = Math.max(0, (v.roar || 0) - rdt * 2.4);
+      ctx.globalCompositeOperation = 'lighter'; ctx.globalAlpha = .55 + v.roar * .4; ctx.setTransform(dpr * c, dpr * sn * TILT, -dpr * sn, dpr * c * TILT, dpr * X, dpr * Y); ctx.drawImage(sig, -1, -1, 2, 2); ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      if (ph >= 3 || v.roar > 0) { const gr = R * Z * (1.7 + v.roar * .8), al = (ph >= 3 ? .28 + Math.sin(G.t * 8) * .08 : 0) + v.roar * .4; ctx.globalAlpha = Math.min(1, al); ctx.drawImage(Art.glow(ph >= 3 ? '#ff5a2a' : bc), X - gr, Y - (z + R * .9) * Z - gr, gr * 2, gr * 2); }
+      if (lift > 2) { const sh = Art.shadow(), w = R * Z * (1.5 - lift / 140); ctx.globalCompositeOperation = 'source-over'; ctx.globalAlpha = .5; ctx.drawImage(sh, X - w, Y - w * .32, w * 2, w * .64); }
+      ctx.globalAlpha = 1; ctx.globalCompositeOperation = 'source-over';
     }
     const top = drawCoin(sprOf(u, v), X, Y, z, R, coinOpt(1, v.flash, v.lean, v.squash, undefined, undefined, undefined, u.boss ? '#5a3f22' : '#3a3226', undefined, u.boss ? Math.sin(G.t * .9) * .26 : (v.yaw || 0)));
     if (u.shellT > 0) { const rr = R * Z * (1.28 + Math.sin(G.t * 6) * .02), col = '#a8f0ff'; ctx.strokeStyle = col; ctx.lineWidth = 2.2; ctx.beginPath(); for (let i = 0; i < 6; i++) { const a = i / 6 * TAU + G.t * .6, x0 = X + Math.cos(a) * rr, y0 = top + Math.sin(a) * rr * .86; if (i) ctx.lineTo(x0, y0); else ctx.moveTo(x0, y0); } ctx.closePath(); ctx.stroke(); }
@@ -961,7 +1030,7 @@ const { initWorld, render, introTick, outroStart, outroTick, drawCoin, visOf, wo
   function tickHelis(dt) {
     if (quality < 1) { G.helis.length = 0; return; }
     if (dt > 0 && (G.heliNext -= dt) <= 0) {
-      G.heliNext = 55 + Math.random() * 50; const dir = Math.random() < .5 ? 1 : -1, hw = VW / 2 / Z + 260;
+      G.heliNext = (55 + Math.random() * 50) * ((G.act2K || 0) > .5 ? .5 : 1); const dir = Math.random() < .5 ? 1 : -1, hw = VW / 2 / Z + 260;
       G.helis.push({ x: G.cam.x - dir * hw, y: G.cam.y - 140 + Math.random() * 280, z: 210, vx: dir * 300, vy: rnd(-30, 30) });
     }
     const list = G.helis, ev = G.evv, hw = VW / 2 / Z;
@@ -984,16 +1053,175 @@ const { initWorld, render, introTick, outroStart, outroTick, drawCoin, visOf, wo
     }
   }
 
+  // ---------- 13.0: Main Street (Brawl) ----------
+  // Festival lights strung across the street from roof to roof: the place's signature, drawn above the fight but faint.
+  const BULB = ['#ffd890', '#ff7ab8', '#7ad8ff', '#ffe6b8'];
+  function streetLights() {
+    const band = G.s.map && G.s.map.band; if (!band || quality < 1) return;
+    const hw = VW / 2 / Z + 200, x0 = Math.ceil((G.cam.x - hw) / 520) * 520, red = (G.act3K || 0) > .5, off = G.black;
+    if (off > .9) return;
+    ctx.lineCap = 'round';
+    for (let x = x0; x < G.cam.x + hw; x += 520) {
+      if ((G.s.map.plazas || EMPTY_LIST).some(p => p.kind === 'base' && Math.abs(p.x - x) < p.r + 120)) continue;
+      const sl = ((x / 520) | 0) % 2 ? 90 : -90, ax = x - sl, bx = x + sl, Ya = sy(band.y0) - 190 * Z, Yb = sy(band.y1) - 190 * Z, Xa = sx(ax), Xb = sx(bx), Xm = (Xa + Xb) / 2, Ym = (Ya + Yb) / 2 + 40 * Z;
+      ctx.globalAlpha = .55; ctx.strokeStyle = '#05070b'; ctx.lineWidth = 1.6; ctx.beginPath(); ctx.moveTo(Xa, Ya); ctx.quadraticCurveTo(Xm, Ym + 30 * Z, Xb, Yb); ctx.stroke();
+      ctx.globalCompositeOperation = 'lighter';
+      for (let i = 1; i < 14; i++) {
+        const t = i / 14, u = 1 - t, X = u * u * Xa + 2 * u * t * Xm + t * t * Xb, Y = u * u * Ya + 2 * u * t * (Ym + 30 * Z) + t * t * Yb;
+        const on = red ? (Math.sin(G.t * 9 + i * 1.7 + x) > -.2) : 1, col = red ? '#ff4a3a' : BULB[(i + (x / 520 | 0)) % 4], r = (5 + Math.sin(G.t * 2 + i) * 1) * Z + 2;
+        ctx.globalAlpha = .5 * on * (1 - off); ctx.drawImage(Art.glow(col), X - r * 2, Y - r * 2, r * 4, r * 4);
+      }
+      ctx.globalCompositeOperation = 'source-over';
+    }
+    ctx.globalAlpha = 1;
+  }
+
+  // ---------- 13.0: wanted ----------
+  // c.wanted from the sim: true, a level, or a bounty in gold. Read as a grade 0..3.
+  function wantedLv(c) {
+    const w = c.wanted; if (!w || c.polyT > 0) return -1;
+    if (w === true) return 0; if (typeof w === 'object') return Math.min(3, Math.max(0, (w.lv || w.n || w.level || 1) - 1));
+    return w > 20 ? Math.min(3, (w / 300) | 0) : Math.min(3, Math.max(0, (w | 0) - 1));
+  }
+  // The city hunts them: a red searchlight from the top of the frame stays on the coin, wider and brighter as the bounty grows.
+  function wantedLight(c, v, X, Y, R, lv) {
+    if (G.black > .9) return;
+    const col = Art.cb ? Art.PAL.enemy : '#ff3a3e', k = 1 + lv * .14, Rw = (R + 30) * Z * k, sway = Math.sin(G.t * 1.7 + v.phase) * 6 * Z, X0 = X * .7 + VW * .15 + Math.sin(G.t * .3 + v.phase) * 40, Y0 = -30;
+    const dx = X + sway - X0, dy = Y - Y0, L = Math.hypot(dx, dy) || 1, cs = dy / L, sn = -dx / L, w = Rw * 1.8;
+    ctx.globalCompositeOperation = 'lighter';
+    ctx.globalAlpha = .4 + lv * .06; ctx.drawImage(Terrain.pool(col), X + sway - Rw * 1.4, Y - Rw * 1.4 * TILT, Rw * 2.8, Rw * 2.8 * TILT);
+    if (quality >= 1) { ctx.globalAlpha = .14 + lv * .03; ctx.setTransform(dpr * cs, dpr * -sn, dpr * sn, dpr * cs, dpr * X0, dpr * Y0); ctx.drawImage(Terrain.beam(col), -w / 2, 0, w, L + Rw * .3); ctx.setTransform(dpr, 0, 0, dpr, 0, 0); }
+    ctx.globalCompositeOperation = 'source-over'; ctx.globalAlpha = 1;
+    // A crosshair turns on the ground under them.
+    const Rr = (R + 22) * Z * k, Ry = Rr * TILT, rot = G.t * 1.2; ctx.lineCap = 'butt';
+    for (let pass = 0; pass < 2; pass++) { ctx.strokeStyle = pass ? col : INK; ctx.lineWidth = pass ? 1.8 : 3.6; ctx.beginPath(); for (let i = 0; i < 4; i++) { const an = rot + i * Math.PI / 2, c0 = Math.cos(an), s0 = Math.sin(an); ctx.moveTo(X + c0 * Rr * .78, Y + s0 * Ry * .78); ctx.lineTo(X + c0 * Rr * 1.14, Y + s0 * Ry * 1.14); } ctx.stroke(); }
+    ctx.lineCap = 'round';
+  }
+  function wantedPlaque(u, v, X, y, lv, dt) {
+    v.wantedIn = Math.min(1, (v.wantedIn === undefined ? 1 : v.wantedIn) + dt / .22);
+    const e = v.wantedIn, pop = e < 1 ? 1 + (1 - e) * (1 - e) * .9 : 1 + Math.max(0, Math.sin(G.t * 3.2 + v.phase)) * .04, m = Art.wantedMark(lv, Art.cb ? Art.PAL.enemy : '#ff3f3a'), w = m.w * (.82 + lv * .08) * pop, h = m.h * (.82 + lv * .08) * pop;
+    ctx.globalAlpha = Math.min(1, e * 2); ctx.drawImage(m.c, X - w / 2, y - h, w, h); ctx.globalAlpha = 1;
+  }
+
+  // ---------- 13.0: evade ----------
+  // While a coin is untouchable it reads as glass: a cold rim and a short trail of afterimages.
+  const evading = (c, v) => c.evadeT > 0 || c.evT > 0 || c.dodgeT > 0 || c.iframeT > 0 || c.invulnT > 0 || v.evadeT > 0;
+  function evadeShimmer(c, v, X, top, Rp) {
+    v.evadeT = Math.max(0, (v.evadeT || 0) - rdt);
+    ctx.globalCompositeOperation = 'lighter'; ctx.globalAlpha = .7; ctx.strokeStyle = '#cfefff'; ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.ellipse(X, top, Rp * 1.18, Rp * 1.08, 0, 0, TAU); ctx.stroke();
+    ctx.globalAlpha = .35; ctx.drawImage(Art.glow('#bfe8ff'), X - Rp * 1.6, top - Rp * 1.6, Rp * 3.2, Rp * 3.2);
+    ctx.globalCompositeOperation = 'source-over'; ctx.globalAlpha = 1;
+    if ((v.evGhost = (v.evGhost || 0) - rdt) <= 0 && rdt > 0) { v.evGhost = .035; FX.ghost(worldSprite(c), artR(c), c.x, c.y, 12, .18, 1); }
+  }
+
+  // ---------- 13.0: last stand ----------
+  // On from the event for a while, or as long as the sim says (s.lastStand / s.standT per team, seconds).
+  function standOn(team) {
+    const s = G.s, a = s.stand || s.lastStand; if (a && typeof a === 'object' && a[team] !== undefined && typeof a[team] === 'number') return a[team] > 0;
+    return !!(G.standAt && G.stand && G.stand[team] && G.t - G.standAt[team] < 15);
+  }
+  // Towers overcharge: a hot core of light in the crown, arcs crawling down the stack, a beam into the sky.
+  function overcharge(t, X, topY, core, al) {
+    const col = t.team === 0 ? '#ffe08a' : (Art.cb ? Art.PAL.enemy : '#ff4a5a'), k = Z, flick = .75 + Math.sin(G.t * 23 + t.x) * .25, gy = topY - (core ? 80 : 60) * k, gr = (core ? 90 : 64) * k;
+    ctx.globalCompositeOperation = 'lighter'; ctx.globalAlpha = .5 * flick * al; ctx.drawImage(Art.glow(col), X - gr, gy - gr, gr * 2, gr * 2);
+    if (quality >= 1) { const w = (core ? 70 : 46) * k, bm = Terrain.beam(col); ctx.globalAlpha = .22 * al; ctx.setTransform(dpr, 0, 0, -dpr, dpr * X, dpr * gy); ctx.drawImage(bm, -w / 2, 0, w, gy + 40); ctx.setTransform(dpr, 0, 0, dpr, 0, 0); }
+    // two jagged arcs, re-cut every few frames
+    const seed = (G.t * 14 | 0); ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 1.4; ctx.globalAlpha = .85 * al; ctx.beginPath();
+    for (let j = 0; j < 2; j++) { let x = X + (j ? 1 : -1) * 18 * k, y = gy; ctx.moveTo(x, y); for (let i = 0; i < 5; i++) { const h = Math.sin(seed * 12.9898 + i * 78.233 + j * 3) * 43758.5453; x += ((h - Math.floor(h)) - .5) * 26 * k; y += 18 * k; ctx.lineTo(x, y); } }
+    ctx.stroke(); ctx.globalCompositeOperation = 'source-over'; ctx.globalAlpha = 1;
+  }
+
+  // ---------- 13.0: nemesis duel spotlight ----------
+  // Everything else dims; the two of them stand in white light with a ring drawn around their fight.
+  function duelSpot(dt, a) {
+    const D = G.duel || (G.s.duel && (G.s.duel.u || G.s.duel.a) ? { u: G.s.duel.u || G.s.duel.a, v: G.s.duel.v || G.s.duel.b, live: true } : null);
+    let on = 0, A = null, B = null;
+    if (D) { if (D.t !== undefined) D.t += dt; A = unitById(D.u); B = unitById(D.v); on = A && B && isUp(A) && isUp(B) && !D.end && !(D.t > 14) ? 1 : 0; if (!on && D.t !== undefined && !D.end) D.end = G.t; }
+    G.duelK = (G.duelK || 0) + (on - (G.duelK || 0)) * (1 - Math.exp(-dt * (on ? 9 : 3)));
+    if (D && !on && G.duelK < .01 && G.duel === D) G.duel = null;
+    if (G.duelK < .01 || !A || !B) return;
+    const pa = posNow(A, a), ax = pa.x, ay = pa.y, pb = posNow(B, a), bx = pb.x, by = pb.y; if (!onScreen(ax, ay, 300) && !onScreen(bx, by, 300)) return;
+    const k = G.duelK, mine = A === G.me || B === G.me;
+    ctx.globalAlpha = k * (mine ? .34 : .24); ctx.fillStyle = '#04050a'; ctx.fillRect(0, 0, VW, VH);
+    ctx.globalCompositeOperation = 'lighter';
+    for (const [x, y, u] of [[ax, ay, A], [bx, by, B]]) {
+      const X = sx(x), Y = sy(y), R = 120 * Z, col = u.team === 0 ? '#fff0c8' : '#ffd0c8';
+      ctx.globalAlpha = k * .5; ctx.drawImage(Terrain.pool(col), X - R * 1.6, Y - R * 1.6 * TILT, R * 3.2, R * 3.2 * TILT);
+      if (quality >= 1) { const X0 = X + (u.team === 0 ? -1 : 1) * VW * .18, Y0 = -30, dx = X - X0, dy = Y - Y0, L = Math.hypot(dx, dy) || 1, cs = dy / L, sn = -dx / L, w = R * 1.6; ctx.globalAlpha = k * .18; ctx.setTransform(dpr * cs, dpr * -sn, dpr * sn, dpr * cs, dpr * X0, dpr * Y0); ctx.drawImage(Terrain.beam(col), -w / 2, 0, w, L + R * .3); ctx.setTransform(dpr, 0, 0, dpr, 0, 0); }
+    }
+    ctx.globalCompositeOperation = 'source-over';
+    // The ring: hero gold on one half, villain red on the other, turning.
+    const mx = (ax + bx) / 2, my = (ay + by) / 2, Rr = (Math.hypot(ax - bx, ay - by) / 2 + 150) * Z, X = sx(mx), Y = sy(my), rot = G.t * .5;
+    ctx.globalAlpha = k; ctx.lineCap = 'butt';
+    ctx.strokeStyle = INK; ctx.lineWidth = 4.4; ctx.beginPath(); ctx.ellipse(X, Y, Rr, Rr * TILT, 0, 0, TAU); ctx.stroke();
+    ctx.lineWidth = 2.2; ctx.strokeStyle = '#f0dfb0'; ctx.beginPath(); ctx.ellipse(X, Y, Rr, Rr * TILT, 0, rot, rot + Math.PI); ctx.stroke();
+    ctx.strokeStyle = Art.cb ? Art.PAL.enemy : '#ff4a5a'; ctx.beginPath(); ctx.ellipse(X, Y, Rr, Rr * TILT, 0, rot + Math.PI, rot + TAU); ctx.stroke();
+    ctx.globalAlpha = 1; ctx.lineCap = 'round';
+  }
+
+  // ---------- 13.0: bosses ----------
+  // The sim's phase (u.phase) is watched here, so guests and hosts both see the turn even without the event.
+  function bossWatch(u, v) {
+    const ph = u.phase | 0; if (!ph) return;
+    if (v.bph === undefined) v.bph = ph; else if (ph > v.bph) { v.bph = ph; fxEvent({ e: 'bossphase', u: u.id, n: ph }); }
+  }
+  // A pending slam lifts the boss off the ground, then drops it as the blast lands.
+  function bossLift(u) {
+    const zs = G.s.zones || EMPTY_LIST; let best = null, bd = 1e12;
+    for (const z of zs) { if (z.kind !== 'blast' || z.team !== 2) continue; const o = z.owner, oid = o && typeof o === 'object' ? o.id : o; if (oid === u.id) { best = z; break; } const d = Math.hypot(z.x - u.x, z.y - u.y); if (oid === undefined && d < 520 && d < bd) { bd = d; best = z; } }
+    const v = visOf(u); let f;
+    if (v.slamAt !== undefined && G.t - v.slamAt < v.slamT + .05) f = clamp01((G.t - v.slamAt) / v.slamT);
+    else if (!best || !best.total) return 0; else f = clamp01(1 - best.t / best.total);
+    return f < .82 ? 46 * (1 - Math.pow(1 - f / .82, 3)) : 46 * (1 - (f - .82) / .18);
+  }
+
+  // ---------- 13.0: attack lock ----------
+  // The champion your attack is locked onto. An explicit lock from the sim wins; while attack is held without one,
+  // the marker shows who a tap would go to, so holding attack always tells you who you're hitting.
+  const LOCK = { id: 0, t: 1, x: 0, y: 0 };
+  function lockTarget() {
+    const me = G.me; if (!isUp(me) || G.spectator) return null;
+    const ids = [G.lockId, me.lockId];
+    for (const id of ids) { if (!id) continue; const u = typeof id === 'object' ? id : unitById(id); if (u && u.kind === 'champ' && isUp(u) && u.team !== me.team && seesU(u)) return u; }
+    const held = (Ctl.atk !== null && Ctl.atk !== undefined && Ctl.atk !== false) && (Ctl.atkMode || 'champ') === 'champ';
+    if (!held) return null;
+    try { return Sim.quickTarget ? Sim.quickTarget(G.s, me, (me.range || 160) + 60) : null; } catch (e) { return null; }
+  }
+  function lockMarker(a, dt) {
+    const t = lockTarget();
+    if (!t) { LOCK.id = 0; return; }
+    if (t.id !== LOCK.id) { LOCK.id = t.id; LOCK.t = 0; }
+    LOCK.t += dt;
+    const q = posNow(t, a), v = visOf(t), X = sx(q.x + v.rx), Y = sy(q.y + v.ry), R0 = (artR(t) + 14) * Z, e = clamp01(LOCK.t / .13), k = e >= 1 ? 1 : 1 + (1 - e) * (1 - e) * 1.1;
+    const R = R0 * k * (1 + Math.max(0, Math.sin(G.t * 9)) * .03), Ry = R * TILT, col = Art.cb ? Art.PAL.enemy : '#ff3f3a', rot = Math.PI / 4 + (1 - e) * .9, arm = .55;
+    ctx.globalAlpha = Math.min(1, e * 2.2); ctx.lineCap = 'butt';
+    // Four bracket corners on the ground, snapping in from wide.
+    for (let pass = 0; pass < 2; pass++) {
+      ctx.strokeStyle = pass ? col : INK; ctx.lineWidth = pass ? 3.2 : 6; ctx.beginPath();
+      for (let i = 0; i < 4; i++) { const a0 = rot + i * Math.PI / 2 - arm / 2; ctx.moveTo(X + Math.cos(a0) * R, Y + Math.sin(a0) * Ry); ctx.ellipse(X, Y, R, Ry, 0, a0, a0 + arm); }
+      ctx.stroke();
+    }
+    // The lock lands with one quick flash ring.
+    if (e < 1) { ctx.strokeStyle = '#ffffff'; ctx.globalAlpha = 1 - e; ctx.lineWidth = 2; ctx.beginPath(); ctx.ellipse(X, Y, R0 * (.6 + e * .6), R0 * (.6 + e * .6) * TILT, 0, 0, TAU); ctx.stroke(); }
+    ctx.globalAlpha = 1; ctx.lineCap = 'round';
+  }
+
+  // Photo finish time curve: a hard drop to a crawl, held, then a quick ease back to full speed.
+  const photoScale = t => t < .9 ? .14 : t < 1.5 ? .14 + .86 * (1 - Math.pow(1 - (t - .9) / .6, 3)) : 1;
   function render(dt) {
     const s = G.s, me = G.me; if (!s || !me) return;
     rdt = dt;
     Art.pump(paused || G.intro > 0 ? 9 : 2.5);
     if (s.hope !== undefined) G.hopeS += (s.hope - G.hopeS) * (1 - Math.exp(-dt * 1.2));
-    const a = Math.min(1, (G.acc || 0) / DT), wdt = G.intro > 0 || G.outro ? dt : dt * (G.stop > 0 ? .1 : (G.timeScale || 1));
+    if (G.outro && G.photoT !== undefined) G.photoT += dt;
+    const photo = G.outro ? photoScale(G.photoT || 0) : 1;
+    const a = Math.min(1, (G.acc || 0) / DT), wdt = G.intro > 0 || G.outro ? dt * photo : dt * (G.stop > 0 ? .1 : (G.timeScale || 1));
     G.punch *= Math.exp(-dt * (G.outro ? 1.2 : 8));
     // Zoom kicks are eased in as well as out, so no impact ever snaps the camera.
     G.punchS = (G.punchS || 0) + (G.punch - (G.punchS || 0)) * (1 - Math.exp(-dt * 32));
     let zoom = 1; if (G.intro > 0) { const k = clamp01(1 - G.intro / INTRO_LEN), e = 1 - Math.pow(1 - k, 3); zoom = lerp(.84, 1, e); }
+    if (G.outro) { const pt = G.photoT || 0; zoom *= 1 + .08 * (1 - Math.pow(1 - clamp01(pt / 1.1), 3)) - .05 * clamp01((pt - 1.5) / .8); }
     ZB = VW / CAM_SPAN;
     Z = ZB * (1 + G.punchS) * zoom;
     camera(dt, a);
@@ -1005,7 +1233,7 @@ const { initWorld, render, introTick, outroStart, outroTick, drawCoin, visOf, wo
     const m = 190;
     litNow = clamp01((G.hopeS - 18) / 22);
     tickSmoke(wdt);
-    eventTick(wdt); tickHelis(wdt); districtsTick(wdt);
+    eventTick(wdt); tickHelis(wdt); districtsTick(wdt); actTick(wdt);
     if (G.moodT > 0) G.moodT -= wdt;
     if (s.sites) for (const c of s.sites) if (c.alive && onScreen(c.x, c.y, 120)) push(c.y, 7, c);
     for (const d of G.decor) if (onScreen(d.x, d.y, m + (d.sky ? 260 : 0))) push(d.y, 0, d);
@@ -1038,6 +1266,7 @@ const { initWorld, render, introTick, outroStart, outroTick, drawCoin, visOf, wo
     ground();
     const sk = sky();
     groundGrade(sk);
+    actGrade();
     reflection();
     water(dt);
     searchlights();
@@ -1072,13 +1301,17 @@ const { initWorld, render, introTick, outroStart, outroTick, drawCoin, visOf, wo
 
     // Fog goes over the world; effects and readouts sit above it so nothing important is dimmed.
     drawFog(dt);
+    duelSpot(wdt, a);
     FX.projectiles(a, wdt);
     FX.draw(wdt);
     drawHelis();
+    streetLights();
     rainStreaks(dt);
     motes(dt, sk);
+    embers(wdt);
     lightning();
     FX.danger(a);
+    lockMarker(a, dt);
     hpBars(dt);
     FX.textLayer(dt);
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0); ctx.globalAlpha = 1; ctx.globalCompositeOperation = 'source-over';
