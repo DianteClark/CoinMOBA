@@ -580,6 +580,9 @@ button.down{transform:translateY(1px) scale(.965);filter:brightness(1.3);transit
 #recap{--cut:12px;--fill:rgba(9,11,17,.95);position:absolute;left:44px;top:84px;bottom:8px;width:216px;z-index:2;padding:9px 11px;display:flex;flex-direction:column;gap:5px;animation:recapin .26s cubic-bezier(.2,.8,.2,1) both}
 .lh #recap{left:auto;right:44px}
 @keyframes recapin{from{opacity:0;transform:translateX(-22px)}}
+#recap{transition:translate .22s cubic-bezier(.2,.8,.2,1),visibility 0s}
+#recap.stow{translate:calc(-100% - 60px) 0;visibility:hidden;pointer-events:none;transition:translate .18s ease-in,visibility 0s .18s}
+.lh #recap.stow{translate:calc(100% + 60px) 0}
 .rch{display:flex;align-items:center;gap:9px;flex:none}
 .rch canvas{width:42px;height:42px;display:block;flex:none}
 .rch small{display:block;font-size:12.5px;color:var(--mut);line-height:1.05}
@@ -6756,11 +6759,90 @@ const Sim = (() => {
     const won = !!s.over && s.over.winner === c.team, t = c.stats, n = v => Math.round(v || 0);
     return { nemesis: nemesisOf(c.champ), nemKills: n(t.nemKills), nemDeaths: n(t.nemDeaths), beatNemesis: beatNemesis(won, t), won, mode: s.mode || 'classic', practice: !!s.practice, full: s.t >= 360, t: Math.round(s.t), champ: c.champ, role: c.role, mastery: masteryGain(t, won), kills: n(t.kills), deaths: n(t.deaths), assists: n(t.assists), towers: n(t.towers), objectives: n(t.objectives), rescues: n(t.rescues), skillHits: n(t.skillHits), multi3: n(t.multi3), multi4: n(t.multi4), multi5: n(t.multi5), bestStreak: n(t.bestStreak), clutch: n(t.clutch), saves: n(t.saves), steals: n(t.steals), colossi: n(t.colossi), trailed: n(t.trailed) };
   }
+  // ---------- resume: a whole match as JSON, so a page the phone reloaded can carry on ----------
+  // The object graph is stored once per object (shared references and cycles survive). The kit tables come from code,
+  // so anything pointing into them is written as a path (that covers the ability functions).
+  // The random stream restarts from the seed and tick (a resumed match need not replay the same future).
+  const RESUME_V = 1;
+  function staticRefs() {
+    const ref = new Map(), byPath = new Map(), seen = new Set();
+    const walk = (o, path, depth) => {
+      if (o === null || (typeof o !== 'object' && typeof o !== 'function') || seen.has(o) || depth > 9) return;
+      seen.add(o); ref.set(o, path); byPath.set(path, o);
+      if (typeof o === 'function' || ArrayBuffer.isView(o)) return;
+      if (o instanceof Map || o instanceof Set) return;
+      for (const k of Object.keys(o)) walk(o[k], path + '.' + k, depth + 1);
+    };
+    walk(KITS, 'kits', 0);
+    return { ref, byPath };
+  }
+  function saveMatch(s) {
+    const st = staticRefs(), ids = new Map(), out = [];
+    const enc = v => {
+      if (v === undefined) return { $u: 1 };
+      if (typeof v === 'number') return isFinite(v) ? v : { $n: String(v) };
+      if (v === null || typeof v !== 'object' && typeof v !== 'function') return v;
+      const sp = st.ref.get(v); if (sp) return { $x: sp };
+      if (typeof v === 'function') return v === s.rand ? { $x: 'rand' } : { $f: v.name === 'setSkill' ? 'setSkill' : '' };
+      let i = ids.get(v); if (i !== undefined) return { $r: i };
+      i = out.length; ids.set(v, i); out.push(null);
+      let node;
+      if (ArrayBuffer.isView(v)) node = { $t: v.constructor.name, a: Array.from(v) };
+      else if (v instanceof Map) node = { $m: [...v].map(([k, x]) => [enc(k), enc(x)]) };
+      else if (v instanceof Set) node = { $s: [...v].map(enc) };
+      else if (Array.isArray(v)) node = { $a: v.map(enc) };
+      else { const o = {}; for (const k of Object.keys(v)) o[k] = enc(v[k]); node = { $o: o }; }
+      out[i] = node; return { $r: i };
+    };
+    const root = enc(s);
+    return { v: RESUME_V, mode: s.mode, seed: s.seed, tick: s.tick, root, nodes: out };
+  }
+  function loadMatch(data) {
+    if (!data || data.v !== RESUME_V || !Array.isArray(data.nodes)) throw new Error('bad resume data');
+    const st = staticRefs(), made = new Array(data.nodes.length), fixSkill = [], lost = new Set();
+    const rand = rng(((data.seed || 7) * 31 + (data.tick | 0)) | 0);
+    const dec = v => {
+      if (v === null || typeof v !== 'object') return v;
+      if (v.$u) return undefined;
+      if (v.$n !== undefined) return Number(v.$n);
+      if (v.$x !== undefined) { if (v.$x === 'rand') return rand; if (!st.byPath.has(v.$x)) throw new Error('resume: missing ' + v.$x); return st.byPath.get(v.$x); }
+      if (v.$f !== undefined) return v.$f;
+      if (v.$r !== undefined) return build(v.$r);
+      return v;
+    };
+    const build = i => {
+      if (made[i] !== undefined) return made[i];
+      const n = data.nodes[i];
+      if (n.$t) { const C = { Uint8Array, Int8Array, Uint16Array, Int16Array, Uint32Array, Int32Array, Float32Array, Float64Array, Uint8ClampedArray }[n.$t] || Array; made[i] = C.from(n.a); return made[i]; }
+      if (n.$m) { const m = made[i] = new Map(); for (const [k, x] of n.$m) m.set(dec(k), dec(x)); return m; }
+      if (n.$s) { const m = made[i] = new Set(); for (const x of n.$s) m.add(dec(x)); return m; }
+      if (n.$a) { const a = made[i] = new Array(n.$a.length); n.$a.forEach((x, j) => { a[j] = dec(x); }); return a; }
+      const o = made[i] = {};
+      for (const k of Object.keys(n.$o)) {
+        const raw = n.$o[k];
+        if (raw && typeof raw === 'object' && raw.$f !== undefined) { if (raw.$f === 'setSkill') { o[k] = null; fixSkill.push(o); } else lost.add(o); continue; }
+        o[k] = dec(raw);
+      }
+      return o;
+    };
+    const s = dec(data.root);
+    s.rand = rand;
+    // A zone, channel or missile that carried its own code (a closure made at cast time) cannot come back: drop it and every pointer to it.
+    if (lost.size) for (const o of made) {
+      if (Array.isArray(o)) { let j = 0; for (let i = 0; i < o.length; i++) if (!lost.has(o[i])) o[j++] = o[i]; o.length = j; }
+      else if (o instanceof Map) { for (const [k, v] of o) if (lost.has(v)) o.delete(k); }
+      else if (o && typeof o === 'object' && !ArrayBuffer.isView(o) && !(o instanceof Set)) for (const k of Object.keys(o)) if (lost.has(o[k])) o[k] = null;
+    }
+    for (const b of fixSkill) b.setSkill = ({ setSkill(x) { b.skill = clamp(x, 0, 1); b.sk = skillProfile(b.skill); } }).setSkill;
+    // Module state a fresh page would otherwise only get from createMatch: the active walls and the path search buffers.
+    useMap(s.map); navBuffers(s.map);
+    return s;
+  }
   function tierOf(p) { let t = 0; TIERS.forEach((x, i) => { if (p >= x.at) t = i; }); return t; }
 
   return { botBan, NEMESIS_HIT, nemesisOf, NEMESIS, beatNemesis, DISTRICT_INFO, DISTRICT_KINDS, HUNT_NEED, districtAt, subwayLinks, teamDistricts, blackoutReady, MODES, normalizeTeams, MEDALS, MEDAL_CATS, MARK_BONUS, EXTRA_STATS, newCareer, medalValue, medalProgress, scoreMatch, matchStats, sensiblePool, MAX_LEVEL, PROFS, itemPaths, quickTarget, ITEM_SLOTS, CONSUMABLES, buybackCost, reinforceCost, fundCost, sellValue, BOSS_INFO, EVENT_INFO, BOON_INFO, SURRENDER_AT, ROSTER, ITEMS, ITEM_BY, itemPath, itemPrice, recommended, marksEarned, cdOf, defaultBuild, TOWER_RANGE, MAX_ATTACK_RANGE, refreshChamp, W, H, TICK, DT, KITS, buildMap, rayWall, visionSources, hasLOS, TIERS, TEAM_NAMES, FORGE_COST, createMatch, step, canSee, autoTarget, masteryGain, tierOf, towerOpen, xpNeed, ROLES, ROLE_INFO, autoRoles, CHARS, charOf,
     useMap, walkAhead, ACTS, EVADE, STAND_T, WANTED_BONUS, DUEL_GOLD, BOT_LEVELS, lockTarget,
-    RANKS, rankOf, rankDelta, botSkills, skillProfile, setBot, snapshot, decodeSnapshot, applySnapshot, applyFrame, applyChampState, slowFlat, slowDiff, applySlow, packEvent, unpackEvent, predict };
+    RANKS, rankOf, rankDelta, botSkills, skillProfile, setBot, snapshot, decodeSnapshot, applySnapshot, applyFrame, applyChampState, slowFlat, slowDiff, applySlow, packEvent, unpackEvent, predict, saveMatch, loadMatch };
 })();
 if (typeof module !== 'undefined') module.exports = Sim;
 </script>
@@ -7374,7 +7456,7 @@ const Art = (() => {
     T.f[i] = canvasFrom(T.S, d => shade(T.F, yaw, T.thick, T.rimT, T.emis, { film: T.spec.film, gloss: T.spec.gloss, sweep: 1, rimL: T.rimL, boost: 1.17 }, d));
     if (i === T.mid && spr) { spr.c = T.f[i]; T.ready = true; }
     T.left--; STAT.bakeMs += nowMs() - t; STAT.frames++;
-    if (T.left <= 0) T.F = null;
+    if (T.left <= 0) { T.F = null; faces.delete(T.id); } // the face buffers are only needed while frames are still to bake
   }
   // Sprite order within a tier of frames can be advanced by asking for a coin now: the local player's coin goes first.
   function defer(fn, k = 3) { JOBS.push({ run: fn, k }); JOBS.sort((a, b) => a.k - b.k); STAT.queued = JOBS.length; }
@@ -7399,6 +7481,14 @@ const Art = (() => {
     if (T.f[i]) return T.f[i];
     for (let k = 1; k <= T.N / 2; k++) { const a = T.f[(i + k) % T.N], b = T.f[(i - k + T.N) % T.N]; if (a) return a; if (b) return b; }
     return null;
+  }
+  // Between matches: the world turntables (champions at their in-play size, footsoldiers, beasts) are dropped and their frames
+  // handed back, so a long session does not keep every lineup and every quality level it has ever drawn.
+  function dropTurntables() {
+    let n = 0;
+    for (const [k, v] of cache) if (v && v.T && v.pitched) { for (const f of v.T.f) if (f && f.width) { f.width = 0; f.height = 0; } v.T.f.fill(null); v.T.F = null; faces.delete(v.T.id); cache.delete(k); n++; }
+    for (let i = JOBS.length - 1; i >= 0; i--) if (JOBS[i].T) JOBS.splice(i, 1);
+    STAT.queued = JOBS.length; return n;
   }
   function ensure(spr) { const T = spr.T; if (!T || T.ready) return; if (!T.F) T.F = faceOf(T.id, T.spec, T.R, WORLD_PITCH, T.ss); bakeFrame(T, T.mid, spr); }
   function stats() { return { ...STAT, bakeMs: Math.round(STAT.bakeMs) }; }
@@ -8290,7 +8380,7 @@ const Art = (() => {
   }
   // ---------- end 11.0 art ----------
 
-  return { medal, medalInto, medalReady, medalDraw, medalURL, medalMeta, MEDAL_EMB, CARDS, cardArt, playerCard, shareCard, origin, originCount, originText, ORIGINS, PAL, setCB, onCB, get cb() { return cbNow; }, setPalette, potg, flare, minionGear, bossCoin, bossTurn, BOSS_COL, seal, shock, bountyMark, wantedMark, TEAM, TEAM_DARK, METAL, TILT, TAU, INK, COSMETICS, champCoin, champTurn, minionCoin, minionTurn, monsterCoin, monsterTurn, civCoin, coin, glow, shadow, drawEmblemIcon, abilityCoin, iconURL, sheen, vignette, seeded, mix, mixH, cv, reed, puff, leaf, shardsOf, impact, speedLines, sparkSp, dustCel, chip, glint, pillar, hazard, koCoin, pump, defer, frameAt, ensure, sigil, spikeBall, stats, buildFace, shade, canvasFrom, reliefStack, FINISH };
+  return { dropTurntables, medal, medalInto, medalReady, medalDraw, medalURL, medalMeta, MEDAL_EMB, CARDS, cardArt, playerCard, shareCard, origin, originCount, originText, ORIGINS, PAL, setCB, onCB, get cb() { return cbNow; }, setPalette, potg, flare, minionGear, bossCoin, bossTurn, BOSS_COL, seal, shock, bountyMark, wantedMark, TEAM, TEAM_DARK, METAL, TILT, TAU, INK, COSMETICS, champCoin, champTurn, minionCoin, minionTurn, monsterCoin, monsterTurn, civCoin, coin, glow, shadow, drawEmblemIcon, abilityCoin, iconURL, sheen, vignette, seeded, mix, mixH, cv, reed, puff, leaf, shardsOf, impact, speedLines, sparkSp, dustCel, chip, glint, pillar, hazard, koCoin, pump, defer, frameAt, ensure, sigil, spikeBall, stats, buildFace, shade, canvasFrom, reliefStack, FINISH };
 })();
 
 // The map: painted once in a dark-deco style (deep shadow shapes, a few rich tones, thin metal inlay), plus sprites for raised scenery.
@@ -10553,21 +10643,35 @@ const unitById = id => { const s = G.s; return s.champs.find(c => c.id === id) |
 
 // cfg: { teams: [[{champ, role, tier, human, remote, name}, ...4], [...4]], diff, seed }
 // net: { role: 'host' | 'guest' } for an online match, otherwise leave it out.
-function startMatch(cfg, net) {
+// A finished match's ground is about 65 MB of canvas. Phones collect canvases late, so hand the memory back now
+// rather than let two maps sit in memory together while the next one paints (iOS reloads a page that grows too far).
+function releaseMatch(g) {
+  if (!g || g.released) return; g.released = true;
+  const gd = g.ground || { tiles: [] };
+  const free = c => { if (c && c.width) { c.width = 0; c.height = 0; } };
+  try { for (const t of gd.tiles || []) free(t.c); free(gd.mask); free(gd.refl); } catch (e) { }
+  g.ground = null;
+  try { Art.dropTurntables(); } catch (e) { }
+}
+function startMatch(cfg, net, restored) {
+  if (G) releaseMatch(G);
   const seed = cfg.seed === undefined ? Date.now() & 0xffffff : cfg.seed;
-  const s = Sim.createMatch({ seed, diff: cfg.diff, teams: cfg.teams, practice: cfg.practice, mode: cfg.mode, custom: cfg.custom, levels: cfg.levels });
+  if (!net && !restored) cfg.seed = seed; // a solo match keeps its seed, so a resumed one is the same match
+  const s = restored || Sim.createMatch({ seed, diff: cfg.diff, teams: cfg.teams, practice: cfg.practice, mode: cfg.mode, custom: cfg.custom, levels: cfg.levels });
   // Online seats carry a player id; the guest finds its own coin by it.
   cfg.teams.flat().forEach((p, i) => { if (p.pid !== undefined) s.champs[i].pid = p.pid; });
   const spectator = !!(net && net.role === 'guest' && Net.spectator);
-  const me = spectator ? s.champs[0] : net && net.role === 'guest' ? (s.champs.find(c => c.pid !== undefined && c.pid === Net.pid) || s.champs.find(c => c.remote)) : (s.champs.find(c => c.human && !c.remote) || s.champs.find(c => c.human));
+  const me = restored && cfg.meId ? s.champs.find(c => c.id === cfg.meId) || s.champs[0] : spectator ? s.champs[0] : net && net.role === 'guest' ? (s.champs.find(c => c.pid !== undefined && c.pid === Net.pid) || s.champs.find(c => c.remote)) : (s.champs.find(c => c.human && !c.remote) || s.champs.find(c => c.human));
   G = { s, me, cfg, cam: { x: me.x, y: me.y }, acc: 0, t: 0, frames: 0, ms: 0, ended: false, intro: 2.6, outro: null, timeScale: 1, slowT: 0, stop: 0, shake: 0, punch: 0, flash: 0, hpq: [], net: net ? { role: net.role } : null };
   G.spectator = spectator;
   initWorld(G); initHud(G); initSound(G);
   Replay.reset(G);
   if (net) Net.attach();
   save.hints++; persist(); paused = false;
+  Resume.began(restored);
 }
 function finishMatch() {
+  Resume.clear();
   if (G.spectator) { const m = G.me; G.ended = true; showEnd({ spectator: true, won: G.s.over.winner === m.team, gain: 0, before: pts(m.champ), after: pts(m.champ), me: m, s: G.s, rankBefore: save.rank, rankAfter: save.rank, rankDelta: 0, marks: 0 }); return; }
   const s = G.s, me = G.me, won = s.over.winner === me.team, gain = Sim.masteryGain(me.stats, won), before = pts(me.champ);
   save.m[me.champ] = before + gain;
@@ -10591,13 +10695,17 @@ function stepMatch(dt) {
   G.acc += dt * G.timeScale; let n = 0;
   while (G.acc >= DT && n++ < cap) {
     if (net) Net.hostBefore();
-    applyInput(); tickInput(G.me); Sim.step(G.s); G.acc -= DT;
+    applyInput(); tickInput(G.me);
+    try { Sim.step(G.s); Guard.simOk(); }
+    catch (e) { G.acc = 0; G.s.ev.length = 0; Guard.report('sim', e); Guard.simFailed(); break; }
+    G.acc -= DT;
     if (net) Net.hostAfter();
-    Replay.tick(G.s);
-    for (const e of G.s.ev) { if (!hidden) { fxEvent(e); soundEvent(e); } uiEvent(e); }
+    try { Replay.tick(G.s); } catch (e) { Guard.report('replay', e); }
+    // One bad effect or HUD line must not stop the rest of the tick's events, or leave them to play again next frame.
+    for (const e of G.s.ev) { if (!hidden) { try { fxEvent(e); } catch (x) { Guard.report('fx ' + e.e, x); } try { soundEvent(e); } catch (x) { Guard.report('sound ' + e.e, x); } } try { uiEvent(e); } catch (x) { Guard.report('ui ' + e.e, x); } }
     G.s.ev.length = 0;
     // A surrender ends the match with the core still standing: the camera goes to the losing team's core.
-    if (G.s.over) { const core = G.s.towers.find(t => t.sub === 'core' && !t.alive) || G.s.towers.find(t => t.sub === 'core' && t.team !== G.s.over.winner); G.outro = { t: 0, x: core.x, y: core.y }; outroStart(); break; }
+    if (G.s.over) { const core = G.s.towers.find(t => t.sub === 'core' && !t.alive) || G.s.towers.find(t => t.sub === 'core' && t.team !== G.s.over.winner) || G.me; G.outro = { t: 0, x: core.x, y: core.y }; try { outroStart(); } catch (e) { Guard.report('outro', e); } Resume.clear(); break; }
   }
   if (n >= cap) G.acc = 0;
   accInput();
@@ -10648,11 +10756,89 @@ function ownView(dt) {
 // coin is this frame (camera, rings, aim, lock line) then agrees with what is drawn.
 { const base = posNow; const OWNP = { x: 0, y: 0 }; posNow = function (u, a) { if (ownV.on && G && u === G.me) { OWNP.x = ownV.x; OWNP.y = ownV.y; return OWNP; } return base(u, a); }; }
 
+// ---------- guard: one bad frame is logged and skipped, never fatal ----------
+// Errors go to the console and to a short log kept in localStorage ('mintfall.errlog'), so a phone report can be read back.
+const Guard = (() => {
+  const LOG = 'mintfall.errlog', seen = new Map(); let simBad = 0, n = 0;
+  function report(where, e) {
+    const msg = String(e && e.message || e), key = where + '|' + msg;
+    const k = (seen.get(key) || 0) + 1; seen.set(key, k); n++;
+    if (k > 3) return; // the same failure every frame says nothing new
+    try { console.error('[guard] ' + where, e); } catch (x) { }
+    try {
+      const list = JSON.parse(localStorage.getItem(LOG) || '[]');
+      list.push({ at: new Date().toISOString(), where, msg: msg.slice(0, 200), stack: String(e && e.stack || '').slice(0, 600), t: G && G.s ? Math.round(G.s.t) : -1, mode: G && G.s ? G.s.mode : '' });
+      localStorage.setItem(LOG, JSON.stringify(list.slice(-20)));
+    } catch (x) { }
+  }
+  // The simulation failing tick after tick means its state is broken: go back to the last good save of this match.
+  function simFailed() { if (++simBad >= 20) { simBad = 0; if (!Resume.rewind()) report('sim', new Error('sim keeps failing, no save to rewind to')); } }
+  function simOk() { simBad = 0; }
+  addEventListener('error', e => report('window', e.error || e.message));
+  addEventListener('unhandledrejection', e => report('promise', e.reason));
+  return { report, simFailed, simOk, get count() { return n; } };
+})();
+
+// ---------- resume: a solo match survives the page being reloaded ----------
+// iOS can throw a backgrounded (or memory-pressed) page away and reload it, which used to drop the player on the title
+// screen. A solo match is saved every few seconds and whenever the page is hidden; the menus offer to carry on.
+const Resume = (() => {
+  const KEY = 'mintfall.resume', EVERY = 6, MAX_AGE = 30 * 60 * 1000;
+  let lastAt = -99, good = null;
+  const eligible = () => G && !G.net && !G.replay && !G.spectator && !G.ended && !G.outro && G.s && !G.s.over && G.intro <= 0 && G.me;
+  function write() {
+    if (!eligible()) return false;
+    try {
+      const cfg = Object.assign({}, G.cfg, { meId: G.me.id }), data = Sim.saveMatch(G.s), json = JSON.stringify({ at: Date.now(), cfg, data });
+      good = json; lastAt = G.s.t;
+      localStorage.setItem(KEY, json); return true;
+    } catch (e) { Guard.report('resume save', e); try { localStorage.removeItem(KEY); } catch (x) { } return false; }
+  }
+  function tick() { if (eligible() && G.s.t - lastAt >= EVERY) write(); }
+  function clear() { good = null; lastAt = -99; try { localStorage.removeItem(KEY); } catch (e) { } }
+  function began(restored) { lastAt = restored ? G.s.t : -99; good = null; }
+  function pending() {
+    try {
+      const raw = localStorage.getItem(KEY); if (!raw) return null;
+      const r = JSON.parse(raw);
+      if (!r || !r.data || !r.cfg || Date.now() - r.at > MAX_AGE) { clear(); return null; }
+      return r;
+    } catch (e) { clear(); return null; }
+  }
+  function load(r) {
+    const s = Sim.loadMatch(r.data);
+    startMatch(r.cfg, null, s);
+    G.intro = 0; // straight back into play, from the pause menu
+    return true;
+  }
+  function rewind() {
+    if (!good || !G || G.net) return false;
+    try { const r = JSON.parse(good), s = Sim.loadMatch(r.data), keep = G; startMatch(r.cfg, null, s); G.intro = 0; G.t = keep.t; return true; } catch (e) { Guard.report('rewind', e); return false; }
+  }
+  // Hidden is the last moment a page is sure to run: save then.
+  document.addEventListener('visibilitychange', () => { if (document.hidden) write(); });
+  addEventListener('pagehide', () => write());
+  return { tick, clear, began, pending, load, rewind, write };
+})();
+
+// Coming back from the background, the first frames hitch while the phone restores the page. They say nothing about how
+// fast the game runs, so they must not step the graphics down (each step re-bakes every sprite at a new size).
+document.addEventListener('visibilitychange', () => { if (!document.hidden) { last = performance.now(); if (G) { G.frames = 0; G.ms = 0; G.slow = 0; G.calmUntil = G.t + 4; } } });
+addEventListener('pageshow', () => { last = performance.now(); if (G) { G.frames = 0; G.ms = 0; G.slow = 0; G.calmUntil = G.t + 4; } });
+
 let last = performance.now();
 function frame(now) {
   requestAnimationFrame(frame);
+  try { frameBody(now); }
+  catch (e) {
+    Guard.report('frame', e);
+    // Whatever was half drawn, the next frame starts from a clean canvas state.
+    try { for (let i = 0; i < 64; i++) ctx.restore(); ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.globalAlpha = 1; ctx.globalCompositeOperation = 'source-over'; ctx.filter && (ctx.filter = 'none'); } catch (x) { }
+  }
+}
+function frameBody(now) {
   const raw = (now - last) / 1000, dt = Math.min(.05, raw); last = now;
-  animMenus(dt);
+  try { animMenus(dt); } catch (e) { Guard.report('menus', e); }
   if (!G) return;
   G.t += dt;
   if (!G.ended && !G.outro) sampleInput();
@@ -10670,11 +10856,13 @@ function frame(now) {
       else stepMatch(G.net ? Math.min(.25, raw) : dt);
     }
   }
-  soundFrame(held ? 0 : dt);
-  ownView(held ? 0 : dt);
+  if (!G) return;
+  Resume.tick();
+  try { soundFrame(held ? 0 : dt); } catch (e) { Guard.report('soundFrame', e); }
+  try { ownView(held ? 0 : dt); } catch (e) { Guard.report('ownView', e); ownV.on = false; }
   if (!window.__skipRender) render(held ? 0 : dt); // the skip flag is for many-browser network tests on one machine
   // Auto graphics: each step down visibly changes the picture, so only sustained slowness in live play counts, not the map paint during the intro.
-  if (save.gfx === 'auto' && !held && G.intro <= 0 && !G.ended) { const f = ++G.frames; G.ms += dt * 1000; if (f % 120 === 0) { const avg = G.ms / 120; G.ms = 0; G.slow = avg > 26 ? (G.slow || 0) + 1 : 0; if (G.slow >= 2 && quality > 0) { G.slow = 0; quality--; resize(); } } }
+  if (save.gfx === 'auto' && !held && G.intro <= 0 && !G.ended && !(G.t < (G.calmUntil || 0))) { const f = ++G.frames; G.ms += dt * 1000; if (f % 120 === 0) { const avg = G.ms / 120; G.ms = 0; G.slow = avg > 26 ? (G.slow || 0) + 1 : 0; if (G.slow >= 2 && quality > 0) { G.slow = 0; quality--; resize(); } } }
 }
 
 // The world renderer: ground, water, weather, fog of war, scenery, units, ambient life, intro and outro.
@@ -16435,19 +16623,23 @@ const { hud, initHud, hudDraw, uiEvent } = (() => {
     return `${near ? 'Near' : 'Far'} ${d.y < Sim.H / 2 ? 'N' : 'S'}`;
   }
   // Subway rides and the Blackout are offered only where they can be used, and leave the thumbs and centre clear.
+  // Used: the pills go at once (the empty key '' used to be what a pressed pill reset to, so it could never clear).
+  function travelUsed(what) { H.travelSent = H.t; H.travelWhat = what; H.travelKey = null; const box = $('subw'); box.textContent = ''; box.classList.add('hide'); }
   function travelSync(me, s) {
     const box = $('subw');
-    const links = !G.spectator && me.alive && !me.chan && Sim.subwayLinks ? Sim.subwayLinks(s, me) : [], black = !G.spectator && me.alive && Sim.blackoutReady && Sim.blackoutReady(s, me.team);
-    const cd = Math.ceil(me.subCd || 0), key = links.map(d => d.id).join() + (cd > 0 ? `c${cd}` : '') + (black ? 'b' : '');
+    // A pill that was just pressed stays gone while the command reaches the simulation (a guest waits on the host's reply).
+    const sent = H.travelSent || 0, quiet = H.t - sent < 2.5;
+    const links = !G.spectator && me.alive && !me.chan && !(quiet && H.travelWhat === 'subway') && Sim.subwayLinks ? Sim.subwayLinks(s, me) : [], black = !G.spectator && me.alive && !(quiet && H.travelWhat === 'blackout') && Sim.blackoutReady && Sim.blackoutReady(s, me.team);
+    const cd = Math.ceil(me.subCd || 0), key = 'k' + links.map(d => d.id).join() + (cd > 0 ? `c${cd}` : '') + (black ? 'b' : '');
     if (key === H.travelKey) return; H.travelKey = key;
     box.textContent = '';
     links.forEach(d => {
       const b = document.createElement('button'); b.className = 'evpill auto' + (cd > 0 ? ' off' : ''); b.innerHTML = `<small>To</small>${stationName(d, s, me)}${cd > 0 ? `<em>${cd}s</em>` : ''}`;
       b.setAttribute('aria-label', `Ride the subway to ${stationName(d, s, me)}`);
-      b.onpointerdown = e => { e.stopPropagation(); if (!G || !G.me.alive) return; G.me.q.push({ t: 'subway', to: d.id }); Sound.play('tap'); H.travelKey = ''; };
+      b.onpointerdown = e => { e.stopPropagation(); if (!G || !G.me.alive) return; G.me.q.push({ t: 'subway', to: d.id }); Sound.play('tap'); travelUsed('subway'); };
       box.append(b);
     });
-    if (black) { const b = document.createElement('button'); b.className = 'evpill auto'; b.innerHTML = 'Blackout'; b.setAttribute('aria-label', 'Trigger a Blackout'); b.onpointerdown = e => { e.stopPropagation(); if (!G) return; G.me.q.push({ t: 'blackout' }); Sound.play('tap'); H.travelKey = ''; }; box.append(b); }
+    if (black) { const b = document.createElement('button'); b.className = 'evpill auto'; b.innerHTML = 'Blackout'; b.setAttribute('aria-label', 'Trigger a Blackout'); b.onpointerdown = e => { e.stopPropagation(); if (!G) return; G.me.q.push({ t: 'blackout' }); Sound.play('tap'); travelUsed('blackout'); }; box.append(b); }
     box.classList.toggle('hide', !links.length && !black);
   }
   // Breaking News: big city moments only, one line at the bottom edge, gone in a few seconds.
@@ -17097,10 +17289,12 @@ const { hud, initHud, hudDraw, uiEvent } = (() => {
   function hudDraw(dt) {
     if (!H || !G || G.replay) return;
     const me = G.me, s = G.s, want = G.intro > 0 || G.outro || G.ended ? 0 : 1;
+    // The pause menu sends the death recap off screen; it slides back on resume if you are still down.
+    { const pm = $('pause').classList, pz = !pm.contains('hide') && !pm.contains('leaving'); if (pz !== H.recapStow) { H.recapStow = pz; $('recap').classList.toggle('stow', pz); } }
     H.t += dt;
     H.enter = clamp01(H.enter + (want ? dt * 3.2 : -dt * 4));
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0); ctx.globalAlpha = 1; ctx.globalCompositeOperation = 'source-over'; ctx.textBaseline = 'middle';
-    if (H.enter <= 0) return;
+    if (H.enter <= 0) { if (H.travelKey !== 'off') { H.travelKey = 'off'; $('subw').textContent = ''; $('subw').classList.add('hide'); } return; }
     if (want && !H.announced) { H.announced = true; banner(me.team ? 'Terrorize the city' : 'Save the people', { pri: 3, team: me.team, dur: 2 }); }
     const e = calm ? 1 : H.enter * H.enter * (3 - 2 * H.enter), away = 1 - e;
     if (me.hp / me.maxHp < .25 && me.alive) {
@@ -17937,6 +18131,13 @@ const { initMenus, animMenus, showEnd } = (() => {
         if (!seatShown(team, i)) return;
         const me_ = isMe(s), fr = isFriend(s), d = document.createElement('div'); d.className = 'seat' + (me_ ? ' me' : fr ? ' fr' : '') + (s.locked ? ' lk' : '');
         const b = document.createElement('button'); b.className = 'seatc';
+        // The other team's picks stay sealed until the versus splash (Practice sets up its own dummies, so it shows them).
+        if (team !== L.team && !L.practice) {
+          d.classList.add('veil'); b.setAttribute('aria-label', 'Enemy seat, revealed when the match starts'); b.innerHTML = '<span class="rq">?</span>';
+          b.onclick = () => Sound.play('tick');
+          const chip = document.createElement('span'); chip.className = 'chip'; chip.textContent = '';
+          d.append(b, chip); el.append(d); return;
+        }
         if (s.champ) {
           b.setAttribute('aria-label', `${me_ ? 'Your seat' : fr ? s.name : s.name}, ${charName(team, s.champ)}${s.role ? `, ${roleName(s.role)}` : ''}`);
           b.append(coinCanvas(Art.champCoin(s.champ, team, seatTier(s), 46, s.finish), 96));
@@ -18795,8 +18996,19 @@ const { initMenus, animMenus, showEnd } = (() => {
     V.on = false; F.on = false; F.done = null; L.sheet = null;
   }
   function toMenu() {
-    const go = () => { netDrop(); paused = false; G = null; Ctl.reset(); clearAll(); scr('menu'); Sound.setMode('menu'); };
+    const go = () => { if (G) { Resume.clear(); releaseMatch(G); } netDrop(); paused = false; G = null; Ctl.reset(); clearAll(); scr('menu'); Sound.setMode('menu'); };
     if (!wipe(go)) go();
+  }
+  // A solo match the phone reloaded out from under the player: offer to carry on from its last save.
+  function offerResume() {
+    const r = Resume.pending(); if (!r || G || N.mode) return false;
+    const mins = Math.floor((r.data && r.data.tick || 0) * Sim.DT / 60), mode = modeName(r.cfg.mode || 'classic');
+    ask('Resume your match?', `Your ${mode} match was interrupted at ${mins} min. Pick it up where it was saved.`, 'Resume', 'tap', () => {
+      try { clearAll(); hide('title'); scr(null); Resume.load(r); Sound.setMode('match'); paused = false; Hud.openPause(); }
+      catch (e) { Guard.report('resume load', e); Resume.clear(); G = null; scr('menu'); Sound.setMode('menu'); }
+    });
+    $('cNo').onclick = () => { Sound.play('tap'); hide('confirm'); Resume.clear(); };
+    return true;
   }
 
   // ---------- online: connection ----------
@@ -19040,7 +19252,7 @@ const { initMenus, animMenus, showEnd } = (() => {
     try { Net.host(); } catch (e) { notice('Connection trouble', "We couldn't open a room just now. Try again in a moment."); }
   }
   function backToRoom() {
-    const go = () => { paused = false; G = null; Ctl.reset(); clearAll(); Sound.setMode('menu'); openRoom(); };
+    const go = () => { if (G) { Resume.clear(); releaseMatch(G); } paused = false; G = null; Ctl.reset(); clearAll(); Sound.setMode('menu'); openRoom(); };
     if (!wipe(go)) go();
   }
   function hostFlip() {
@@ -19802,7 +20014,7 @@ const { initMenus, animMenus, showEnd } = (() => {
     addEventListener('pointerdown', () => { Sound.init(); Sound.setMode(G ? 'match' : 'menu'); }, { once: true });
     $('title').onclick = () => {
       Sound.init(); Sound.play('title'); Sound.setMode('menu');
-      const go = () => { hide('title'); scr('menu'); };
+      const go = () => { hide('title'); scr('menu'); offerResume(); };
       if (!wipe(go)) go();
     };
     const openCode = hashCode();
@@ -20325,7 +20537,7 @@ document.addEventListener('pointerdown', sndPress, { capture: true, passive: tru
 function soundFrame(dt) { try { soundTick(dt); } catch (err) { } }
 
 layout(); initMenus(); requestAnimationFrame(frame);
-window.__mintfall = { get G() { return G; } };
+window.__mintfall = { get G() { return G; }, start: (cfg, net) => startMatch(cfg, net) };
 
 })();</script>
 </body>

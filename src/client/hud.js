@@ -599,19 +599,23 @@ const { hud, initHud, hudDraw, uiEvent } = (() => {
     return `${near ? 'Near' : 'Far'} ${d.y < Sim.H / 2 ? 'N' : 'S'}`;
   }
   // Subway rides and the Blackout are offered only where they can be used, and leave the thumbs and centre clear.
+  // Used: the pills go at once (the empty key '' used to be what a pressed pill reset to, so it could never clear).
+  function travelUsed(what) { H.travelSent = H.t; H.travelWhat = what; H.travelKey = null; const box = $('subw'); box.textContent = ''; box.classList.add('hide'); }
   function travelSync(me, s) {
     const box = $('subw');
-    const links = !G.spectator && me.alive && !me.chan && Sim.subwayLinks ? Sim.subwayLinks(s, me) : [], black = !G.spectator && me.alive && Sim.blackoutReady && Sim.blackoutReady(s, me.team);
-    const cd = Math.ceil(me.subCd || 0), key = links.map(d => d.id).join() + (cd > 0 ? `c${cd}` : '') + (black ? 'b' : '');
+    // A pill that was just pressed stays gone while the command reaches the simulation (a guest waits on the host's reply).
+    const sent = H.travelSent || 0, quiet = H.t - sent < 2.5;
+    const links = !G.spectator && me.alive && !me.chan && !(quiet && H.travelWhat === 'subway') && Sim.subwayLinks ? Sim.subwayLinks(s, me) : [], black = !G.spectator && me.alive && !(quiet && H.travelWhat === 'blackout') && Sim.blackoutReady && Sim.blackoutReady(s, me.team);
+    const cd = Math.ceil(me.subCd || 0), key = 'k' + links.map(d => d.id).join() + (cd > 0 ? `c${cd}` : '') + (black ? 'b' : '');
     if (key === H.travelKey) return; H.travelKey = key;
     box.textContent = '';
     links.forEach(d => {
       const b = document.createElement('button'); b.className = 'evpill auto' + (cd > 0 ? ' off' : ''); b.innerHTML = `<small>To</small>${stationName(d, s, me)}${cd > 0 ? `<em>${cd}s</em>` : ''}`;
       b.setAttribute('aria-label', `Ride the subway to ${stationName(d, s, me)}`);
-      b.onpointerdown = e => { e.stopPropagation(); if (!G || !G.me.alive) return; G.me.q.push({ t: 'subway', to: d.id }); Sound.play('tap'); H.travelKey = ''; };
+      b.onpointerdown = e => { e.stopPropagation(); if (!G || !G.me.alive) return; G.me.q.push({ t: 'subway', to: d.id }); Sound.play('tap'); travelUsed('subway'); };
       box.append(b);
     });
-    if (black) { const b = document.createElement('button'); b.className = 'evpill auto'; b.innerHTML = 'Blackout'; b.setAttribute('aria-label', 'Trigger a Blackout'); b.onpointerdown = e => { e.stopPropagation(); if (!G) return; G.me.q.push({ t: 'blackout' }); Sound.play('tap'); H.travelKey = ''; }; box.append(b); }
+    if (black) { const b = document.createElement('button'); b.className = 'evpill auto'; b.innerHTML = 'Blackout'; b.setAttribute('aria-label', 'Trigger a Blackout'); b.onpointerdown = e => { e.stopPropagation(); if (!G) return; G.me.q.push({ t: 'blackout' }); Sound.play('tap'); travelUsed('blackout'); }; box.append(b); }
     box.classList.toggle('hide', !links.length && !black);
   }
   // Breaking News: big city moments only, one line at the bottom edge, gone in a few seconds.
@@ -1261,10 +1265,12 @@ const { hud, initHud, hudDraw, uiEvent } = (() => {
   function hudDraw(dt) {
     if (!H || !G || G.replay) return;
     const me = G.me, s = G.s, want = G.intro > 0 || G.outro || G.ended ? 0 : 1;
+    // The pause menu sends the death recap off screen; it slides back on resume if you are still down.
+    { const pm = $('pause').classList, pz = !pm.contains('hide') && !pm.contains('leaving'); if (pz !== H.recapStow) { H.recapStow = pz; $('recap').classList.toggle('stow', pz); } }
     H.t += dt;
     H.enter = clamp01(H.enter + (want ? dt * 3.2 : -dt * 4));
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0); ctx.globalAlpha = 1; ctx.globalCompositeOperation = 'source-over'; ctx.textBaseline = 'middle';
-    if (H.enter <= 0) return;
+    if (H.enter <= 0) { if (H.travelKey !== 'off') { H.travelKey = 'off'; $('subw').textContent = ''; $('subw').classList.add('hide'); } return; }
     if (want && !H.announced) { H.announced = true; banner(me.team ? 'Terrorize the city' : 'Save the people', { pri: 3, team: me.team, dur: 2 }); }
     const e = calm ? 1 : H.enter * H.enter * (3 - 2 * H.enter), away = 1 - e;
     if (me.hp / me.maxHp < .25 && me.alive) {

@@ -608,7 +608,7 @@ const Art = (() => {
     T.f[i] = canvasFrom(T.S, d => shade(T.F, yaw, T.thick, T.rimT, T.emis, { film: T.spec.film, gloss: T.spec.gloss, sweep: 1, rimL: T.rimL, boost: 1.17 }, d));
     if (i === T.mid && spr) { spr.c = T.f[i]; T.ready = true; }
     T.left--; STAT.bakeMs += nowMs() - t; STAT.frames++;
-    if (T.left <= 0) T.F = null;
+    if (T.left <= 0) { T.F = null; faces.delete(T.id); } // the face buffers are only needed while frames are still to bake
   }
   // Sprite order within a tier of frames can be advanced by asking for a coin now: the local player's coin goes first.
   function defer(fn, k = 3) { JOBS.push({ run: fn, k }); JOBS.sort((a, b) => a.k - b.k); STAT.queued = JOBS.length; }
@@ -633,6 +633,14 @@ const Art = (() => {
     if (T.f[i]) return T.f[i];
     for (let k = 1; k <= T.N / 2; k++) { const a = T.f[(i + k) % T.N], b = T.f[(i - k + T.N) % T.N]; if (a) return a; if (b) return b; }
     return null;
+  }
+  // Between matches: the world turntables (champions at their in-play size, footsoldiers, beasts) are dropped and their frames
+  // handed back, so a long session does not keep every lineup and every quality level it has ever drawn.
+  function dropTurntables() {
+    let n = 0;
+    for (const [k, v] of cache) if (v && v.T && v.pitched) { for (const f of v.T.f) if (f && f.width) { f.width = 0; f.height = 0; } v.T.f.fill(null); v.T.F = null; faces.delete(v.T.id); cache.delete(k); n++; }
+    for (let i = JOBS.length - 1; i >= 0; i--) if (JOBS[i].T) JOBS.splice(i, 1);
+    STAT.queued = JOBS.length; return n;
   }
   function ensure(spr) { const T = spr.T; if (!T || T.ready) return; if (!T.F) T.F = faceOf(T.id, T.spec, T.R, WORLD_PITCH, T.ss); bakeFrame(T, T.mid, spr); }
   function stats() { return { ...STAT, bakeMs: Math.round(STAT.bakeMs) }; }
@@ -1524,5 +1532,5 @@ const Art = (() => {
   }
   // ---------- end 11.0 art ----------
 
-  return { medal, medalInto, medalReady, medalDraw, medalURL, medalMeta, MEDAL_EMB, CARDS, cardArt, playerCard, shareCard, origin, originCount, originText, ORIGINS, PAL, setCB, onCB, get cb() { return cbNow; }, setPalette, potg, flare, minionGear, bossCoin, bossTurn, BOSS_COL, seal, shock, bountyMark, wantedMark, TEAM, TEAM_DARK, METAL, TILT, TAU, INK, COSMETICS, champCoin, champTurn, minionCoin, minionTurn, monsterCoin, monsterTurn, civCoin, coin, glow, shadow, drawEmblemIcon, abilityCoin, iconURL, sheen, vignette, seeded, mix, mixH, cv, reed, puff, leaf, shardsOf, impact, speedLines, sparkSp, dustCel, chip, glint, pillar, hazard, koCoin, pump, defer, frameAt, ensure, sigil, spikeBall, stats, buildFace, shade, canvasFrom, reliefStack, FINISH };
+  return { dropTurntables, medal, medalInto, medalReady, medalDraw, medalURL, medalMeta, MEDAL_EMB, CARDS, cardArt, playerCard, shareCard, origin, originCount, originText, ORIGINS, PAL, setCB, onCB, get cb() { return cbNow; }, setPalette, potg, flare, minionGear, bossCoin, bossTurn, BOSS_COL, seal, shock, bountyMark, wantedMark, TEAM, TEAM_DARK, METAL, TILT, TAU, INK, COSMETICS, champCoin, champTurn, minionCoin, minionTurn, monsterCoin, monsterTurn, civCoin, coin, glow, shadow, drawEmblemIcon, abilityCoin, iconURL, sheen, vignette, seeded, mix, mixH, cv, reed, puff, leaf, shardsOf, impact, speedLines, sparkSp, dustCel, chip, glint, pillar, hazard, koCoin, pump, defer, frameAt, ensure, sigil, spikeBall, stats, buildFace, shade, canvasFrom, reliefStack, FINISH };
 })();

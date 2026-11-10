@@ -169,6 +169,13 @@ const { initMenus, animMenus, showEnd } = (() => {
         if (!seatShown(team, i)) return;
         const me_ = isMe(s), fr = isFriend(s), d = document.createElement('div'); d.className = 'seat' + (me_ ? ' me' : fr ? ' fr' : '') + (s.locked ? ' lk' : '');
         const b = document.createElement('button'); b.className = 'seatc';
+        // The other team's picks stay sealed until the versus splash (Practice sets up its own dummies, so it shows them).
+        if (team !== L.team && !L.practice) {
+          d.classList.add('veil'); b.setAttribute('aria-label', 'Enemy seat, revealed when the match starts'); b.innerHTML = '<span class="rq">?</span>';
+          b.onclick = () => Sound.play('tick');
+          const chip = document.createElement('span'); chip.className = 'chip'; chip.textContent = '';
+          d.append(b, chip); el.append(d); return;
+        }
         if (s.champ) {
           b.setAttribute('aria-label', `${me_ ? 'Your seat' : fr ? s.name : s.name}, ${charName(team, s.champ)}${s.role ? `, ${roleName(s.role)}` : ''}`);
           b.append(coinCanvas(Art.champCoin(s.champ, team, seatTier(s), 46, s.finish), 96));
@@ -1027,8 +1034,19 @@ const { initMenus, animMenus, showEnd } = (() => {
     V.on = false; F.on = false; F.done = null; L.sheet = null;
   }
   function toMenu() {
-    const go = () => { netDrop(); paused = false; G = null; Ctl.reset(); clearAll(); scr('menu'); Sound.setMode('menu'); };
+    const go = () => { if (G) { Resume.clear(); releaseMatch(G); } netDrop(); paused = false; G = null; Ctl.reset(); clearAll(); scr('menu'); Sound.setMode('menu'); };
     if (!wipe(go)) go();
+  }
+  // A solo match the phone reloaded out from under the player: offer to carry on from its last save.
+  function offerResume() {
+    const r = Resume.pending(); if (!r || G || N.mode) return false;
+    const mins = Math.floor((r.data && r.data.tick || 0) * Sim.DT / 60), mode = modeName(r.cfg.mode || 'classic');
+    ask('Resume your match?', `Your ${mode} match was interrupted at ${mins} min. Pick it up where it was saved.`, 'Resume', 'tap', () => {
+      try { clearAll(); hide('title'); scr(null); Resume.load(r); Sound.setMode('match'); paused = false; Hud.openPause(); }
+      catch (e) { Guard.report('resume load', e); Resume.clear(); G = null; scr('menu'); Sound.setMode('menu'); }
+    });
+    $('cNo').onclick = () => { Sound.play('tap'); hide('confirm'); Resume.clear(); };
+    return true;
   }
 
   // ---------- online: connection ----------
@@ -1272,7 +1290,7 @@ const { initMenus, animMenus, showEnd } = (() => {
     try { Net.host(); } catch (e) { notice('Connection trouble', "We couldn't open a room just now. Try again in a moment."); }
   }
   function backToRoom() {
-    const go = () => { paused = false; G = null; Ctl.reset(); clearAll(); Sound.setMode('menu'); openRoom(); };
+    const go = () => { if (G) { Resume.clear(); releaseMatch(G); } paused = false; G = null; Ctl.reset(); clearAll(); Sound.setMode('menu'); openRoom(); };
     if (!wipe(go)) go();
   }
   function hostFlip() {
@@ -2034,7 +2052,7 @@ const { initMenus, animMenus, showEnd } = (() => {
     addEventListener('pointerdown', () => { Sound.init(); Sound.setMode(G ? 'match' : 'menu'); }, { once: true });
     $('title').onclick = () => {
       Sound.init(); Sound.play('title'); Sound.setMode('menu');
-      const go = () => { hide('title'); scr('menu'); };
+      const go = () => { hide('title'); scr('menu'); offerResume(); };
       if (!wipe(go)) go();
     };
     const openCode = hashCode();

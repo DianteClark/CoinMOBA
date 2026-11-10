@@ -1776,10 +1776,89 @@ const Sim = (() => {
     const won = !!s.over && s.over.winner === c.team, t = c.stats, n = v => Math.round(v || 0);
     return { nemesis: nemesisOf(c.champ), nemKills: n(t.nemKills), nemDeaths: n(t.nemDeaths), beatNemesis: beatNemesis(won, t), won, mode: s.mode || 'classic', practice: !!s.practice, full: s.t >= 360, t: Math.round(s.t), champ: c.champ, role: c.role, mastery: masteryGain(t, won), kills: n(t.kills), deaths: n(t.deaths), assists: n(t.assists), towers: n(t.towers), objectives: n(t.objectives), rescues: n(t.rescues), skillHits: n(t.skillHits), multi3: n(t.multi3), multi4: n(t.multi4), multi5: n(t.multi5), bestStreak: n(t.bestStreak), clutch: n(t.clutch), saves: n(t.saves), steals: n(t.steals), colossi: n(t.colossi), trailed: n(t.trailed) };
   }
+  // ---------- resume: a whole match as JSON, so a page the phone reloaded can carry on ----------
+  // The object graph is stored once per object (shared references and cycles survive). The kit tables come from code,
+  // so anything pointing into them is written as a path (that covers the ability functions).
+  // The random stream restarts from the seed and tick (a resumed match need not replay the same future).
+  const RESUME_V = 1;
+  function staticRefs() {
+    const ref = new Map(), byPath = new Map(), seen = new Set();
+    const walk = (o, path, depth) => {
+      if (o === null || (typeof o !== 'object' && typeof o !== 'function') || seen.has(o) || depth > 9) return;
+      seen.add(o); ref.set(o, path); byPath.set(path, o);
+      if (typeof o === 'function' || ArrayBuffer.isView(o)) return;
+      if (o instanceof Map || o instanceof Set) return;
+      for (const k of Object.keys(o)) walk(o[k], path + '.' + k, depth + 1);
+    };
+    walk(KITS, 'kits', 0);
+    return { ref, byPath };
+  }
+  function saveMatch(s) {
+    const st = staticRefs(), ids = new Map(), out = [];
+    const enc = v => {
+      if (v === undefined) return { $u: 1 };
+      if (typeof v === 'number') return isFinite(v) ? v : { $n: String(v) };
+      if (v === null || typeof v !== 'object' && typeof v !== 'function') return v;
+      const sp = st.ref.get(v); if (sp) return { $x: sp };
+      if (typeof v === 'function') return v === s.rand ? { $x: 'rand' } : { $f: v.name === 'setSkill' ? 'setSkill' : '' };
+      let i = ids.get(v); if (i !== undefined) return { $r: i };
+      i = out.length; ids.set(v, i); out.push(null);
+      let node;
+      if (ArrayBuffer.isView(v)) node = { $t: v.constructor.name, a: Array.from(v) };
+      else if (v instanceof Map) node = { $m: [...v].map(([k, x]) => [enc(k), enc(x)]) };
+      else if (v instanceof Set) node = { $s: [...v].map(enc) };
+      else if (Array.isArray(v)) node = { $a: v.map(enc) };
+      else { const o = {}; for (const k of Object.keys(v)) o[k] = enc(v[k]); node = { $o: o }; }
+      out[i] = node; return { $r: i };
+    };
+    const root = enc(s);
+    return { v: RESUME_V, mode: s.mode, seed: s.seed, tick: s.tick, root, nodes: out };
+  }
+  function loadMatch(data) {
+    if (!data || data.v !== RESUME_V || !Array.isArray(data.nodes)) throw new Error('bad resume data');
+    const st = staticRefs(), made = new Array(data.nodes.length), fixSkill = [], lost = new Set();
+    const rand = rng(((data.seed || 7) * 31 + (data.tick | 0)) | 0);
+    const dec = v => {
+      if (v === null || typeof v !== 'object') return v;
+      if (v.$u) return undefined;
+      if (v.$n !== undefined) return Number(v.$n);
+      if (v.$x !== undefined) { if (v.$x === 'rand') return rand; if (!st.byPath.has(v.$x)) throw new Error('resume: missing ' + v.$x); return st.byPath.get(v.$x); }
+      if (v.$f !== undefined) return v.$f;
+      if (v.$r !== undefined) return build(v.$r);
+      return v;
+    };
+    const build = i => {
+      if (made[i] !== undefined) return made[i];
+      const n = data.nodes[i];
+      if (n.$t) { const C = { Uint8Array, Int8Array, Uint16Array, Int16Array, Uint32Array, Int32Array, Float32Array, Float64Array, Uint8ClampedArray }[n.$t] || Array; made[i] = C.from(n.a); return made[i]; }
+      if (n.$m) { const m = made[i] = new Map(); for (const [k, x] of n.$m) m.set(dec(k), dec(x)); return m; }
+      if (n.$s) { const m = made[i] = new Set(); for (const x of n.$s) m.add(dec(x)); return m; }
+      if (n.$a) { const a = made[i] = new Array(n.$a.length); n.$a.forEach((x, j) => { a[j] = dec(x); }); return a; }
+      const o = made[i] = {};
+      for (const k of Object.keys(n.$o)) {
+        const raw = n.$o[k];
+        if (raw && typeof raw === 'object' && raw.$f !== undefined) { if (raw.$f === 'setSkill') { o[k] = null; fixSkill.push(o); } else lost.add(o); continue; }
+        o[k] = dec(raw);
+      }
+      return o;
+    };
+    const s = dec(data.root);
+    s.rand = rand;
+    // A zone, channel or missile that carried its own code (a closure made at cast time) cannot come back: drop it and every pointer to it.
+    if (lost.size) for (const o of made) {
+      if (Array.isArray(o)) { let j = 0; for (let i = 0; i < o.length; i++) if (!lost.has(o[i])) o[j++] = o[i]; o.length = j; }
+      else if (o instanceof Map) { for (const [k, v] of o) if (lost.has(v)) o.delete(k); }
+      else if (o && typeof o === 'object' && !ArrayBuffer.isView(o) && !(o instanceof Set)) for (const k of Object.keys(o)) if (lost.has(o[k])) o[k] = null;
+    }
+    for (const b of fixSkill) b.setSkill = ({ setSkill(x) { b.skill = clamp(x, 0, 1); b.sk = skillProfile(b.skill); } }).setSkill;
+    // Module state a fresh page would otherwise only get from createMatch: the active walls and the path search buffers.
+    useMap(s.map); navBuffers(s.map);
+    return s;
+  }
   function tierOf(p) { let t = 0; TIERS.forEach((x, i) => { if (p >= x.at) t = i; }); return t; }
 
   return { botBan, NEMESIS_HIT, nemesisOf, NEMESIS, beatNemesis, DISTRICT_INFO, DISTRICT_KINDS, HUNT_NEED, districtAt, subwayLinks, teamDistricts, blackoutReady, MODES, normalizeTeams, MEDALS, MEDAL_CATS, MARK_BONUS, EXTRA_STATS, newCareer, medalValue, medalProgress, scoreMatch, matchStats, sensiblePool, MAX_LEVEL, PROFS, itemPaths, quickTarget, ITEM_SLOTS, CONSUMABLES, buybackCost, reinforceCost, fundCost, sellValue, BOSS_INFO, EVENT_INFO, BOON_INFO, SURRENDER_AT, ROSTER, ITEMS, ITEM_BY, itemPath, itemPrice, recommended, marksEarned, cdOf, defaultBuild, TOWER_RANGE, MAX_ATTACK_RANGE, refreshChamp, W, H, TICK, DT, KITS, buildMap, rayWall, visionSources, hasLOS, TIERS, TEAM_NAMES, FORGE_COST, createMatch, step, canSee, autoTarget, masteryGain, tierOf, towerOpen, xpNeed, ROLES, ROLE_INFO, autoRoles, CHARS, charOf,
     useMap, walkAhead, ACTS, EVADE, STAND_T, WANTED_BONUS, DUEL_GOLD, BOT_LEVELS, lockTarget,
-    RANKS, rankOf, rankDelta, botSkills, skillProfile, setBot, snapshot, decodeSnapshot, applySnapshot, applyFrame, applyChampState, slowFlat, slowDiff, applySlow, packEvent, unpackEvent, predict };
+    RANKS, rankOf, rankDelta, botSkills, skillProfile, setBot, snapshot, decodeSnapshot, applySnapshot, applyFrame, applyChampState, slowFlat, slowDiff, applySlow, packEvent, unpackEvent, predict, saveMatch, loadMatch };
 })();
 if (typeof module !== 'undefined') module.exports = Sim;

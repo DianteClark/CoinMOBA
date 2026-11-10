@@ -53,21 +53,35 @@ const unitById = id => { const s = G.s; return s.champs.find(c => c.id === id) |
 
 // cfg: { teams: [[{champ, role, tier, human, remote, name}, ...4], [...4]], diff, seed }
 // net: { role: 'host' | 'guest' } for an online match, otherwise leave it out.
-function startMatch(cfg, net) {
+// A finished match's ground is about 65 MB of canvas. Phones collect canvases late, so hand the memory back now
+// rather than let two maps sit in memory together while the next one paints (iOS reloads a page that grows too far).
+function releaseMatch(g) {
+  if (!g || g.released) return; g.released = true;
+  const gd = g.ground || { tiles: [] };
+  const free = c => { if (c && c.width) { c.width = 0; c.height = 0; } };
+  try { for (const t of gd.tiles || []) free(t.c); free(gd.mask); free(gd.refl); } catch (e) { }
+  g.ground = null;
+  try { Art.dropTurntables(); } catch (e) { }
+}
+function startMatch(cfg, net, restored) {
+  if (G) releaseMatch(G);
   const seed = cfg.seed === undefined ? Date.now() & 0xffffff : cfg.seed;
-  const s = Sim.createMatch({ seed, diff: cfg.diff, teams: cfg.teams, practice: cfg.practice, mode: cfg.mode, custom: cfg.custom, levels: cfg.levels });
+  if (!net && !restored) cfg.seed = seed; // a solo match keeps its seed, so a resumed one is the same match
+  const s = restored || Sim.createMatch({ seed, diff: cfg.diff, teams: cfg.teams, practice: cfg.practice, mode: cfg.mode, custom: cfg.custom, levels: cfg.levels });
   // Online seats carry a player id; the guest finds its own coin by it.
   cfg.teams.flat().forEach((p, i) => { if (p.pid !== undefined) s.champs[i].pid = p.pid; });
   const spectator = !!(net && net.role === 'guest' && Net.spectator);
-  const me = spectator ? s.champs[0] : net && net.role === 'guest' ? (s.champs.find(c => c.pid !== undefined && c.pid === Net.pid) || s.champs.find(c => c.remote)) : (s.champs.find(c => c.human && !c.remote) || s.champs.find(c => c.human));
+  const me = restored && cfg.meId ? s.champs.find(c => c.id === cfg.meId) || s.champs[0] : spectator ? s.champs[0] : net && net.role === 'guest' ? (s.champs.find(c => c.pid !== undefined && c.pid === Net.pid) || s.champs.find(c => c.remote)) : (s.champs.find(c => c.human && !c.remote) || s.champs.find(c => c.human));
   G = { s, me, cfg, cam: { x: me.x, y: me.y }, acc: 0, t: 0, frames: 0, ms: 0, ended: false, intro: 2.6, outro: null, timeScale: 1, slowT: 0, stop: 0, shake: 0, punch: 0, flash: 0, hpq: [], net: net ? { role: net.role } : null };
   G.spectator = spectator;
   initWorld(G); initHud(G); initSound(G);
   Replay.reset(G);
   if (net) Net.attach();
   save.hints++; persist(); paused = false;
+  Resume.began(restored);
 }
 function finishMatch() {
+  Resume.clear();
   if (G.spectator) { const m = G.me; G.ended = true; showEnd({ spectator: true, won: G.s.over.winner === m.team, gain: 0, before: pts(m.champ), after: pts(m.champ), me: m, s: G.s, rankBefore: save.rank, rankAfter: save.rank, rankDelta: 0, marks: 0 }); return; }
   const s = G.s, me = G.me, won = s.over.winner === me.team, gain = Sim.masteryGain(me.stats, won), before = pts(me.champ);
   save.m[me.champ] = before + gain;
@@ -91,13 +105,17 @@ function stepMatch(dt) {
   G.acc += dt * G.timeScale; let n = 0;
   while (G.acc >= DT && n++ < cap) {
     if (net) Net.hostBefore();
-    applyInput(); tickInput(G.me); Sim.step(G.s); G.acc -= DT;
+    applyInput(); tickInput(G.me);
+    try { Sim.step(G.s); Guard.simOk(); }
+    catch (e) { G.acc = 0; G.s.ev.length = 0; Guard.report('sim', e); Guard.simFailed(); break; }
+    G.acc -= DT;
     if (net) Net.hostAfter();
-    Replay.tick(G.s);
-    for (const e of G.s.ev) { if (!hidden) { fxEvent(e); soundEvent(e); } uiEvent(e); }
+    try { Replay.tick(G.s); } catch (e) { Guard.report('replay', e); }
+    // One bad effect or HUD line must not stop the rest of the tick's events, or leave them to play again next frame.
+    for (const e of G.s.ev) { if (!hidden) { try { fxEvent(e); } catch (x) { Guard.report('fx ' + e.e, x); } try { soundEvent(e); } catch (x) { Guard.report('sound ' + e.e, x); } } try { uiEvent(e); } catch (x) { Guard.report('ui ' + e.e, x); } }
     G.s.ev.length = 0;
     // A surrender ends the match with the core still standing: the camera goes to the losing team's core.
-    if (G.s.over) { const core = G.s.towers.find(t => t.sub === 'core' && !t.alive) || G.s.towers.find(t => t.sub === 'core' && t.team !== G.s.over.winner); G.outro = { t: 0, x: core.x, y: core.y }; outroStart(); break; }
+    if (G.s.over) { const core = G.s.towers.find(t => t.sub === 'core' && !t.alive) || G.s.towers.find(t => t.sub === 'core' && t.team !== G.s.over.winner) || G.me; G.outro = { t: 0, x: core.x, y: core.y }; try { outroStart(); } catch (e) { Guard.report('outro', e); } Resume.clear(); break; }
   }
   if (n >= cap) G.acc = 0;
   accInput();
@@ -148,11 +166,89 @@ function ownView(dt) {
 // coin is this frame (camera, rings, aim, lock line) then agrees with what is drawn.
 { const base = posNow; const OWNP = { x: 0, y: 0 }; posNow = function (u, a) { if (ownV.on && G && u === G.me) { OWNP.x = ownV.x; OWNP.y = ownV.y; return OWNP; } return base(u, a); }; }
 
+// ---------- guard: one bad frame is logged and skipped, never fatal ----------
+// Errors go to the console and to a short log kept in localStorage ('mintfall.errlog'), so a phone report can be read back.
+const Guard = (() => {
+  const LOG = 'mintfall.errlog', seen = new Map(); let simBad = 0, n = 0;
+  function report(where, e) {
+    const msg = String(e && e.message || e), key = where + '|' + msg;
+    const k = (seen.get(key) || 0) + 1; seen.set(key, k); n++;
+    if (k > 3) return; // the same failure every frame says nothing new
+    try { console.error('[guard] ' + where, e); } catch (x) { }
+    try {
+      const list = JSON.parse(localStorage.getItem(LOG) || '[]');
+      list.push({ at: new Date().toISOString(), where, msg: msg.slice(0, 200), stack: String(e && e.stack || '').slice(0, 600), t: G && G.s ? Math.round(G.s.t) : -1, mode: G && G.s ? G.s.mode : '' });
+      localStorage.setItem(LOG, JSON.stringify(list.slice(-20)));
+    } catch (x) { }
+  }
+  // The simulation failing tick after tick means its state is broken: go back to the last good save of this match.
+  function simFailed() { if (++simBad >= 20) { simBad = 0; if (!Resume.rewind()) report('sim', new Error('sim keeps failing, no save to rewind to')); } }
+  function simOk() { simBad = 0; }
+  addEventListener('error', e => report('window', e.error || e.message));
+  addEventListener('unhandledrejection', e => report('promise', e.reason));
+  return { report, simFailed, simOk, get count() { return n; } };
+})();
+
+// ---------- resume: a solo match survives the page being reloaded ----------
+// iOS can throw a backgrounded (or memory-pressed) page away and reload it, which used to drop the player on the title
+// screen. A solo match is saved every few seconds and whenever the page is hidden; the menus offer to carry on.
+const Resume = (() => {
+  const KEY = 'mintfall.resume', EVERY = 6, MAX_AGE = 30 * 60 * 1000;
+  let lastAt = -99, good = null;
+  const eligible = () => G && !G.net && !G.replay && !G.spectator && !G.ended && !G.outro && G.s && !G.s.over && G.intro <= 0 && G.me;
+  function write() {
+    if (!eligible()) return false;
+    try {
+      const cfg = Object.assign({}, G.cfg, { meId: G.me.id }), data = Sim.saveMatch(G.s), json = JSON.stringify({ at: Date.now(), cfg, data });
+      good = json; lastAt = G.s.t;
+      localStorage.setItem(KEY, json); return true;
+    } catch (e) { Guard.report('resume save', e); try { localStorage.removeItem(KEY); } catch (x) { } return false; }
+  }
+  function tick() { if (eligible() && G.s.t - lastAt >= EVERY) write(); }
+  function clear() { good = null; lastAt = -99; try { localStorage.removeItem(KEY); } catch (e) { } }
+  function began(restored) { lastAt = restored ? G.s.t : -99; good = null; }
+  function pending() {
+    try {
+      const raw = localStorage.getItem(KEY); if (!raw) return null;
+      const r = JSON.parse(raw);
+      if (!r || !r.data || !r.cfg || Date.now() - r.at > MAX_AGE) { clear(); return null; }
+      return r;
+    } catch (e) { clear(); return null; }
+  }
+  function load(r) {
+    const s = Sim.loadMatch(r.data);
+    startMatch(r.cfg, null, s);
+    G.intro = 0; // straight back into play, from the pause menu
+    return true;
+  }
+  function rewind() {
+    if (!good || !G || G.net) return false;
+    try { const r = JSON.parse(good), s = Sim.loadMatch(r.data), keep = G; startMatch(r.cfg, null, s); G.intro = 0; G.t = keep.t; return true; } catch (e) { Guard.report('rewind', e); return false; }
+  }
+  // Hidden is the last moment a page is sure to run: save then.
+  document.addEventListener('visibilitychange', () => { if (document.hidden) write(); });
+  addEventListener('pagehide', () => write());
+  return { tick, clear, began, pending, load, rewind, write };
+})();
+
+// Coming back from the background, the first frames hitch while the phone restores the page. They say nothing about how
+// fast the game runs, so they must not step the graphics down (each step re-bakes every sprite at a new size).
+document.addEventListener('visibilitychange', () => { if (!document.hidden) { last = performance.now(); if (G) { G.frames = 0; G.ms = 0; G.slow = 0; G.calmUntil = G.t + 4; } } });
+addEventListener('pageshow', () => { last = performance.now(); if (G) { G.frames = 0; G.ms = 0; G.slow = 0; G.calmUntil = G.t + 4; } });
+
 let last = performance.now();
 function frame(now) {
   requestAnimationFrame(frame);
+  try { frameBody(now); }
+  catch (e) {
+    Guard.report('frame', e);
+    // Whatever was half drawn, the next frame starts from a clean canvas state.
+    try { for (let i = 0; i < 64; i++) ctx.restore(); ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.globalAlpha = 1; ctx.globalCompositeOperation = 'source-over'; ctx.filter && (ctx.filter = 'none'); } catch (x) { }
+  }
+}
+function frameBody(now) {
   const raw = (now - last) / 1000, dt = Math.min(.05, raw); last = now;
-  animMenus(dt);
+  try { animMenus(dt); } catch (e) { Guard.report('menus', e); }
   if (!G) return;
   G.t += dt;
   if (!G.ended && !G.outro) sampleInput();
@@ -170,9 +266,11 @@ function frame(now) {
       else stepMatch(G.net ? Math.min(.25, raw) : dt);
     }
   }
-  soundFrame(held ? 0 : dt);
-  ownView(held ? 0 : dt);
+  if (!G) return;
+  Resume.tick();
+  try { soundFrame(held ? 0 : dt); } catch (e) { Guard.report('soundFrame', e); }
+  try { ownView(held ? 0 : dt); } catch (e) { Guard.report('ownView', e); ownV.on = false; }
   if (!window.__skipRender) render(held ? 0 : dt); // the skip flag is for many-browser network tests on one machine
   // Auto graphics: each step down visibly changes the picture, so only sustained slowness in live play counts, not the map paint during the intro.
-  if (save.gfx === 'auto' && !held && G.intro <= 0 && !G.ended) { const f = ++G.frames; G.ms += dt * 1000; if (f % 120 === 0) { const avg = G.ms / 120; G.ms = 0; G.slow = avg > 26 ? (G.slow || 0) + 1 : 0; if (G.slow >= 2 && quality > 0) { G.slow = 0; quality--; resize(); } } }
+  if (save.gfx === 'auto' && !held && G.intro <= 0 && !G.ended && !(G.t < (G.calmUntil || 0))) { const f = ++G.frames; G.ms += dt * 1000; if (f % 120 === 0) { const avg = G.ms / 120; G.ms = 0; G.slow = avg > 26 ? (G.slow || 0) + 1 : 0; if (G.slow >= 2 && quality > 0) { G.slow = 0; quality--; resize(); } } }
 }
