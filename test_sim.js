@@ -131,10 +131,13 @@ if (process.argv.includes('--net')) {
     for (const e of h.ev) { evs++; const r = Sim.unpackEvent(JSON.parse(JSON.stringify(Sim.packEvent(e)))); for (const k of Object.keys(e)) if (e[k] !== undefined) { const a = e[k], b = r[k]; if (a && typeof a === 'object') continue; if (typeof a === 'number' ? Math.abs(a - b) > .6 : (a === true ? b !== 1 : a === false ? b !== 0 : a !== b)) { check('event ' + e.e + '.' + k + ' ' + a + ' vs ' + b, false); } } }
     h.ev.length = 0;
     if (h.tick % 6 === 0) { const cur = Sim.slowFlat(h), df = Sim.slowDiff(prev, cur); prev = cur; slowN += JSON.stringify(df).length; Sim.applySlow(g, JSON.parse(JSON.stringify(df))); }
+    if (h.tick % 6 === 0) { check('act', g.act === h.act); check('stand', [0, 1].every(t => Math.abs(g.stand[t] - Math.ceil(h.stand[t])) < 1.01)); check('duel', !g.duel === !h.duel && (!h.duel || (g.duel.a === h.duel.a && g.duel.b === h.duel.b))); check('rampage', !g.rampage === !h.rampage); }
     if (h.tick % 3 !== 0) {
       const d = Sim.snapshot(h, seat, h.tick & 0xffff); snaps++; bytes += d.byteLength; max = Math.max(max, d.byteLength);
       const fr = Sim.decodeSnapshot(d), ga = g; Sim.applyFrame(ga, fr, null, 0, -1);
       if (fr.own) { const c = h.champs[seat]; for (let i = 0; i < 3; i++) check('cd', Math.abs(fr.own.cd[i] - Math.max(0, c.cd[i])) < .02); }
+      if (fr.own) { const c = h.champs[seat]; check('evCd', Math.abs(fr.own.evCd - Math.max(0, c.evCd)) < .06); check('lockId', fr.own.lockId === (c.lockId || 0)); }
+      h.champs.forEach((c, i) => { const q = g.champs[i]; check('evT', !(c.evT > 0) === !q.evT); check('wanted fast', (c.wanted || 0) === q.wanted); });
       h.champs.forEach((c, i) => { const q = g.champs[i]; check('champ pos', Math.abs(c.x - q.x) < .1 && Math.abs(c.y - q.y) < .1); check('champ hp', Math.abs(q.hp - Math.ceil(c.hp)) < 1.01); check('alive', c.alive === q.alive); check('fx', Math.abs((c.fx || 0) - q.fx) < .02); check('chan', !c.chan === !q.chan); check('charge', !c.charge === !q.charge); check('dash', !c.dash === !q.dash); check('air', (c.air > 0) === (q.air > 0)); check('brush', c.inBrush === q.inBrush); check('stun', (c.stunT > 0) === (q.stunT > 0)); });
       // Interest culling means a guest only holds what its team can nearly see; everything it does hold must match.
       check('zones', h.zones.length === g.zones.length);
@@ -145,7 +148,7 @@ if (process.argv.includes('--net')) {
   }
   const cur = Sim.slowFlat(h), df = Sim.slowDiff(prev, cur); Sim.applySlow(g, df);
   h.champs.forEach((c, i) => { const q = g.champs[i]; check('gold', Math.abs(q.gold - c.gold) <= 1); check('lvl', q.lvl === c.lvl); check('kills', q.stats.kills === c.stats.kills && q.stats.dmg - Math.round(c.stats.dmg) === 0); });
-  check('towers', h.towers.every((t, i) => g.towers[i].alive === t.alive)); check('kills', g.kills[0] === h.kills[0] && g.kills[1] === h.kills[1]); check('over', !!g.over === !!h.over && (!h.over || g.over.winner === h.over.winner)); check('hope', Math.abs(g.hope - h.hope) < .1);
+  check('towers', h.towers.every((t, i) => g.towers[i].alive === t.alive)); check('kills', g.kills[0] === h.kills[0] && g.kills[1] === h.kills[1]); check('over', !!g.over === !!h.over && (!h.over || g.over.winner === h.over.winner)); check('hope', Math.abs(g.hope - h.hope) < .1); h.champs.forEach((c, i) => { const q = g.champs[i]; check('wanted', q.wanted === c.wanted); check('duels', q.stats.duels === c.stats.duels && q.stats.combos === c.stats.combos); });
   console.log(`net codec: ${h.t.toFixed(0)}s, ${snaps} snaps avg ${(bytes / snaps).toFixed(0)}B max ${max}B, slow ${(slowN / Math.max(1, h.t / .2)).toFixed(0)}B/send, ${evs} events, mismatches ${bad}`);
 }
 

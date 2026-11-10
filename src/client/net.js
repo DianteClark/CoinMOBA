@@ -103,7 +103,7 @@ const Net = (() => {
 
   const api = {
     MAX, TEAM_MAX, MAX_SPEC, spectator: false, cards: {}, _voiceOn: false, role: null, code: null, connected: false, ping: 0, stalled: false, away: false, reconnecting: false, pid: -1, phase: 'room', room: null, draft: null, stats: null, _fault: null,
-    on, off, profile, host, join, leave, resumable, send, sendTo, say, flip, start, setTeam, swap, shuffle, draftStart, ban, pick, lock, toRoom, me, mySide, follow, setMode, cardOf, recent, forgetRecent, canRematch, rematch, _voiceSet: voiceSet, _call: placeCall, _sendClip: sendClip, attach, hostBefore, hostAfter, guestFrame, hiddenPump,
+    ownDriven: () => srvDriven, on, off, profile, host, join, leave, resumable, send, sendTo, say, flip, start, setTeam, swap, shuffle, draftStart, ban, pick, lock, toRoom, me, mySide, follow, setMode, cardOf, recent, forgetRecent, canRematch, rematch, _voiceSet: voiceSet, _call: placeCall, _sendClip: sendClip, attach, hostBefore, hostAfter, guestFrame, hiddenPump,
   };
   const listeners = Object.create(null);
   function on(type, fn) { const l = listeners[type] || (listeners[type] = []); if (!l.includes(fn)) l.push(fn); }
@@ -770,7 +770,7 @@ const Net = (() => {
     if (!api.stats) api.stats = freshStats();
     localCast = []; frames = []; clockOff = null; delay = minDelay(); hist = []; ex = ey = 0; seq = 0; srvDriven = false; pendCd = [0, 0, 0]; pendRecast = [0, 0, 0]; chargeLocal = 0; chargeBlock = 0; lastFrameAt = 0; overShown = false;
     if (role === 'guest') {
-      seatIdx = api.spectator ? -1 : s.champs.indexOf(G.me); pending = [];
+      seatIdx = api.spectator ? -1 : s.champs.indexOf(G.me); pending = []; pendEv = pendLock = localEvade = 0; if (!api.spectator) G.me.ownEv = true;
       for (const d of earlySlow) Sim.applySlow(s, d); earlySlow = [];
       reseat = !!G.cfg.rejoin;
       if (G.cfg.rejoin) G.intro = 0;
@@ -815,7 +815,7 @@ const Net = (() => {
   }
   const clampMv = v => Math.max(-1, Math.min(1, isFinite(v) ? v : 0));
   // Commands with no position, or only simple fields, travel as [10, t, fields...] and are whitelisted here.
-  const SIMPLE = { buyback: [], reinforce: ['lane'], fund: ['amount'], surrender: ['vote'], use: ['slot'], pref: ['v'], subway: ['to'], blackout: [] };
+  const SIMPLE = { buyback: [], reinforce: ['lane'], fund: ['amount'], surrender: ['vote'], use: ['slot'], pref: ['v'], subway: ['to'], blackout: [], evade: ['dx', 'dy'], lock: ['id'] };
   function hostBefore() {
     for (const p of players) {
       if (p.host || !p.link || p.seat < 0) continue;
@@ -946,7 +946,7 @@ const Net = (() => {
       me.x = me.px = srvX = a.x; me.y = me.py = srvY = a.y; me.vx = me.vy = 0; hist = []; ex = ey = 0; me.pdash = null; me.dash = null; me.charge = null; chargeLocal = chargeBlock = 0; localCast = []; lastWindup = null;
       pendCd = [0, 0, 0]; pendRecast = [0, 0, 0];
       for (let i = 0; i < 3; i++) { me.cd[i] = own.cd[i]; me.recast[i] = own.recast[i]; }
-      me.atkCd = own.atkCd; me.lock = 0; me.slowA = own.slowA; me.hasteA = own.hasteA; srvDriven = false;
+      me.atkCd = own.atkCd; me.lock = 0; me.slowA = own.slowA; me.hasteA = own.hasteA; srvDriven = false; me.evCd = own.evCd; me.lockId = own.lockId; pendEv = pendLock = 0;
       return;
     }
     srvDriven = !!(a.fl & 4) && !me.pdash || !me.alive || !!me.air || !!me.leap;
@@ -969,6 +969,8 @@ const Net = (() => {
       if (pendRecast[i]) { if (now > pendRecast[i]) { pendRecast[i] = 0; me.recast[i] = rsrv; } } else me.recast[i] = syncTimer(me.recast[i], rsrv);
     }
     if (own.atkCd > me.atkCd + .25) me.atkCd = own.atkCd;
+    { const srv = Math.max(0, own.evCd - lag); if (!pendEv || Math.abs(srv - me.evCd) < .6 + lag || now > pendEv) { pendEv = 0; me.evCd = syncTimer(me.evCd || 0, srv); } }
+    if (!pendLock || now > pendLock || own.lockId === me.lockId) { pendLock = 0; me.lockId = own.lockId; }
     srvX = a.x; srvY = a.y;
     if (wasAlive && !me.alive) { me.pdash = null; pendCd = [0, 0, 0]; pendRecast = [0, 0, 0]; me.charge = null; chargeLocal = 0; localCast = []; }
     // Reconcile: compare where we said we were at the tick the host just acknowledged.
@@ -994,7 +996,7 @@ const Net = (() => {
 
   function guestTick() {
     const s = G.s, me = G.me, now = performance.now();
-    applyInput();
+    applyInput(); tickInput(me);
     drainQueue(now);
     if (now - lastFrameAt > 500 || !frames.length) { me.mv.x = me.mv.y = 0; me.atk = false; }
     if (srvDriven || !me.alive) {
@@ -1025,7 +1027,7 @@ const Net = (() => {
     if (up) sendFast(up, b.buffer);
   }
   function sendCmd(c) { api.stats.cmdsOut++; if (up) sendRel(up, ['c', c]); }
-  let localCast = [], lastWindup = null, localCharge = 0;
+  let localCast = [], lastWindup = null, localCharge = 0, pendEv = 0, pendLock = 0, localEvade = 0;
   function canAct(me, a, slot) { return me.alive && me.stunT <= 0 && !me.air && !me.chan && !me.dash && !me.pdash && a && !(slot === 2 && me.lvl < 3) && !(me.rootT > 0 && a.pd); }
   function drainQueue(now) {
     const me = G.me, wait = api.ping + 350;
@@ -1061,6 +1063,20 @@ const Net = (() => {
         const ws = me.chan && me.chan.slot !== undefined ? me.chan.slot : lastWindup && now - lastWindup.at < 1200 ? lastWindup.slot : -1;
         if (ws >= 0) { me.cd[ws] = 0; pendCd[ws] = 0; lastWindup = null; }
         sendCmd([2]);
+      } else if (q.t === 'evade') {
+        // Predicted like a dash ability: the coin goes now, the host's word follows.
+        const E = Sim.EVADE, ok = me.alive && !(me.evCd > 0) && me.stunT <= 0 && !me.air && !(me.rootT > 0) && !me.pdash && !(me.chan && !me.chan.recall) && !me.leap && !me.cuts;
+        let dx = +q.dx || 0, dy = +q.dy || 0; const l = Math.hypot(dx, dy); if (l > .01) { dx /= l; dy /= l; } else { dx = me.fx; dy = me.fy; }
+        if (ok) {
+          const reach = Math.max(0, Math.min(E.dist, Sim.rayWall(me.x, me.y, dx, dy, E.dist + me.r) - me.r)), v = E.dist / E.t;
+          me.pdash = { vx: dx * v, vy: dy * v, t: reach / v }; me.dash = me.dash || { net: true }; me.evCd = E.cd; me.evT = E.iframe; me.lock = 0; me.charge = null; me.fx = dx; me.fy = dy;
+          pendEv = now + wait; reconcileHold = now + wait + 250;
+          playEvent({ e: 'evade', u: me.id, x: me.x, y: me.y, dx, dy }); localEvade = now + 1500;
+        }
+        sendCmd([10, 'evade', Math.round(dx * 100) / 100, Math.round(dy * 100) / 100]);
+      } else if (q.t === 'lock') {
+        me.lockId = q.id | 0; pendLock = now + wait;
+        sendCmd([10, 'lock', q.id | 0]);
       } else if (q.t === 'recall') sendCmd([3]);
       else if (q.t === 'buy') sendCmd([5, String(q.id)]);
       else if (q.t === 'sell') sendCmd([6, q.slot | 0]);
@@ -1080,6 +1096,7 @@ const Net = (() => {
       if (!(mine || p.t <= rt + .5)) continue;
       pending.splice(i, 1); i--;
       if (p.e.e === 'cast' && p.e.u === me.id && p.e.charge && now2 < localCharge) { localCharge = 0; continue; }
+      if (p.e.e === 'evade' && p.e.u === me.id && now2 < localEvade) { localEvade = 0; continue; }
       if (p.e.e === 'cast' && p.e.u === me.id && p.e.charge === undefined) { const k = localCast.findIndex(l => l.slot === p.e.slot); if (k >= 0) { localCast.splice(k, 1); continue; } }
       if (rt - p.t > 36 && COSMETIC.has(p.e.e)) { st.evDropped++; continue; }
       playEvent(p.e);
@@ -1095,6 +1112,7 @@ const Net = (() => {
       G.acc += dt; let n = 0;
       while (G.acc >= DT && n++ < 8) { guestTick(); G.acc -= DT; }
       if (n >= 8) G.acc = 0;
+      accInput();
     }
     Replay.guestSlow(s);
     if (frames.length) {
@@ -1124,6 +1142,6 @@ const Net = (() => {
       Replay.guestOver();
     }
   }
-  window.__fnet = { Net: api, get Replay() { return Replay; }, get Voice() { return Voice; }, startMatch: (cfg, net) => startMatch(cfg, net), g: () => G, ctl: () => Ctl };
+  window.__fnet = { Net: api, get Replay() { return Replay; }, get Voice() { return Voice; }, startMatch: (cfg, net) => startMatch(cfg, net), g: () => G, ctl: () => Ctl, own: () => ownV };
   return api;
 })();

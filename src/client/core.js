@@ -55,7 +55,7 @@ const unitById = id => { const s = G.s; return s.champs.find(c => c.id === id) |
 // net: { role: 'host' | 'guest' } for an online match, otherwise leave it out.
 function startMatch(cfg, net) {
   const seed = cfg.seed === undefined ? Date.now() & 0xffffff : cfg.seed;
-  const s = Sim.createMatch({ seed, diff: cfg.diff, teams: cfg.teams, practice: cfg.practice, mode: cfg.mode });
+  const s = Sim.createMatch({ seed, diff: cfg.diff, teams: cfg.teams, practice: cfg.practice, mode: cfg.mode, custom: cfg.custom, levels: cfg.levels });
   // Online seats carry a player id; the guest finds its own coin by it.
   cfg.teams.flat().forEach((p, i) => { if (p.pid !== undefined) s.champs[i].pid = p.pid; });
   const spectator = !!(net && net.role === 'guest' && Net.spectator);
@@ -74,7 +74,8 @@ function finishMatch() {
   // Rating: scored against the average skill of the bots on the other team.
   const rankBefore = save.rank === undefined ? 1000 : save.rank, foes = G.cfg.teams[1 - me.team].filter(p => !p.human && p.skill !== undefined);
   const avg = foes.length ? foes.reduce((a, p) => a + p.skill, 0) / foes.length : .5;
-  const rankDelta = Sim.rankDelta ? Sim.rankDelta(rankBefore, won, me.stats, avg) : 0, rankAfter = Math.max(0, Math.round(rankBefore + rankDelta));
+  const rankDelta = Sim.rankDelta && !s.custom && !G.cfg.custom ? Sim.rankDelta(rankBefore, won, me.stats, avg) : 0, // a Custom Match never moves rank
+    rankAfter = Math.max(0, Math.round(rankBefore + rankDelta));
   const marks = Sim.marksEarned(won, me.stats);
   save.rank = rankAfter; save.marks = (save.marks || 0) + marks; persist();
   G.ended = true; showEnd({ won, gain, before, after: before + gain, me, s, rankBefore, rankAfter, rankDelta: rankAfter - rankBefore, marks });
@@ -90,7 +91,7 @@ function stepMatch(dt) {
   G.acc += dt * G.timeScale; let n = 0;
   while (G.acc >= DT && n++ < cap) {
     if (net) Net.hostBefore();
-    applyInput(); Sim.step(G.s); G.acc -= DT;
+    applyInput(); tickInput(G.me); Sim.step(G.s); G.acc -= DT;
     if (net) Net.hostAfter();
     Replay.tick(G.s);
     for (const e of G.s.ev) { if (!hidden) { fxEvent(e); soundEvent(e); } uiEvent(e); }
@@ -99,7 +100,53 @@ function stepMatch(dt) {
     if (G.s.over) { const core = G.s.towers.find(t => t.sub === 'core' && !t.alive) || G.s.towers.find(t => t.sub === 'core' && t.team !== G.s.over.winner); G.outro = { t: 0, x: core.x, y: core.y }; outroStart(); break; }
   }
   if (n >= cap) G.acc = 0;
+  accInput();
 }
+
+// ---------- 13.0 zero-delay own coin ----------
+// The simulation ticks at 30 Hz. Rather than draw your coin between its last two ticks (one to two ticks late), the stick is
+// read every frame and integrated over the current tick (mvAcc). Each tick walks with that tick's average input, and between
+// ticks your coin is drawn at the tick's position plus the walk integrated so far (Sim.walkAhead). Drawing and simulation
+// therefore agree exactly: the coin starts, stops and turns on the frame you move the stick, with nothing to correct
+// afterwards. Host, offline and guest share this (the guest sends the same averaged input it predicts with). Anything the
+// simulation does differently (a wall, a slow, a server correction) is absorbed into a short-lived offset (ownV.ex/ey).
+const mvAcc = { x: 0, y: 0, t: 0 }, mvNow = { x: 0, y: 0 };
+function sampleInput() { if (!G || !G.me) return; try { applyInput(); } catch (e) { } mvNow.x = G.me.mv.x; mvNow.y = G.me.mv.y; }
+// Called once per tick, after applyInput: this tick walks with the average stick over its interval.
+function tickInput(me) {
+  const rest = Math.max(0, DT - mvAcc.t);
+  me.mv.x = (mvAcc.x + mvNow.x * rest) / DT; me.mv.y = (mvAcc.y + mvNow.y * rest) / DT;
+  if (Math.hypot(me.mv.x, me.mv.y) < .06) me.mv.x = me.mv.y = 0;
+  mvAcc.x = mvAcc.y = mvAcc.t = 0;
+}
+// Called after a frame's ticks: carry the rest of the frame into the next tick's integral.
+function accInput() { const t = Math.max(0, Math.min(DT, G.acc || 0)), d = t - mvAcc.t; if (d > 0) { mvAcc.x += mvNow.x * d; mvAcc.y += mvNow.y * d; } mvAcc.t = t; }
+const ownV = { on: false, x: 0, y: 0, tx: 0, ty: 0, ex: 0, ey: 0 };
+const OWN_SNAP = 90, OWN_EASE = 24;
+function ownFree(me) {
+  if (!me || !me.alive || G.spectator || G.replay || G.outro || G.intro > 0 || G.ended) return false;
+  if (me.stunT > 0 || me.rootT > 0 || me.air || me.dash || me.pdash || me.chan || me.leap || me.cuts || me.polyT > 0) return false;
+  return !(G.net && G.net.role === 'guest' && Net.ownDriven && Net.ownDriven());
+}
+function ownView(dt) {
+  const me = G && G.me;
+  if (!me || !ownFree(me)) { if (ownV.on) { ownV.on = false; ownV.ex = ownV.ey = 0; } return; }
+  const w = Sim.walkAhead(G.s, me, 1, { x: mvAcc.x / DT, y: mvAcc.y / DT }), nx = w.x, ny = w.y;
+  if (!ownV.on) { // taking over from the interpolated drawing: start from where it was drawn
+    const f = Math.max(0, Math.min(1, (G.acc || 0) / DT)), px = me.px === undefined ? me.x : me.px, py = me.py === undefined ? me.y : me.py;
+    ownV.ex = px + (me.x - px) * f - nx; ownV.ey = py + (me.y - py) * f - ny; if (Math.hypot(ownV.ex, ownV.ey) > OWN_SNAP) ownV.ex = ownV.ey = 0;
+  } else {
+    // More movement than walking could explain this frame is a correction: absorb the excess, or snap if it is a teleport.
+    const dx = nx - ownV.tx, dy = ny - ownV.ty, d = Math.hypot(dx, dy), lim = (me.msBase || 400) * 1.8 * Math.max(dt, DT) + 2;
+    if (d > OWN_SNAP) ownV.ex = ownV.ey = 0; else if (d > lim) { const k = 1 - lim / d; ownV.ex -= dx * k; ownV.ey -= dy * k; }
+  }
+  const k = Math.exp(-dt * OWN_EASE); ownV.ex *= k; ownV.ey *= k;
+  if (Math.abs(ownV.ex) < .05 && Math.abs(ownV.ey) < .05) ownV.ex = ownV.ey = 0;
+  ownV.tx = nx; ownV.ty = ny; ownV.x = nx + ownV.ex; ownV.y = ny + ownV.ey; ownV.on = true;
+}
+// Wrap world.js's posNow: the local player's coin is drawn from ownView while it is on. Everything that asks where your
+// coin is this frame (camera, rings, aim, lock line) then agrees with what is drawn.
+{ const base = posNow; const OWNP = { x: 0, y: 0 }; posNow = function (u, a) { if (ownV.on && G && u === G.me) { OWNP.x = ownV.x; OWNP.y = ownV.y; return OWNP; } return base(u, a); }; }
 
 let last = performance.now();
 function frame(now) {
@@ -108,6 +155,7 @@ function frame(now) {
   animMenus(dt);
   if (!G) return;
   G.t += dt;
+  if (!G.ended && !G.outro) sampleInput();
   if (G.replay) { Replay.frame(Math.min(.25, raw)); soundFrame(dt); if (!window.__skipRender) render(dt); return; }
   // Pause never holds back an online match. Before the intro ends, `paused` is the versus splash.
   const held = paused && !(G.net && !G.net.dead && G.intro <= 0);
@@ -123,6 +171,7 @@ function frame(now) {
     }
   }
   soundFrame(held ? 0 : dt);
+  ownView(held ? 0 : dt);
   if (!window.__skipRender) render(held ? 0 : dt); // the skip flag is for many-browser network tests on one machine
   // Auto graphics: each step down visibly changes the picture, so only sustained slowness in live play counts, not the map paint during the intro.
   if (save.gfx === 'auto' && !held && G.intro <= 0 && !G.ended) { const f = ++G.frames; G.ms += dt * 1000; if (f % 120 === 0) { const avg = G.ms / 120; G.ms = 0; G.slow = avg > 26 ? (G.slow || 0) + 1 : 0; if (G.slow >= 2 && quality > 0) { G.slow = 0; quality--; resize(); } } }

@@ -194,6 +194,17 @@ function soundEv(e, me) {
     case 'city': Sound.play(e.kind === 'rally' ? 'rally' : 'panic', undefined, 2000, { vol: .85 }); return;
     case 'hunt': if (e.team === me.team && e.paid) Sound.play('huntPay', undefined, 500, { vol: .8 }); return;
     case 'rival': if (e.u === me.id || e.v === me.id) Sound.play('rivalClash', undefined, 3000, { vol: .9 }); return;
+    case 'evade': if (e.u === me.id) Sound.play('evade', undefined, 120, { vol: .9 }); else { const o = soundAt(e.x, e.y, 0); if (o) Sound.play('evade', undefined, 200, o); } return;
+    case 'dodge': if (e.u === me.id) Sound.play('evaded', undefined, 200, { vol: .8 }); return;
+    case 'act': Sound.play(e.n === 3 ? 'act3' : 'act2', undefined, 3000, { vol: .9 }); return;
+    case 'rampage': if (e.phase === 'start') Sound.play('colossusRampage', undefined, 3000, { vol: .85 }); return;
+    case 'laststand': Sound.play('lastStand', undefined, 3000, { vol: e.team === me.team ? .95 : .6 }); return;
+    case 'combo': { if (e.a === me.id || e.b === me.id) Sound.play('comboLink', undefined, 400, { vol: .95 }); else { const o = soundAt(e.x, e.y, 0); if (o) Sound.play('comboLink', undefined, 400, o); } return; }
+    case 'wanted': if (e.n > 0) Sound.play('wantedOn', undefined, 2000, { vol: e.u === me.id ? .9 : .6 }); else if (e.by === me.id) Sound.play('bountyClaimed', undefined, 800, { vol: .95 }); return;
+    case 'slam': { const o = soundAt(e.x, e.y, 0); if (o) Sound.play('slamWindup', undefined, 600, o); return; }
+    case 'bossphase': Sound.play('bossPhase', undefined, 1500, { vol: .7 }); return;
+    case 'steal': Sound.play('steal', undefined, 800, { vol: e.u === me.id ? 1 : .7 }); return;
+    case 'duel': if (e.a === me.id || e.b === me.id) { if (e.phase === 'start') Sound.play('duelStart', undefined, 1500, { vol: .9 }); else if (e.phase === 'win' && e.w === me.id) Sound.play('duelWon', undefined, 1500, { vol: .95 }); } return;
     case 'mapevent': {
       if (e.phase === 'warn' && (e.kind === 'heist' || e.kind === 'convoy')) Sound.play('siren', undefined, 1500, { vol: .6 });
       else if (e.phase === 'start' && e.kind === 'blackout') Sound.play('powerDown', undefined, 800, { vol: .8 });

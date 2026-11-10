@@ -22,8 +22,8 @@
   // ---------- shared status helpers ----------
   const shield = (s, t, amt, dur) => { t.shieldHp = Math.max(t.shieldHp > 0 && t.shieldT > 0 ? t.shieldHp : 0, 0) + amt; t.shieldT = Math.max(t.shieldT || 0, dur); s.ev.push({ e: 'shield', u: t.id, a: Math.round(amt) }); };
   const haste = (t, a, d) => { t.hasteA = Math.max(t.hasteT > 0 ? t.hasteA : 0, a); t.hasteT = Math.max(t.hasteT || 0, d); };
-  const root = (s, t, d) => { if (t.kind === 'tower' || t.boss) return; t.rootT = Math.max(t.rootT || 0, d); if (t.dash && !t.dash.unstop && !t.dash.forced) t.dash = null; if (t.charge) t.charge = null; s.ev.push({ e: 'root', u: t.id }); };
-  const knock = (s, t, d) => { if (t.kind === 'tower' || t.boss) return; if (t.champ === 'gravel' && t.hp > t.maxHp * .4) { stun(s, t, d * .5); return; } stun(s, t, d); t.knockT = t.knockMax = Math.max(t.knockT || 0, d); s.ev.push({ e: 'knock', u: t.id }); };
+  const root = (s, t, d) => { if (t.kind === 'tower' || t.boss || t.evT > 0) return; t.rootT = Math.max(t.rootT || 0, d); if (t.dash && !t.dash.unstop && !t.dash.forced) t.dash = null; if (t.charge) t.charge = null; s.ev.push({ e: 'root', u: t.id }); };
+  const knock = (s, t, d) => { if (t.kind === 'tower' || t.boss || t.evT > 0) return; if (t.champ === 'gravel' && t.hp > t.maxHp * .4) { stun(s, t, d * .5); return; } stun(s, t, d); t.knockT = t.knockMax = Math.max(t.knockT || 0, d); s.ev.push({ e: 'knock', u: t.id }); };
   const poly = (s, t, d) => { if (t.kind === 'tower' || t.boss) return; stun(s, t, d); t.polyT = Math.max(t.polyT || 0, d); s.ev.push({ e: 'poly', u: t.id }); };
   const poison = (s, c, t, dps, d) => { if (t.kind === 'tower') return; t.poisonT = Math.max(t.poisonT || 0, d); t.poisonDps = Math.max(t.poisonT > 0 ? t.poisonDps || 0 : 0, dps); t.poisonBy = c; t.poisonAbil = curAbil; };
   const bleed = (s, c, t, dps, d) => { if (t.kind === 'tower') return; t.bleedDps = t.bleedT > 0 ? Math.max(t.bleedDps, dps) : dps; t.bleedT = Math.max(t.bleedT || 0, d); t.bleedBy = c; t.bleedAbil = curAbil; };
@@ -924,7 +924,7 @@
   };
   function nemesisContact(s, src, t, o) {
     const fresh = !(src.rivalAt > s.t); src.rivalAt = t.rivalAt = s.t + 20;
-    if (fresh) s.ev.push({ e: 'rival', u: src.id, v: t.id, x: Math.round((src.x + t.x) / 2), y: Math.round((src.y + t.y) / 2) });
+    if (fresh) { s.ev.push({ e: 'rival', u: src.id, v: t.id, x: Math.round((src.x + t.x) / 2), y: Math.round((src.y + t.y) / 2) }); maybeDuel(s, src, t); }
     if (!o.skill || src.nemAt > s.t) return;
     src.nemAt = s.t + NEMESIS_GAP; const fn = NEMESIS_HIT[src.champ]; if (fn) fn(s, src, t);
   }

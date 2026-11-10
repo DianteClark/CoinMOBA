@@ -1,6 +1,6 @@
 // Bot audit: headless matches, measuring discipline, tower respect, feeding, farming, abilities, fights,
-// objectives, pacing and the skill gradient. node test_bots.js [games] [mode]. Mode nav: node test_bots.js [games] nav [skill] [seconds] audits obstacles, jungler idle, districts and subway.
-// mode: all (default), even, ladder, human, rank, balance, nav.
+// objectives, pacing and the skill gradient. node test_bots.js [games] [mode]. Mode nav: node test_bots.js [games] nav [skill] [seconds] [mode] audits obstacles, jungler idle, districts and subway.
+// mode: all (default), even, ladder, human, rank, balance, nav, v13 [skill] [classic|brawl|duel], levels.
 const Sim = require('./src/sim.js');
 const N = +process.argv[2] || 12, MODE = process.argv[3] || 'all', LANE_SECS = 360;
 const ids = Object.keys(Sim.KITS);
@@ -235,12 +235,12 @@ function navClear(s, c) {
   for (const t of s.towers) if (t.alive) b = Math.min(b, Math.hypot(c.x - t.x, c.y - t.y) - t.r + 8);
   return b;
 }
-function audit(games, skill, cap = 1200) {
+function audit(games, skill, cap = 1200, mode) {
   const A = { games: 0, mins: 0, walk: 0, blocked: 0, touch: {}, stuck: 0, stuckWall: 0, stuckBy: {}, stuckSpots: {}, hug: 0, byTask: {}, spots: {}, jg: { alive: 0, idle: 0, busy: {}, ganks: 0, firstGank: [], readyAt: [], campsBefore: [], camps: 0, tasks: {} }, lane: { t: 0, ok: 0 }, dist: { n: 0, d: 0, sub: 0 }, nem: 0 };
   for (let g = 0; g < games; g++) {
     let sd = g * 131 + 4243, r = () => (sd = (sd * 16807) % 2147483647) / 2147483647;
     const a = roster(r, 0), b = roster(r, 1); [...a, ...b].forEach(p => { p.skill = skill; });
-    const s = Sim.createMatch({ seed: g + 700, teams: [a, b] });
+    const s = Sim.createMatch({ seed: g + 700, teams: [a, b], mode: mode || 'classic' });
     for (const c of s.champs) if (c.bot && c.bot.setSkill) c.bot.setSkill(skill);
     const st = s.champs.map(() => ({ win: [], stuckUntil: 0, dmg: 0, dmgAt: -9, wasGank: false, camps: 0, gotGank: false }));
     const campUp = s.camps.map(k => k.alive);
@@ -282,7 +282,7 @@ function audit(games, skill, cap = 1200) {
           if (gk && !S0.wasGank) { if (!S0.gotGank) { S0.gotGank = true; A.jg.firstGank.push(s.t); A.jg.campsBefore.push(S0.camps); A.jg.readyAt.push(S0.readyAt || -1); } }
           S0.wasGank = gk;
         } else if (s.t > 28 && s.t < 360) {
-          const home = s.fountains[c.team]; if (Math.hypot(c.x - home.x, c.y - home.y) > 700) { A.lane.t++; if (laneD(s, ROLE_LANE[c.role], c.x, c.y) < 420) A.lane.ok++; }
+          const home = s.fountains[c.team]; if (Math.hypot(c.x - home.x, c.y - home.y) > 700) { A.lane.t++; if (laneD(s, s.oneLane ? 0 : ROLE_LANE[c.role], c.x, c.y) < 420) A.lane.ok++; }
         }
         if (s.districts && s.districts.some(z => Math.hypot(c.x - z.x, c.y - z.y) < z.r)) A.dist.n++;
         A.dist.d++;
@@ -305,10 +305,75 @@ function auditReport(A, title) {
   console.log(`laners on their lane 0:28-6:00 ${pct(A.lane.ok, A.lane.t)}; bot time inside a district ${pct(A.dist.n, A.dist.d)}; subway rides/game ${(A.dist.sub / A.games).toFixed(1)}`);
 }
 
+// ---------- 13.0 audit. node test_bots.js [games] v13 [skill] [mode] ----------
+// Boss slams: every champion standing in a boss slam's ring when it is first telegraphed, and how many are still in it (and not invulnerable) as it lands.
+// Evade: commands bots issued by reason (dodge, escape, waste), Sim's evade and dodge events. Combos, steals, Wanted, duels, Last Stand, acts from Sim events.
+function v13(games, skill, mode) {
+  const A = { games: 0, mins: 0, slamSeen: 0, slamCaught: 0, champBlast: 0, champCaught: 0, st: {}, ev: {}, evadeUse: 0, dodge: 0, combos: 0, steals: 0, wantedOn: 0, wantedDown: 0, wantedSecs: [], duels: { start: 0, win: 0, end: 0 }, stand: 0, standWon: 0, act: { 2: [], 3: [] }, actCore: 0, lens: [], kiteRanged: 0, rangedMins: 0, rampage: 0, laneOk: 0, laneT: 0, wins: [0, 0] };
+  for (let g = 0; g < games; g++) {
+    let sd = g * 977 + 31, r = () => (sd = (sd * 16807) % 2147483647) / 2147483647;
+    const a = roster(r, 0), b = roster(r, 1); [...a, ...b].forEach(p => { p.skill = skill; });
+    const s = Sim.createMatch({ seed: g + 900, teams: [a, b], mode: mode || 'classic' });
+    for (const c of s.champs) if (c.bot && c.bot.setSkill) c.bot.setSkill(skill);
+    const watch = new Map(), wantedAt = {}; let stood = [false, false];
+    while (!s.over && s.t < 2400) {
+      Sim.step(s);
+      for (const e of s.ev) {
+        A.ev[e.e] = (A.ev[e.e] || 0) + (['evade', 'dodge', 'combo', 'steal', 'laststand', 'act', 'duel', 'wanted', 'rampage', 'slam', 'bossphase'].includes(e.e) ? 1 : 0);
+        if (e.e === 'combo') A.combos++;
+        if (e.e === 'steal' || (e.e === 'hl' && e.kind === 'steal')) A.steals++;
+        if (e.e === 'laststand') { A.stand++; stood[e.team] = true; }
+        if (e.e === 'act' && A.act[e.n]) { A.act[e.n].push(s.t); if (e.why === 'core') A.actCore++; }
+        if (e.e === 'duel' && A.duels[e.phase] !== undefined) A.duels[e.phase]++;
+        if (e.e === 'wanted') { if (e.n > 0 && wantedAt[e.u] === undefined) { A.wantedOn++; wantedAt[e.u] = s.t; } if (e.n === 0) { A.wantedDown++; if (wantedAt[e.u] !== undefined) { A.wantedSecs.push(s.t - wantedAt[e.u]); delete wantedAt[e.u]; } } }
+        if (e.e === 'rampage' && e.phase === 'start') A.rampage++;
+      }
+      s.ev.length = 0;
+      // Telegraphed blasts: who is inside when first seen, who is still inside as it lands.
+      for (const z of s.zones) {
+        if (z.kind !== 'blast' || !z.owner) continue;
+        const boss = !!z.owner.boss;
+        if (!watch.has(z.id)) { const ids = s.champs.filter(c => c.alive && c.bot && c.team !== z.team && Math.hypot(c.x - z.x, c.y - z.y) < z.r + c.r).map(c => c.id); watch.set(z.id, ids); if (boss) A.slamSeen += ids.length; else A.champBlast += ids.length; }
+        if (z.t <= Sim.DT * 1.01) {
+          for (const id of watch.get(z.id)) { const c = s.champs.find(x => x.id === id); if (c && c.alive && !(c.evT > 0) && Math.hypot(c.x - z.x, c.y - z.y) < z.r + c.r) { if (boss) A.slamCaught++; else A.champCaught++; } }
+          watch.set(z.id, []);
+        }
+      }
+      if (s.tick % 30 === 0) for (const c of s.champs) if (c.bot && c.alive && !Sim.KITS[c.champ].melee) A.rangedMins += 1 / 60;
+      if (s.tick % 15 === 0 && s.t > 28 && s.t < 360) for (const c of s.champs) if (c.bot && c.alive && c.role !== 'jungle' && Math.hypot(c.x - s.fountains[c.team].x, c.y - s.fountains[c.team].y) > 700) { A.laneT++; if (laneD(s, s.oneLane ? 0 : ROLE_LANE[c.role], c.x, c.y) < 420) A.laneOk++; }
+    }
+    for (const c of s.champs) if (c.bot) { for (const [k, v] of Object.entries(c.bot.st13 || {})) A.st[k] = (A.st[k] || 0) + v; if (!Sim.KITS[c.champ].melee) A.kiteRanged += (c.bot.st13 || {}).kiteSteps || 0; }
+    if (s.over) { A.wins[s.over.winner]++; for (const t of [0, 1]) if (stood[t] && s.over.winner === t) A.standWon++; }
+    A.games++; A.mins += s.t / 60; A.lens.push((s.t / 60).toFixed(1));
+  }
+  return A;
+}
+function v13Report(A, title) {
+  const bm = A.mins * 8, mn = l => l.length ? (l.reduce((x, y) => x + y, 0) / l.length).toFixed(0) : '-';
+  console.log(`\n=== 13.0 audit ${title}: ${A.games} games, lengths ${A.lens.join(' ')} (wins ${A.wins.join('-')})`);
+  console.log(`boss slams: ${A.slamSeen} bot-exposures, caught ${pct(A.slamCaught, A.slamSeen)}; champion blasts: ${A.champBlast} exposures, caught ${pct(A.champCaught, A.champBlast)}`);
+  const st = A.st; console.log(`bot Evade commands/bot-min ${((st.ev || 0) / bm).toFixed(2)} (dodge ${st.evDodge || 0}, escape ${st.evEsc || 0}, wasted ${st.evWaste || 0}); Sim events: evade ${A.ev.evade || 0}, dodge ${A.ev.dodge || 0}`);
+  console.log(`kite steps per ranged bot-min ${(A.kiteRanged / (A.rangedMins || 1)).toFixed(1)}; bot combo ults ${st.combo || 0}, combo events/game ${(A.combos / A.games).toFixed(2)}; bot steal casts ${st.steal || 0}, steals/game ${(A.steals / A.games).toFixed(2)}`);
+  console.log(`wanted: ${A.wantedOn} marked, ${A.wantedDown} brought down (avg ${mn(A.wantedSecs)}s alive while wanted); duels start/win/end ${A.duels.start}/${A.duels.win}/${A.duels.end} (bot duel commits ${st.duel || 0}); Last Stand ${A.stand} (won after ${A.standWon}); rampages ${A.rampage}`);
+  console.log(`acts: City War at ${mn(A.act[2])}s, Final Hour at ${mn(A.act[3])}s (${A.actCore} by core); laners on lane 0:28-6:00 ${pct(A.laneOk, A.laneT)}; Sim events seen: ${Object.entries(A.ev).filter(([, v]) => v).map(([k, v]) => k + ' ' + v).join(', ') || 'none of the 13.0 ones yet'}`);
+}
+// Custom Match ladder: each named level against the one below and against Rookie.
+function levels(games) {
+  const L = Sim.BOT_LEVELS || [{ id: 'rookie', name: 'Rookie', skill: .15 }, { id: 'regular', name: 'Regular', skill: .35 }, { id: 'veteran', name: 'Veteran', skill: .55 }, { id: 'elite', name: 'Elite', skill: .75 }, { id: 'legend', name: 'Legend', skill: .95 }];
+  console.log(`\n=== Custom Match levels (${Sim.BOT_LEVELS ? 'Sim.BOT_LEVELS' : 'fallback table, Sim.BOT_LEVELS not exported yet'}): ${L.map(l => l.name + ' ' + l.skill).join(', ')}`);
+  const pairs = []; for (let i = 1; i < L.length; i++) pairs.push([i, i - 1]); pairs.push([L.length - 1, 0]);
+  for (const [hi, lo] of pairs) {
+    const v = versus(L[hi].skill, L[lo].skill, games + (games % 2));
+    console.log(`  ${L[hi].name} v ${L[lo].name}: ${v.wins}/${v.played} wins, kills ${v.ka}-${v.kb}, avg ${(v.M.secs / 60 / (v.M.games || 1)).toFixed(1)}m`);
+  }
+}
+
 async function main() {
   await Promise.resolve();
-  if (MODE === 'nav') { auditReport(audit(N, +process.argv[4] || .6, +process.argv[5] || 1200), 'skill ' + (+process.argv[4] || .6)); return; }
+  if (MODE === 'nav') { auditReport(audit(N, +process.argv[4] || .6, +process.argv[5] || 1200, process.argv[6]), 'skill ' + (+process.argv[4] || .6) + (process.argv[6] ? ' ' + process.argv[6] : '')); return; }
   if (MODE === 'balance') { balance(N, +process.argv[4] || 1); return; }
+  if (MODE === 'v13') { const sk = +process.argv[4] || .6; v13Report(v13(N, sk, process.argv[5]), 'skill ' + sk + (process.argv[5] ? ' ' + process.argv[5] : '')); return; }
+  if (MODE === 'levels') { levels(N); return; }
   console.log('Sim exports:', ['RANKS', 'rankOf', 'rankDelta', 'botSkills'].map(k => k + ':' + typeof Sim[k]).join(' '));
   if (MODE === 'all' || MODE === 'even') {
     report(run(N, g => ({ seed: g, skill0: .5, skill1: .5 })), 'even match, skill 0.5 v 0.5');

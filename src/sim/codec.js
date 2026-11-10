@@ -31,6 +31,7 @@
       for (let i = 0; i < 3; i++) w16(Math.max(0, c.cd[i]) * 100);
       for (let i = 0; i < 3; i++) w16(Math.max(0, c.recast[i]) * 100);
       w16(Math.max(0, c.atkCd) * 100); wByte((c.slowT > 0 ? c.slowA : 0) * 100); wByte((c.hasteT > 0 ? c.hasteA : 0) * 100);
+      wByte(Math.max(0, c.evCd || 0) * 20); wVar(c.lockId || 0);
     }
     const start = wp;
     if (cache && cache[team + 1]) { new Uint8Array(wb.buffer).set(cache[team + 1], wp); wp += cache[team + 1].length; }
@@ -50,7 +51,7 @@
       const fl2 = (c.rootT > 0 ? 1 : 0) | (c.polyT > 0 ? 2 : 0) | (c.knockT > 0 ? 4 : 0) | (c.stealthT > 0 ? 8 : 0) | (c.noHealT > 0 ? 16 : 0) | (c.poisonT > 0 ? 32 : 0) | (c.bleedT > 0 ? 64 : 0) | (c.cuts ? 128 : 0) | (c.shieldHp > 0 ? 256 : 0) | (c.pready ? 512 : 0) | (c.hasteT > 0 ? 1024 : 0) | (Math.min(7, curse) << 11) | (pstack ? 16384 : 0) | (c.duelZ ? 32768 : 0);
       const fl = (c.alive ? 1 : 0) | (c.air > 0 ? 2 : 0) | (c.dash ? 4 : 0) | (c.stunT > 0 ? 8 : 0) | (c.slowT > 0 ? 16 : 0) | (c.markT > 0 ? 32 : 0) | (c.parryT > 0 ? 64 : 0)
         | (c.drT > 0 ? 128 : 0) | (c.buffT > 0 ? 256 : 0) | (c.empowerT > 0 ? 512 : 0) | (c.revealT > 0 ? 1024 : 0) | (chan ? 2048 : 0) | (ch ? 4096 : 0) | (brush ? 8192 : 0) | (c.echo ? 16384 : 0) | (c.leap ? 32768 : 0);
-      wPos(c.x); wPos(c.y); w16(Math.ceil(c.hp)); wi8((c.fx || 0) * 127); wi8((c.fy || 0) * 127); wb.setUint16(wp, fl, true); wp += 2; wb.setUint16(wp, fl2, true); wp += 2;
+      wPos(c.x); wPos(c.y); w16(Math.ceil(c.hp)); wi8((c.fx || 0) * 127); wi8((c.fy || 0) * 127); wb.setUint16(wp, fl, true); wp += 2; wb.setUint16(wp, fl2, true); wp += 2; w8((c.evT > 0 ? 1 : 0) | (Math.min(3, c.wanted || 0) << 1));
       if (up) wByte((c.z || 0) / 2);
       if (pstack) w8(Math.min(255, pstack));
       if (brush) w8(c.inBrush);
@@ -79,10 +80,10 @@
     const mid = r8(), tick = d.getUint32(p, true); p += 4;
     const ack = r16(), seat = r8() - 1;
     let own = null;
-    if (seat >= 0) own = { cd: [r16() / 100, r16() / 100, r16() / 100], recast: [r16() / 100, r16() / 100, r16() / 100], atkCd: r16() / 100, slowA: r8() / 100, hasteA: r8() / 100 };
+    if (seat >= 0) own = { cd: [r16() / 100, r16() / 100, r16() / 100], recast: [r16() / 100, r16() / 100, r16() / 100], atkCd: r16() / 100, slowA: r8() / 100, hasteA: r8() / 100, evCd: r8() / 20, lockId: rVar() };
     const n = r8(), champs = [];
     for (let i = 0; i < n; i++) {
-      const c = { x: rPos(), y: rPos(), hp: r16(), fx: ri8() / 127, fy: ri8() / 127, fl: r16(), fl2: r16(), z: 0, br: -1, chan: null, charge: null, echo: null, ps: 0 };
+      const c = { x: rPos(), y: rPos(), hp: r16(), fx: ri8() / 127, fy: ri8() / 127, fl: r16(), fl2: r16(), fl3: r8(), z: 0, br: -1, chan: null, charge: null, echo: null, ps: 0 };
       if (c.fl & 2 || c.fl2 & 4) c.z = r8() * 2;
       if (c.fl2 & 16384) c.ps = r8();
       if (c.fl & 8192) c.br = r8();
@@ -119,6 +120,7 @@
   // Rebuilds s between two decoded snapshots. seat is skipped for position: its coin is predicted.
   // f can pass 1 a little, to carry on through a short gap instead of stopping dead.
   function applyFrame(s, A, B, f, seat = -1) {
+    useMap(s.map);
     const span = B ? B.tick - A.tick : 0, rx = s.rx || (s.rx = { m: new Map(), n: new Map(), p: new Map(), z: new Map(), b: new Map() });
     s.tick = A.tick; s.t = (A.tick + span * f) * DT;
     A.champs.forEach((a, i) => {
@@ -154,7 +156,7 @@
     c.alive = !!(f & 1); c.hp = a.hp; c.fx = a.fx; c.fy = a.fy; c.inBrush = a.br;
     c.air = f & 2 ? 1 : 0; c.dash = f & 4 ? (c.dash || { net: true }) : null; c.stunT = f & 8 ? 1 : 0; c.slowT = f & 16 ? 1 : 0; c.markT = f & 32 ? 1 : 0; c.parryT = f & 64 ? 1 : 0;
     c.drT = f & 128 ? 1 : 0; c.buffT = f & 256 ? 1 : 0; c.empowerT = f & 512 ? 1 : 0; c.revealT = f & 1024 ? 1 : 0; c.leap = f & 32768 ? true : null;
-    const g = a.fl2 || 0; c.rootT = g & 1 ? 1 : 0; c.polyT = g & 2 ? 1 : 0; c.knockT = g & 4 ? 1 : 0; c.stealthT = g & 8 ? 1 : 0; c.noHealT = g & 16 ? 1 : 0; c.poisonT = g & 32 ? 1 : 0; c.bleedT = g & 64 ? 1 : 0; c.cuts = g & 128 ? true : null; c.shieldHp = g & 256 ? 1 : 0; c.shieldT = g & 256 ? 1 : 0; c.pready = g & 512 ? 1 : 0; c.hasteT = g & 1024 ? 1 : 0; c.curseN = (g >> 11) & 7; c.curseT = c.curseN ? 1 : 0; c.pstack = a.ps || 0; c.duelZ = g & 32768 ? (c.duelZ || { net: true }) : null;
+    const g = a.fl2 || 0; c.rootT = g & 1 ? 1 : 0; c.polyT = g & 2 ? 1 : 0; c.knockT = g & 4 ? 1 : 0; c.stealthT = g & 8 ? 1 : 0; c.noHealT = g & 16 ? 1 : 0; c.poisonT = g & 32 ? 1 : 0; c.bleedT = g & 64 ? 1 : 0; c.cuts = g & 128 ? true : null; c.shieldHp = g & 256 ? 1 : 0; c.shieldT = g & 256 ? 1 : 0; c.pready = g & 512 ? 1 : 0; c.hasteT = g & 1024 ? 1 : 0; c.curseN = (g >> 11) & 7; c.curseT = c.curseN ? 1 : 0; c.pstack = a.ps || 0; c.duelZ = g & 32768 ? (c.duelZ || { net: true }) : null; c.evT = a.fl3 & 1 ? 1 : 0; c.wanted = (a.fl3 >> 1) & 3;
     if (!(f & 2) && !(g & 4)) c.z = 0;
     if (a.chan) {
       const ch = a.chan, slot = ch.n ? ch.n - 1 : undefined, ab = slot !== undefined ? c.kit[slot] : null;
@@ -170,21 +172,23 @@
   // Slow fields as flat values; a diff of two of these is the delta.
   // Numbers default to 0 so a field gameplay hasn't added yet stays harmless. Section 4 is JSON text per key, for the structured HUD state.
   const num = v => (typeof v === 'number' && isFinite(v) ? v : 0), ceil = v => Math.ceil(num(v)), round = v => Math.round(num(v));
-  const JSON_KEYS = ['bosses', 'boons', 'event', 'votes'];
+  const JSON_KEYS = ['bosses', 'boons', 'event', 'votes', 'duel', 'rampage'];
   const r2 = v => Math.round(num(v) * 100) / 100, r1 = v => Math.round(num(v) * 10) / 10;
   function jsonPart(s, key) {
     const v = s[key];
     if (key === 'bosses') return JSON.stringify((v || []).map(b => ({ kind: b.kind, name: b.name, x: round(b.x), y: round(b.y), r: b.r, at: r1(b.at), up: !!b.up, id: b.id || 0 })));
     if (key === 'boons') return JSON.stringify((v || []).map(o => { const out = {}; for (const k in o) if (o[k] > 0) out[k] = Math.ceil(o[k]); return out; }));
     if (key === 'event') return v ? JSON.stringify({ kind: v.kind, phase: v.phase, t: r1(v.t), total: r1(v.total), x: round(v.x), y: round(v.y), r: v.r, prog: (v.prog || [0, 0]).map(r2), hp: round(v.hp), i: v.i || 0, winner: v.winner === undefined ? -1 : v.winner }) : 'null';
+    if (key === 'duel') return v ? JSON.stringify({ a: v.a, b: v.b, x: round(v.x), y: round(v.y), t: Math.ceil(num(v.t)) }) : 'null';
+    if (key === 'rampage') return v ? JSON.stringify({ team: v.team, t: Math.ceil(num(v.t)) }) : 'null';
     if (key === 'votes') return JSON.stringify((v || []).map(o => o ? { yes: o.yes, no: o.no, t: r1(o.t) } : null));
     return JSON.stringify(v === undefined ? null : v);
   }
   function slowFlat(s) {
     const fund = s.fund || [0, 0], rein = s.reinforceAt || [0, 0], fog = s.fog || [1, 1];
     return [
-      [[Math.round(s.hope * 10), s.hopeTeam, s.kills[0], s.kills[1], Math.round(s.bossAt), s.bossUp ? 1 : 0, s.buff[0], s.buff[1], s.wave, s.over ? s.over.winner + 1 : 0, s.over ? Math.round(s.over.t * 10) : 0, s.over && s.over.surrender ? 1 : 0, round(s.eventAt), num(fund[0]), num(fund[1]), Math.ceil(num(rein[0])), Math.ceil(num(rein[1])), Math.round(num(fog[0]) * 100), Math.round(num(fog[1]) * 100), num(s.hunt[0]), num(s.hunt[1]), Math.ceil(num(s.blackAt[0])), Math.ceil(num(s.blackAt[1])), Math.ceil(num(s.blackT[0])), Math.ceil(num(s.blackT[1]))]],
-      s.champs.map(c => [c.lvl, Math.round(c.xp), Math.floor(c.gold), Math.round(c.maxHp), Math.round(c.msBase), Math.ceil(c.respawn), itemCode(c.items[0]), itemCode(c.items[1]), itemCode(c.items[2]), itemCode(c.items[3]), itemCode(c.items[4]), c.evolved[0] + 1, c.evolved[1] + 1, Math.ceil(num(c.subCd)), 0, c.streak, Math.round(c.armor), c.stats.kills, c.stats.deaths, c.stats.assists, c.stats.casts, c.stats.skillHits, c.stats.parries, Math.round(c.stats.dmg), c.as * 1000 | 0, round(c.bounty), ceil(c.buybackCd), ceil(c.potT), ceil(c.elixT), ceil(c.tonicT), ceil(c.sentT), ceil(c.wlT), round(c.stats.dealt), round(c.stats.taken), round(c.stats.healing), round(c.stats.gold), num(c.stats.towers), num(c.stats.objectives), num(c.stats.rescues), ...EXTRA_STATS.map(k => Math.round(c.stats[k] || 0))]),
+      [[Math.round(s.hope * 10), s.hopeTeam, s.kills[0], s.kills[1], Math.round(s.bossAt), s.bossUp ? 1 : 0, s.buff[0], s.buff[1], s.wave, s.over ? s.over.winner + 1 : 0, s.over ? Math.round(s.over.t * 10) : 0, s.over && s.over.surrender ? 1 : 0, round(s.eventAt), num(fund[0]), num(fund[1]), Math.ceil(num(rein[0])), Math.ceil(num(rein[1])), Math.round(num(fog[0]) * 100), Math.round(num(fog[1]) * 100), num(s.hunt[0]), num(s.hunt[1]), Math.ceil(num(s.blackAt[0])), Math.ceil(num(s.blackAt[1])), Math.ceil(num(s.blackT[0])), Math.ceil(num(s.blackT[1])), num(s.act), Math.ceil(num((s.stand || [0, 0])[0])), Math.ceil(num((s.stand || [0, 0])[1]))]],
+      s.champs.map(c => [c.lvl, Math.round(c.xp), Math.floor(c.gold), Math.round(c.maxHp), Math.round(c.msBase), Math.ceil(c.respawn), itemCode(c.items[0]), itemCode(c.items[1]), itemCode(c.items[2]), itemCode(c.items[3]), itemCode(c.items[4]), c.evolved[0] + 1, c.evolved[1] + 1, Math.ceil(num(c.subCd)), 0, c.streak, Math.round(c.armor), c.stats.kills, c.stats.deaths, c.stats.assists, c.stats.casts, c.stats.skillHits, c.stats.parries, Math.round(c.stats.dmg), c.as * 1000 | 0, round(c.bounty), ceil(c.buybackCd), ceil(c.potT), ceil(c.elixT), ceil(c.tonicT), ceil(c.sentT), ceil(c.wlT), round(c.stats.dealt), round(c.stats.taken), round(c.stats.healing), round(c.stats.gold), num(c.stats.towers), num(c.stats.objectives), num(c.stats.rescues), ...EXTRA_STATS.map(k => Math.round(c.stats[k] || 0)), num(c.wanted), Math.ceil(num(c.evCd))]),
       s.towers.map(t => [Math.ceil(t.hp), t.alive ? 1 : 0]),
       s.sites.map(z => [z.alive ? 1 : 0]),
       [JSON_KEYS.map(k => jsonPart(s, k))],
@@ -197,10 +201,10 @@
     return out;
   }
   const itemCode = id => (id && ITEM_BY[id] ? ITEM_BY[id].i + 1 : 0), setItem = i => (c, v) => { c.items[i] = v ? ITEMS[v - 1].id : null; c.dirtyKit = 1; };
-  const G_FIELDS = [(s, v) => { s.hope = v / 10; }, (s, v) => { s.hopeTeam = v; }, (s, v) => { s.kills[0] = v; }, (s, v) => { s.kills[1] = v; }, (s, v) => { s.bossAt = v; }, (s, v) => { s.bossUp = !!v; }, (s, v) => { s.buff[0] = v; }, (s, v) => { s.buff[1] = v; }, (s, v) => { s.wave = v; }, (s, v) => { s.over = v ? Object.assign(s.over || { t: 0 }, { winner: v - 1 }) : null; }, (s, v) => { if (s.over) s.over.t = v / 10; }, (s, v) => { if (s.over) s.over.surrender = !!v; }, (s, v) => { s.eventAt = v; }, (s, v) => { (s.fund || (s.fund = [0, 0]))[0] = v; }, (s, v) => { (s.fund || (s.fund = [0, 0]))[1] = v; }, (s, v) => { (s.reinforceAt || (s.reinforceAt = [0, 0]))[0] = v; }, (s, v) => { (s.reinforceAt || (s.reinforceAt = [0, 0]))[1] = v; }, (s, v) => { (s.fog || (s.fog = [1, 1]))[0] = v / 100; }, (s, v) => { (s.fog || (s.fog = [1, 1]))[1] = v / 100; }, (s, v) => { s.hunt[0] = v; }, (s, v) => { s.hunt[1] = v; }, (s, v) => { s.blackAt[0] = v; }, (s, v) => { s.blackAt[1] = v; }, (s, v) => { s.blackT[0] = v; }, (s, v) => { s.blackT[1] = v; }];
+  const G_FIELDS = [(s, v) => { s.hope = v / 10; }, (s, v) => { s.hopeTeam = v; }, (s, v) => { s.kills[0] = v; }, (s, v) => { s.kills[1] = v; }, (s, v) => { s.bossAt = v; }, (s, v) => { s.bossUp = !!v; }, (s, v) => { s.buff[0] = v; }, (s, v) => { s.buff[1] = v; }, (s, v) => { s.wave = v; }, (s, v) => { s.over = v ? Object.assign(s.over || { t: 0 }, { winner: v - 1 }) : null; }, (s, v) => { if (s.over) s.over.t = v / 10; }, (s, v) => { if (s.over) s.over.surrender = !!v; }, (s, v) => { s.eventAt = v; }, (s, v) => { (s.fund || (s.fund = [0, 0]))[0] = v; }, (s, v) => { (s.fund || (s.fund = [0, 0]))[1] = v; }, (s, v) => { (s.reinforceAt || (s.reinforceAt = [0, 0]))[0] = v; }, (s, v) => { (s.reinforceAt || (s.reinforceAt = [0, 0]))[1] = v; }, (s, v) => { (s.fog || (s.fog = [1, 1]))[0] = v / 100; }, (s, v) => { (s.fog || (s.fog = [1, 1]))[1] = v / 100; }, (s, v) => { s.hunt[0] = v; }, (s, v) => { s.hunt[1] = v; }, (s, v) => { s.blackAt[0] = v; }, (s, v) => { s.blackAt[1] = v; }, (s, v) => { s.blackT[0] = v; }, (s, v) => { s.blackT[1] = v; }, (s, v) => { s.act = v || 1; }, (s, v) => { (s.stand || (s.stand = [0, 0]))[0] = v; }, (s, v) => { (s.stand || (s.stand = [0, 0]))[1] = v; }];
   const D_FIELDS = [(d, v) => { d.owner = v; }, (d, v) => { d.by = v; }, (d, v) => { d.prog = v / 100; }, (d, v) => { d.contested = !!v; }, (d, v) => { d.scar = v / 100; }, (d, v) => { d.boost[0] = v; }, (d, v) => { d.boost[1] = v; }];
   const stat = k => (c, v) => { c.stats[k] = v; }, plain = k => (c, v) => { c[k] = v; };
-  const C_FIELDS = [plain('lvl'), plain('xp'), plain('gold'), plain('maxHp'), plain('msBase'), plain('respawn'), setItem(0), setItem(1), setItem(2), setItem(3), setItem(4), (c, v) => { c.evolved[0] = v - 1; c.dirtyKit = 1; }, (c, v) => { c.evolved[1] = v - 1; c.dirtyKit = 1; }, plain('subCd'), () => {}, plain('streak'), plain('armor'), stat('kills'), stat('deaths'), stat('assists'), stat('casts'), stat('skillHits'), stat('parries'), stat('dmg'), (c, v) => { c.as = v / 1000; }, plain('bounty'), plain('buybackCd'), plain('potT'), plain('elixT'), plain('tonicT'), plain('sentT'), plain('wlT'), stat('dealt'), stat('taken'), stat('healing'), stat('gold'), stat('towers'), stat('objectives'), stat('rescues'), ...EXTRA_STATS.map(stat)];
+  const C_FIELDS = [plain('lvl'), plain('xp'), plain('gold'), plain('maxHp'), plain('msBase'), plain('respawn'), setItem(0), setItem(1), setItem(2), setItem(3), setItem(4), (c, v) => { c.evolved[0] = v - 1; c.dirtyKit = 1; }, (c, v) => { c.evolved[1] = v - 1; c.dirtyKit = 1; }, plain('subCd'), () => {}, plain('streak'), plain('armor'), stat('kills'), stat('deaths'), stat('assists'), stat('casts'), stat('skillHits'), stat('parries'), stat('dmg'), (c, v) => { c.as = v / 1000; }, plain('bounty'), plain('buybackCd'), plain('potT'), plain('elixT'), plain('tonicT'), plain('sentT'), plain('wlT'), stat('dealt'), stat('taken'), stat('healing'), stat('gold'), stat('towers'), stat('objectives'), stat('rescues'), ...EXTRA_STATS.map(stat), plain('wanted'), (c, v) => { if (!c.ownEv) c.evCd = v; }];
   function applySlow(s, d) {
     for (let i = 0; i < d.length; i += 4) {
       const a = d[i], b = d[i + 1], c = d[i + 2], v = d[i + 3];
@@ -227,7 +231,8 @@
   }
 
   // Events, as short arrays. Position fields are rounded; everything else is passed as is.
-  const EV_KEYS = { strike: ['u', 'x', 'y'], hit: ['u', 'a', 'sk', 'crit', 'by'], heal: ['u', 'a'], die: ['u', 'kind', 'x', 'y', 'by'], gold: ['u', 'a'], boom: ['x', 'y', 'r', 'fx', 'x2', 'y2'], phit: ['x', 'y', 'fx'], blink: ['x', 'y'], parry: ['u'], cast: ['u', 'fx', 'dx', 'dy', 'slot', 'charge'], fire: ['u', 'fx', 'dx', 'dy'], root: ['u'], knock: ['u'], poly: ['u'], curse: ['u', 'n'], shield: ['u', 'a'], stealth: ['u', 'on'], ping: ['u', 'kind', 'x', 'y', 'team'], evolve: ['u', 'tier', 'choice'], buy: ['u', 'id'], sell: ['u', 'id'], beacon: ['u', 'x', 'y', 'team'], bhit: ['x', 'y', 'team'], level: ['u'], tower: ['team', 'sub'], bossup: ['kind'], boss: ['team', 'kind'], feed: ['a', 'b', 'multi', 'first', 'bounty'], spawn: ['u'], tshot: ['u', 't', 'n'], cancelled: ['u'], stun: ['u'], mark: ['u'], forge: ['u', 'track'], atk: ['u', 't'], matk: ['u'], civ: ['team', 'x', 'y', 'id', 'n'], hope: ['team', 'on'], recap: ['u', 'list', 'total'], mapevent: ['kind', 'phase', 'team', 'x', 'y'], fund: ['u', 'team', 'a'], reinforce: ['u', 'team', 'lane'], buyback: ['u'], surrender: ['team', 'phase', 'yes', 'no', 'need'], consume: ['u', 'id'], boon: ['team', 'kind', 'on'], hl: ['kind', 'u', 'x', 'y', 'n', 'v', 'b'], district: ['id', 'kind', 'team', 'from', 'phase'], subway: ['u', 'from', 'to', 'phase'], blackout: ['team', 'u'], city: ['kind', 'team'], hunt: ['team', 'n', 'need', 'paid'], rival: ['u', 'v', 'x', 'y'], raid: ['phase'] };
+  const EV_KEYS = { strike: ['u', 'x', 'y'], hit: ['u', 'a', 'sk', 'crit', 'by'], heal: ['u', 'a'], die: ['u', 'kind', 'x', 'y', 'by'], gold: ['u', 'a'], boom: ['x', 'y', 'r', 'fx', 'x2', 'y2'], phit: ['x', 'y', 'fx'], blink: ['x', 'y'], parry: ['u'], cast: ['u', 'fx', 'dx', 'dy', 'slot', 'charge'], fire: ['u', 'fx', 'dx', 'dy'], root: ['u'], knock: ['u'], poly: ['u'], curse: ['u', 'n'], shield: ['u', 'a'], stealth: ['u', 'on'], ping: ['u', 'kind', 'x', 'y', 'team'], evolve: ['u', 'tier', 'choice'], buy: ['u', 'id'], sell: ['u', 'id'], beacon: ['u', 'x', 'y', 'team'], bhit: ['x', 'y', 'team'], level: ['u'], tower: ['team', 'sub'], bossup: ['kind'], boss: ['team', 'kind'], feed: ['a', 'b', 'multi', 'first', 'bounty'], spawn: ['u'], tshot: ['u', 't', 'n'], cancelled: ['u'], stun: ['u'], mark: ['u'], forge: ['u', 'track'], atk: ['u', 't'], matk: ['u'], civ: ['team', 'x', 'y', 'id', 'n'], hope: ['team', 'on'], recap: ['u', 'list', 'total'], mapevent: ['kind', 'phase', 'team', 'x', 'y'], fund: ['u', 'team', 'a'], reinforce: ['u', 'team', 'lane'], buyback: ['u'], surrender: ['team', 'phase', 'yes', 'no', 'need'], consume: ['u', 'id'], boon: ['team', 'kind', 'on'], hl: ['kind', 'u', 'x', 'y', 'n', 'v', 'b'], district: ['id', 'kind', 'team', 'from', 'phase'], subway: ['u', 'from', 'to', 'phase'], blackout: ['team', 'u'], city: ['kind', 'team'], hunt: ['team', 'n', 'need', 'paid'], rival: ['u', 'v', 'x', 'y'], raid: ['phase'],
+    act: ['n', 'why', 'team'], evade: ['u', 'x', 'y', 'dx', 'dy'], dodge: ['u'], laststand: ['team', 'n'], combo: ['a', 'b', 't', 'x', 'y'], wanted: ['u', 'n', 'bounty', 'by'], slam: ['u', 'x', 'y', 'r', 't'], bossphase: ['u', 'kind', 'n'], steal: ['u', 'kind'], duel: ['a', 'b', 'x', 'y', 'phase', 'w'], rampage: ['team', 'phase'] };
   const EV_NAMES = Object.keys(EV_KEYS), EV_IDX = {}; EV_NAMES.forEach((n, i) => { EV_IDX[n] = i; });
   const EV_ROUND = { x: 1, y: 1, x2: 1, y2: 1, dx: 100, dy: 100 };
   function packEvent(e) {
@@ -246,10 +251,11 @@
 
   // One tick of the guest's own coin: the same walking as the host, then predicted basic attacks.
   function predict(s, c) {
-    c.px = c.x; c.py = c.y;
+    useMap(s.map); c.px = c.x; c.py = c.y;
     if (!c.alive) return;
     if (c.lock > 0) c.lock -= DT;
-    if (c.atkCd > 0) c.atkCd -= DT;
+    if (c.atkCd > 0) c.atkCd -= DT; if (c.evCd > 0) c.evCd -= DT;
+    if (c.lock > 0 && (c.mv.x || c.mv.y)) c.lock = 0; // attack cancel, as on the host
     for (let i = 0; i < 3; i++) { if (c.cd[i] > 0) c.cd[i] -= DT; if (c.recast[i] > 0) c.recast[i] -= DT; }
     if (c.charge) c.charge.t += DT;
     if (c.pdash) {
