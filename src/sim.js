@@ -2802,6 +2802,12 @@ const Sim = (() => {
 // Flipside 4.0: bots act only through the same inputs a person has. They know only what their
 // team can see (Sim.canSee), remember last-seen positions with fading confidence, and every
 // decision scales with one continuous skill value 0..1 per bot.
+// 14.0 (skill-based matches, no comebacks): sides convert. planSiege groups the healthy bots on the best open structure after a
+// won fight, an ace or a real lead, and takes it with the wave (towerCover) or a dive the group can afford (diveSiegeOk); bosses
+// come first on a lead; the core is finished whatever stands near it. planClear meets enemy waves out in the lane once
+// structures soften. Feet: the stick eases into a moving spot, holds a reached one, turns at a hand's pace, and footwork keeps a
+// bot moving around its spot instead of planting. Skill adds stick quality, push discipline, greed (over-chasing), cooldown
+// tracking, focus fire and shop timing. Bots call help, danger and attack pings for people; they follow help and attack pings from people.
 
   // ---------- skill: one number, 0 (beginner) to 1 (superb) ----------
   function skillProfile(v) {
@@ -2834,6 +2840,13 @@ const Sim = (() => {
       waste: Math.max(0, .5 - v) * .05,          // chance per hurt decision a beginner panics and burns Evade on nothing
       kite: Math.pow(v, .9),         // chance it steps between attacks (attack cancel) instead of standing
       steal: L(.1, .95),             // reads a boss low enough to steal and goes for it
+      // 14.0
+      hand: L(.42, .8),              // share of the gap the stick closes each frame (a beginner's thumb is slower and looser)
+      push: Math.pow(v, .8),         // converts a won fight: groups, takes the tower with the wave, ends the game
+      greed: L(.5, .04),             // chases a kill or a last minion too far, into fog or a tower
+      shuffle: L(.35, .9),           // keeps moving in lane between jobs instead of planting
+      track: clamp((v - .4) * 1.75, 0, 1), // remembers enemy cooldowns it saw used (ultimates, Evade)
+      focus: v * v,                  // sticks to the side's focus target
     };
   }
 
@@ -3013,7 +3026,7 @@ const Sim = (() => {
     return best;
   }
 
-  const moveTo = (b, x, y, arrive = 20) => { b.gx = x; b.gy = y; b.ga = arrive; b.hasGoal = true; b.vecT = 0; };
+  const moveTo = (b, x, y, arrive = 20) => { b.gx = x; b.gy = y; b.ga = arrive; b.hasGoal = true; b.vecT = 0; b.fresh = true; };
   const moveDir = (b, x, y) => { b.hasGoal = false; b.vx = x; b.vy = y; b.vecT = .3; };
   const noMove = b => { b.hasGoal = false; b.vecT = 0; };
 
@@ -3038,8 +3051,14 @@ const Sim = (() => {
       b.evadeT -= DT; const f = freeDir(s, c, b, b.ex, b.ey);
       c.mv.x = f ? f.x : 0; c.mv.y = f ? f.y : 0; return;
     }
+    // 14.0: a reached spot is held until the goal has really moved on (no stop-start shuffling behind a walking wave).
+    const gd = b.hasGoal ? Math.hypot(b.gx - c.x, b.gy - c.y) : 0;
+    if (!b.hasGoal || b.vecT > 0) b.held = false;
+    else if (b.held && gd > b.ga + 26) b.held = false;
+    else if (!b.held && gd <= b.ga) b.held = true;
+    let ease = 1;
     if (b.vecT > 0) { b.vecT -= DT; const f = freeDir(s, c, b, b.vx, b.vy); if (f) { vx = f.x; vy = f.y; } }
-    else if (b.hasGoal && Math.hypot(b.gx - c.x, b.gy - c.y) > b.ga) {
+    else if (b.hasGoal && !b.held) {
       onPath = true;
       // A goal inside a wall or tower is aimed at from its open near edge. Arrival still measures from the real goal.
       const aim = openAim(m, b.mask, c.x, c.y, b.gx, b.gy), gx = aim.x, gy = aim.y;
@@ -3065,12 +3084,14 @@ const Sim = (() => {
       // Pushed into a wall's margin with no route yet: step back onto open ground first rather than leaning on the wall.
       if (!b.path && !navOpen(m, b.mask, c.x, c.y)) { const k = navCell(m, b.mask, c.x, c.y); if (k >= 0) { tx = k % m.cols * 40 + 20; ty = (k / m.cols | 0) * 40 + 20; } }
       const n = norm(tx - c.x, ty - c.y); vx = n.x; vy = n.y;
+      // The last stretch eases off like a thumb easing on the stick, so following a moving spot settles into its pace.
+      if (!b.path && b.ga < 200) ease = clamp((gd - b.ga) / 45 + .38, .38, 1);
     }
     // Keep out of enemy tower range unless two or more of our minions are tanking, or the dive is a sure kill.
     // A tower already shooting this bot (its shots compound) means get out now regardless.
     if (!b.diveOk) for (const t of s.towers) {
       if (!t.alive || t.team === c.team) continue;
-      const tanked = t === b.et && b.etTanks >= 2 && t.last !== c.id;
+      const tanked = t === b.et && b.etTanks >= 1 && t.last !== c.id;
       if (tanked) continue;
       const dx = t.x - c.x, dy = t.y - c.y, d = Math.hypot(dx, dy); if (d > t.range + 36) continue;
       const nx = dx / d, ny = dy / d, inw = vx * nx + vy * ny;
@@ -3097,7 +3118,7 @@ const Sim = (() => {
     if (sx || sy) {
       const n = norm(vx + sx * .8, vy + sy * .8);
       if (navOpen(m, b.mask, c.x + n.x * 46, c.y + n.y * 46)) {
-        if (vx || vy) { vx = n.x; vy = n.y; } else if (sx * sx + sy * sy > .09) { vx = n.x * .5; vy = n.y * .5; }
+        if (vx || vy) { vx = n.x; vy = n.y; } else if (sx * sx + sy * sy > .25) { vx = n.x * .45; vy = n.y * .45; }
       }
     }
     // Last word on the heading: never lean on a wall. Slide along it, easing off when touching; a heading with nothing left asks for a route.
@@ -3110,6 +3131,12 @@ const Sim = (() => {
         if (l > .05) { vx *= mag / l; vy *= mag / l; }
         if (l < .3 && onPath) b.needPath = true;
       }
+    }
+    // A thumb, not a teleport: the stick turns over a few frames (sharper players snap faster) and lets go at once.
+    if (vx || vy) {
+      vx *= ease; vy *= ease;
+      const k = b.sk.hand, px = c.mv.x, py = c.mv.y;
+      if (px || py) { vx = px + (vx - px) * k; vy = py + (vy - py) * k; }
     }
     c.mv.x = vx; c.mv.y = vy;
     // Stuck check: too little ground covered in half a second while trying to walk.
@@ -3298,9 +3325,11 @@ const Sim = (() => {
   // Effective health times damage, square-rooted so a team's power adds up the Lanchester way.
   // A team knows its own cooldowns; enemy cooldowns are assumed up.
   const BURST = { vesper: [190, 0, 260], kade: [124, 0, 185], ione: [82, 165, 345], solenne: [72, 0, 90], sable: [138, 0, 180], gravel: [64, 62, 165], deadbolt: [62, 160, 240], duelist: [220, 0, 150], hex: [100, 0, 240], plague: [120, 170, 0], shiv: [150, 0, 252], ironjaw: [130, 70, 165], voltaic: [120, 90, 190], tidecaller: [80, 60, 170], paragon: [95, 95, 230], mirage: [150, 0, 170], cinder: [110, 80, 280], ravager: [130, 90, 160], cataclysm: [140, 90, 190], puppeteer: [75, 80, 140] };
-  function power(u, foe) {
+  // know (14.0): how well the viewer tracks an enemy's cooldowns it has watched go out. 0 assumes everything is up (the old
+  // rule, and a beginner's); a sharp player counts a spent ultimate and a burnt Evade.
+  function power(u, foe, know = 0) {
     const B = BURST[u.champ], pw = pow(u); let burst = 0;
-    for (let i = 0; i < 3; i++) if (i < 2 || u.lvl >= 3) burst += (foe || u.cd[i] <= 1.5 ? 1 : .15) * B[i] * pw / (u.kit[i].cd || 6);
+    for (let i = 0; i < 3; i++) if (i < 2 || u.lvl >= 3) { const up = u.cd[i] <= 1.5 ? 1 : .15, k = foe ? 1 + (up - 1) * know : up; burst += k * B[i] * pw / (u.kit[i].cd || 6); }
     const eh = Math.max(1, u.hp) * (100 + u.armor) / 100; let dps = u.dmgBase * u.as * (u.buffT > 0 ? 1.2 : 1) + burst;
     if (u.stunT > 0) dps *= .6;
     return Math.sqrt(eh * dps);
@@ -3343,6 +3372,142 @@ const Sim = (() => {
     return null;
   }
 
+  // ---------- 14.0: converting an advantage ----------
+  // A tower is safe to stand under while one of our minions with a shot or two left in it is in its range (it shoots minions
+  // before champions who have not hit a champion). Returns that cover, 0 when there is none.
+  function towerCover(s, team, t) {
+    let n = 0;
+    for (const m of s.minions) if (m.alive && m.team === team && !(m.delay > 0) && dist(m, t) < t.range - 15) n += m.hp > m.maxHp * .45 ? 1 : .5;
+    return n;
+  }
+  // Champion damage per second on a structure (basic attacks, tower armour, the champion-on-structure multiplier).
+  const towerDps = (s, list) => list.reduce((n, c) => n + c.dmgBase * c.as * (c.buffT > 0 ? 1.2 : 1) * CHAMP_TOWER_K * 100 / 130, 0);
+  // Can this group take the tower with nobody tanking but a champion? The tower picks the nearest one and compounds.
+  function diveSiegeOk(s, t, group) {
+    if (!group.length) return false;
+    const ttk = t.hp / Math.max(1, towerDps(s, group)), shots = Math.ceil(ttk / 1.1) + 1;
+    let dmg = 0; for (let i = 0; i < shots; i++) dmg += towerShot(s, i) * 100 / (100 + 40);
+    const tank = Math.max(...group.map(c => c.hp + (c.shieldHp || 0)));
+    return dmg < tank * .8 && ttk < 9;
+  }
+  // The side's push plan: after a won fight, with enemies dead or a clear lead, everyone healthy groups on the best open
+  // structure and takes it with the wave; with the core open, it ends the game. ai.siege = {id, lane, x, y, ids, go, until, why}.
+  function planSiege(s, team, ai, mine, foes, foesAlive, laning) {
+    const prev = ai.siege; ai.siege = null;
+    if (s.raid && s.raid.team === team) return;
+    const dead = s.champs.filter(e => e.team !== team && !e.alive), window = dead.length ? Math.min(...dead.map(e => e.respawn)) : 0;
+    const total = s.champs.filter(e => e.team !== team).length, edge = mine.length - foesAlive;
+    let lvl = 0, n = 0; for (const c of s.champs) { lvl += c.team === team ? c.lvl : -c.lvl; n++; } lvl /= Math.max(1, n / 2);
+    const kills = s.kills[team] - s.kills[1 - team];
+    // Why push: numbers and time (enemies on their way back), or a lead big enough to force it.
+    let why = null;
+    if (foesAlive === 0 && mine.length) why = 'ace';
+    else if (edge >= 2 && window > 7) why = 'numbers';
+    else if (edge >= 1 && window > 11 && !laning) why = 'numbers';
+    else if (!laning && edge >= 0 && (lvl >= 1.6 || kills >= 7) && mine.length >= Math.min(3, total)) why = 'lead';
+    // Keep a running siege a little longer while the edge holds; drop it when they are back and it is even.
+    if (!why && prev && s.t < prev.until && edge >= 0 && mine.length >= 2) why = prev.why;
+    if (!why) return;
+    // A boss the side can take comes first on a lead (its boon pushes harder than a chip at a tower), and in a numbers window
+    // when it is up and nearer than any structure would be.
+    const hoardBoss = ai.hoard && s.monsters.find(m => m.bossKind === ai.hoard.kind && m.alive);
+    if (ai.hoard && why === 'lead' && !(prev && prev.go)) return;
+    // Target: the open structure with the best worth for the time it takes. Structures resist hard early (structureK), so a
+    // lead alone chips outer towers and takes the core only once it can fall or when they are down a body; with enemies dead
+    // the window decides. Nothing feasible: no siege (bosses, districts and farm turn the lead into more lead instead).
+    let cx = 0, cy = 0; for (const c of mine) { cx += c.x; cy += c.y; } cx /= mine.length; cy /= mine.length;
+    const K = structureK(s), dps = Math.max(30, towerDps(s, mine) * K * .8), room = why === 'lead' ? 50 : window + 12;
+    let best = null, bv = 0;
+    for (const t of s.towers) {
+      if (!t.alive || t.team === team || !towerOpen(s, t)) continue;
+      const core = t.sub === 'core';
+      if (core && why === 'lead' && K < 1 && edge < 1) continue;
+      if (hoardBoss && dist(hoardBoss, { x: cx, y: cy }) < Math.hypot(t.x - cx, t.y - cy)) continue;
+      const lane = t.lane >= 0 ? t.lane : -1, front = lane >= 0 ? s.laneInfo[team][lane].front : null;
+      const wave = front && dist(front, t) < 1100 ? 1 : 0, d = Math.hypot(t.x - cx, t.y - cy), ttk = t.hp / dps + d / 380;
+      // A lead with every enemy up works with a wave: no wave near it, no siege there yet.
+      if (why === 'lead' && !(front && dist(front, t) < 1600) && !(prev && prev.id === t.id && prev.go)) continue;
+      if (ttk > room * (prev && prev.id === t.id ? 1.4 : 1)) continue;
+      let v = (core ? 3 : 1 + t.tier * .3) / (1 + ttk / 25) + wave * .25 + (prev && prev.id === t.id ? .3 : 0);
+      if (laning && !core && t.tier > 0) v *= .5;
+      if (v > bv) { bv = v; best = t; }
+    }
+    if (!best) return;
+    // The core can be reached through a fallen inner tower of either lane; walk the open one.
+    let lane = best.lane;
+    if (best.sub === 'core') { const gone = s.towers.find(o => o.team === best.team && o.sub === 'tower' && o.tier === 1 && !o.alive); lane = gone ? gone.lane : 0; }
+    const home = s.fountains[team], nn = norm(home.x - best.x, home.y - best.y), stand = best.range + 70;
+    const pool = mine.filter(c => c.bot && frac(c) > (why === 'ace' ? .22 : .32) && !(ai.defend && ai.defend.ids.includes(c.id) && ai.defend.wave === false));
+    const ids = pool.map(c => c.id);
+    if (!ids.length) return;
+    const near = pool.filter(c => dist(c, best) < best.range + 600);
+    // A structure a couple of seconds from falling is finished whatever stands around it (the core ends the game).
+    const finish = near.length >= 1 && best.hp < towerDps(s, near) * K * (best.sub === 'core' ? 3.5 : 2);
+    const cover = towerCover(s, team, best), dive = finish || (foes.every(e => dist(e, best) > 1100) && diveSiegeOk(s, best, near));
+    // With every enemy up, a lead siege only goes in together; with bodies down, cover is enough.
+    const together = why !== 'lead' || finish || near.length >= Math.min(cover >= 2 ? 2 : 3, pool.length);
+    const go = together && (cover >= 1 || dive || (prev && prev.go && prev.id === best.id && near.length >= 2));
+    ai.siege = { id: best.id, lane: lane >= 0 ? lane : 0, x: best.x + nn.x * stand, y: best.y + nn.y * stand, ids, go, cover, dive, finish, why, until: prev && prev.id === best.id ? prev.until : s.t + (why === 'lead' ? 40 : Math.max(14, window + 6)) };
+    // Say it out loud: the sharpest bot on the side calls the target once (people on the team see the ping too).
+    if (!prev || prev.id !== best.id) {
+      const caller = pool.slice().sort((a, z) => z.bot.skill - a.bot.skill)[0];
+      if (caller && hash01(best.id + (s.t | 0), caller.id) < .3 + .7 * caller.bot.sk.macro) caller.q.push({ t: 'ping', kind: 'attack', x: best.x, y: best.y });
+    }
+  }
+  // Waves walking at our structures (14.0): late on, structures soften and an unanswered wave alone takes a tower or the core.
+  // The nearest healthy bot meets the wave out in its lane before it arrives; the core's lane gets two. ai.clear = {botId: lane}.
+  function planClear(s, team, ai, mine, foes, laning) {
+    ai.clear = {};
+    if (laning || (s.raid && s.raid.enemy === team)) return;
+    const K = structureK(s);
+    for (const lane of s.lanes) {
+      const fr = s.laneInfo[1 - team][lane].front, n = s.laneInfo[1 - team][lane].n; if (!fr || n < 2) continue;
+      const guard = firstTower(s, team, lane); if (!guard || !guard.alive) continue;
+      const d = dist(fr, guard), core = guard.sub === 'core';
+      if (d > (core ? 2200 : 1500) * (K > 1 ? 1.3 : 1)) continue;
+      if (s.champs.some(a => a.team === team && a.alive && dist(a, fr) < 700)) continue; // someone is on it
+      if (foes.filter(e => dist(e, fr) < 900).length >= 2) continue; // their group walks with it: the defend call answers that
+      const want = s.raid ? 1 : core || K > 1.5 ? 2 : 1;
+      const pool = mine.filter(c => c.bot && frac(c) > .4 && !ai.clear[c.id] && !(ai.siege && ai.siege.go && dist(c, s.towers.find(t => t.id === ai.siege.id) || c) < 900)).sort((a, z) => dist(a, fr) - dist(z, fr));
+      for (const c of pool.slice(0, want)) if (dist(c, fr) < 3600 || core) ai.clear[c.id] = lane;
+    }
+  }
+  // Meet an enemy wave out in its lane and wipe it: minions first, abilities on the clump, never under their tower.
+  function clearTask(s, c, b, lane) {
+    b.task = 'clear';
+    const fr = s.laneInfo[1 - c.team][lane].front; if (!fr) { laneTask(s, c, b, lane, s.ai[c.team], true); return; }
+    let m = null, md = 1e9;
+    for (const x of s.minions) if (x.alive && x.team !== c.team && x.lane === lane && !(x.delay > 0)) { const d = dist(c, x); if (d < md) { md = d; m = x; } }
+    m = m || fr;
+    const p = towerOver(s, c.team, m.x, m.y, 30) ? openAim(s.map, b.mask, c.x, c.y, m.x, m.y) : m;
+    moveTo(b, p.x, p.y, Math.max(40, c.range * .7));
+    c.atk = true; c.atkMode = 'minion';
+    if (md < c.range + m.r) { c.atkPref = m.id; castPve(s, c, b, m, md); }
+  }
+  // One bot's part in the siege: gather outside range, clear their wave, stand in with our minions tanking, then hit the structure.
+  function siegeTask(s, c, b, ai, S) {
+    const t = s.towers.find(x => x.id === S.id); if (!t || !t.alive) return false;
+    b.task = 'siege';
+    const d = dist(c, t) - t.r, cover = towerCover(s, c.team, t), shot = t.last === c.id;
+    const reach = c.range - 6;
+    // Under the tower: safe while our minions take the shots, or in a dive the group can afford (not while it is already shooting us).
+    const safe = cover >= 1 || (S.dive && !(shot && frac(c) < (S.finish ? .2 : .45)));
+    if (safe && S.go) {
+      b.diveOk = true;
+      if (d > reach) moveTo(b, t.x, t.y, c.range + t.r - 14);
+      else noMove(b);
+      c.atk = true; c.atkMode = 'tower'; c.atkPref = t.id; c.preferTower = true;
+      // An enemy minion that would hit us while we stand there is cleared first (it is what keeps our cover alive).
+      return true;
+    }
+    // Not safe yet: shove the wave toward the tower (laneTask pushes) or wait at the edge for it.
+    // A wave on the way is met and walked in (clearing theirs); with none at all, the group holds the edge for the next one.
+    const front = s.laneInfo[c.team][S.lane] && s.laneInfo[c.team][S.lane].front;
+    if (front) { laneTask(s, c, b, S.lane, ai, true); b.task = 'siege'; return true; }
+    moveTo(b, S.x, S.y, 70); c.atk = true;
+    return true;
+  }
+
   // ---------- bots: team plan, shared by every bot on a side ----------
   function teamThink(s, team) {
     const ai = s.ai[team]; ensureAi(ai);
@@ -3355,7 +3520,8 @@ const Sim = (() => {
     }
     // Acts (13.0): Laning, City War, Final Hour. Final Hour can come early when a core opens.
     const act = botAct(s); ai.act = act;
-    ai.phase = act === 1 && s.t < LANE_END + 120 ? 'lane' : act >= 3 || s.t >= LATE_AT ? 'late' : 'mid';
+    // Brawl's one street has no laning to protect and its structures soften minutes early: it plays the mid game from 2:30.
+    ai.phase = act === 1 && s.t < (s.mode === 'brawl' ? 150 : LANE_END + 120) ? 'lane' : act >= 3 || s.t >= LATE_AT ? 'late' : 'mid';
     ai.stand = botStand(s, team) > 0; ai.foeStand = botStand(s, 1 - team) > 0;
     const laning = ai.phase === 'lane';
 
@@ -3420,18 +3586,23 @@ const Sim = (() => {
         const B = pick, boss = B.up ? s.monsters.find(m => m.id === B.id && m.alive) : null, home = s.fountains[team], n = norm(home.x - B.x, home.y - B.y);
         let minePow = 0, foePow = 0, close = 0;
         for (const c of mine) minePow += power(c);
-        for (const e of foes) if (dist(e, B) < 1380) foePow += power(e, true);
+        for (const e of foes) if (dist(e, B) < 1380) foePow += power(e, true, .5);
         const size = B.kind === 'colossus' ? 4 : 3, needAlive = B.kind === 'colossus' ? Math.min(3, s.champs.filter(c => c.team === team).length) : 2;
         const enough = mine.length >= needAlive || foesAlive <= 1;
-        if (enough && foePow < minePow * .95 && !(call && call.sub === 'core')) {
-          const pool = mine.filter(c => c.bot && frac(c) > .4 && !(ai.defend && ai.defend.ids.includes(c.id))).sort((a, z) => dist(a, B) - dist(z, B)).slice(0, size), ids = pool.map(c => c.id);
+        // Raid: the Colossus is the win condition, so a wave at the core does not call the side off it (one bot clears).
+        const raidBoss = s.raid && s.raid.team === team && B.kind === 'colossus';
+        if (enough && foePow < minePow * .95 && (!(call && call.sub === 'core') || raidBoss)) {
+          const pool = mine.filter(c => c.bot && frac(c) > (raidBoss ? .3 : .4) && (raidBoss || !(ai.defend && ai.defend.ids.includes(c.id)))).sort((a, z) => dist(a, B) - dist(z, B)).slice(0, size), ids = pool.map(c => c.id);
           for (const c of pool) if (dist(c, B) < 940) close++;
           ai.hoard = { kind: B.kind, x: B.x + n.x * Math.min(560, B.r + 300), y: B.y + n.y * Math.min(560, B.r + 300) + (team ? 40 : -40), ids };
           if (prevHoard && prevHoard.kind === B.kind && ai.hoardGo) ai.hoardGo = true;
-          else ai.hoardGo = !!boss && close >= Math.min(needAlive, ids.length) && ids.length > 0;
+          else ai.hoardGo = !!boss && (raidBoss || close >= Math.min(needAlive, ids.length)) && ids.length > 0;
         } else { ai.hoard = null; ai.hoardGo = false; }
       }
     }
+
+    planSiege(s, team, ai, mine, foes, foesAlive, laning);
+    planClear(s, team, ai, mine, foes, laning);
 
     // Pick one enemy for the side to pile on: close to several allies, hurt, or already stunned.
     let focus = null, fv = 0;
@@ -3501,7 +3672,10 @@ const Sim = (() => {
           if (d.owner === team || d.contested && role !== 'jungle' || dist(c, d) > reach || towerOver(s, team, d.x, d.y, 0)) continue;
           if (Object.values(ai.dist).some(x => x.d === d) && role !== 'jungle') continue;
           if (near(foes, d) > near(mine, d)) continue;
-          const v = (WORTH[d.kind] || 1) * (dist(c, d) < d.r ? 1.6 : 1) * (d.owner === 1 - team ? 1.15 : 1) / (1 + dist(c, d) / 1100);
+          // Vision (14.0): owned districts are the map's wards. A support with game sense prizes Comms, and anyone the district
+          // that lights the next boss before it spawns.
+          const sight = (d.kind === 'comms' && role === 'support' ? 1 + .6 * c.bot.sk.macro : 1) * (ai.hoard && !ai.hoardGo && Math.hypot(d.x - ai.hoard.x, d.y - ai.hoard.y) < 1300 ? 1 + .5 * c.bot.sk.macro : 1);
+          const v = sight * (WORTH[d.kind] || 1) * (dist(c, d) < d.r ? 1.6 : 1) * (d.owner === 1 - team ? 1.15 : 1) / (1 + dist(c, d) / 1100);
           if (v > bv) { bv = v; best = d; }
         }
         if (best) ai.dist[c.id] = { d: best, def: false };
@@ -3897,7 +4071,7 @@ const Sim = (() => {
       let v = (front ? 1.8 : 1.4) * (1 - d / 1000) + sk.iq * ((1 - frac(e)) * 1.1 + CARRY[e.champ] * (b.cls === 'flank' ? 1.2 : .5) + (kill ? 1.2 : 0));
       if (e.id === b.tid) v += .35;
       if (e.bounty > 0) v += sk.iq * Math.min(.5, e.bounty / 1200); // a shutdown pays
-      if (e.id === ai.focus) v += .3 + sk.iq * .3;
+      if (e.id === ai.focus) v += .25 + sk.focus * .9; // focus fire: the top levels all hit the same body
       if (e.id === c.nem) v += .2 + sk.iq * .25 + (botDuel(s, c, e) ? .9 : 0); // the rivalry pays Marks, and a duel pays gold
       if (e.wanted) v += sk.iq * .3 * botWanted(e); // a growing bounty
       if (sk.combo > .2 && botComboOn(s, c, e)) v += .5 + sk.combo * .6; // an ally's ult just landed here
@@ -3912,12 +4086,12 @@ const Sim = (() => {
   function assess(s, c, b, ai) {
     let mine = power(c), theirs = 0, foeN = 0;
     for (const a of s.champs) if (a !== c && a.alive && a.team === c.team && dist(a, c) < 850) mine += power(a);
-    for (const e of b.foes) if (dist(e, c) < 1000) { theirs += power(e, true); foeN++; }
+    for (const e of b.foes) if (dist(e, c) < 1000) { theirs += power(e, true, b.sk.track) * (e.evCd > 0 ? 1 - .08 * b.sk.track : 1); foeN++; }
     // Enemies last seen nearby still count, at the confidence the bot's memory allows.
     const mem = memThreat(s, c, b, ai, c.x, c.y, 900);
     if (mem > .1 && foeN) theirs += mem * (theirs / foeN) * .7;
     // Being under a friendly tower is worth a lot; under an enemy one worse still unless the wave is tanking.
-    for (const t of s.towers) if (t.alive && dist(c, t) < t.range) { if (t.team === c.team) mine *= 1.3; else theirs = (theirs || power(c) * .6) * (t === b.et && b.etTanks >= 2 ? 1.15 : 1.8); }
+    for (const t of s.towers) if (t.alive && dist(c, t) < t.range) { if (t.team === c.team) mine *= 1.3; else theirs = (theirs || power(c) * .6) * (t === b.et && b.etTanks >= 1 ? 1.15 : 1.8); }
     let fn = 0, on = 0; for (const m of s.minions) if (m.alive && dist(m, c) < 420) { if (m.team === c.team) on++; else fn++; }
     const waveK = clamp(1 + (on - fn) * .05, .75, 1.25);
     return mine * waveK * b.sk.aggr * (1 + b.noise * b.sk.judge) / Math.max(theirs, .01);
@@ -4001,7 +4175,7 @@ const Sim = (() => {
     const lh = withCarry && dist(carry, c) < 800 ? null : findLastHit(s, c, b);
     let dest = { x, y, a: 26 };
     const t = b.et;
-    if (t && b.etTanks >= 2 && towerOpen(s, t)) b.siegeT = s.t + .8; // a wave stepping in and out of range must not flip the plan
+    if (t && b.etTanks >= 1 && towerOpen(s, t)) b.siegeT = s.t + .8; // a wave stepping in and out of range must not flip the plan
     const siege = t && s.t < b.siegeT && towerOpen(s, t);
     const underTw = towerOver(s, c.team, c.x, c.y, 10);
     // Wave plan: shove when told to or when the lane is free; otherwise last-hit and let the wave hold.
@@ -4182,16 +4356,39 @@ const Sim = (() => {
     return true;
   }
 
-  // ---------- bots: the decision each bot makes ----------
-  function botThink(s, c, b) {
+  // 14.0: never planted. Having reached its spot with nothing in reach, a bot keeps shifting its feet around it the way players
+  // do (it makes it a moving target and keeps the camera honest). Beginners drift wider and lazier; sharp players keep it tight.
+  function footwork(s, c, b) {
+    if (!b.hasGoal || !b.fresh || b.still || c.chan || b.vecT > 0 || b.ga > 200) return;
+    const bx = b.gx, by = b.gy, sk = b.sk;
+    // Trading blows with something in reach: hold the spot until the attacks stop.
+    if (Math.hypot(bx - c.x, by - c.y) > b.ga + 60 || c.atkCd > .05) return;
+    if (!b.shuf || s.t >= b.shuf.until || Math.hypot(b.shuf.bx - bx, b.shuf.by - by) > 90) {
+      // A new spot, well clear of the last one, reachable in a straight line and outside enemy tower range.
+      const prev = b.shuf, a0 = prev ? Math.atan2(prev.oy, prev.ox) + Math.PI : s.rand() * 6.283;
+      let ox = 0, oy = 0;
+      for (let k = 0; k < 4; k++) {
+        const a = a0 + (s.rand() - .5) * 2.2, r = 36 + s.rand() * (38 + (1 - sk.v) * 45), x = Math.cos(a) * r, y = Math.sin(a) * r;
+        if (navOpen(s.map, b.mask, bx + x, by + y) && clearLine(s.map, b.mask, c.x, c.y, bx + x, by + y, 14) && !towerOver(s, c.team, bx + x, by + y, 10)) { ox = x; oy = y; break; }
+      }
+      b.shuf = { ox, oy, bx, by, until: s.t + 1.6 + s.rand(), at: 0 }; b.held = false;
+    }
+    // A short beat on arrival, then the next step: a beginner lingers a little longer.
+    if (!b.shuf.at && Math.hypot(bx + b.shuf.ox - c.x, by + b.shuf.oy - c.y) < 16) { b.shuf.at = s.t; b.shuf.until = Math.min(b.shuf.until, s.t + .15 + s.rand() * .5 * (1.6 - sk.shuffle)); }
+    moveTo(b, bx + b.shuf.ox, by + b.shuf.oy, 12); b.fresh = false;
+  }
+
+  // Every decision ends with the feet: whatever the job, a bot that has arrived keeps moving like a player.
+  function botThink(s, c, b) { botDecide(s, c, b); footwork(s, c, b); }
+  function botDecide(s, c, b) {
     const sk = b.sk, ai = s.ai[c.team]; ensureAi(ai);
     const f = frac(c), home = s.fountains[c.team], homeD = dist(c, home), laning = ai.phase === 'lane', laner = c.role !== 'jungle' && roleLane(c) >= 0;
-    c.atk = false; c.atkPref = 0; c.atkMode = 'champ'; c.preferTower = false; b.still = false; b.diveOk = false;
+    c.atk = false; c.atkPref = 0; c.atkMode = 'champ'; c.preferTower = false; b.still = false; b.diveOk = false; b.fresh = false;
     if (s.t >= b.noiseAt) { b.noise = (s.rand() - .5) * 2; b.noiseAt = s.t + 3 + s.rand() * 3; b.strafe = -b.strafe; }
 
     const foes = b.foes; foes.length = 0; b.closest = 1e9;
     for (const e of s.champs) if (e.team !== c.team && e.alive && !e.air && canSee(s, c.team, e)) { foes.push(e); b.closest = Math.min(b.closest, dist(e, c)); }
-    b.et = towerOver(s, c.team, c.x, c.y, 240); b.etTanks = b.et ? alliesTanking(s, c.team, b.et) : 0;
+    b.et = towerOver(s, c.team, c.x, c.y, 240); b.etTanks = b.et ? towerCover(s, c.team, b.et) : 0;
     senseThreats(s, c, b);
     const t = pickTarget(s, c, b, ai), d = t ? dist(c, t) : 1e9; b.tid = t ? t.id : 0;
     if (c.charge) handleCharge(s, c, b, t, d);
@@ -4200,7 +4397,9 @@ const Sim = (() => {
 
     if (homeD < 360) { b.lastHome = s.t; if (f > .92) b.low = false; }
     // Forge the moment it's affordable: anyone can press the button from anywhere.
-    const nb = nextBuy(s, c), keep = s.t > 720 && sk.iq > .35 ? buybackCost(s, c) * (.5 + .5 * sk.macro) : 0; if (nb && c.gold >= nb.cost + keep) c.q.push({ t: 'buy', id: nb.id });
+    // Shopping: a sharp player spends the moment it can; a beginner forgets for a while and plays with gold in its pocket.
+    const nb = nextBuy(s, c), keep = s.t > 720 && sk.iq > .35 ? buybackCost(s, c) * (.5 + .5 * sk.macro) : 0;
+    if (nb && c.gold >= nb.cost + keep && s.t >= (b.shopAt || 0)) { c.q.push({ t: 'buy', id: nb.id }); b.shopAt = s.t + Math.pow(1 - sk.v, 1.5) * 30 * s.rand(); }
     botSpend(s, c, b, ai, nb);
     if (c.lvl >= 4 && c.evolved[0] < 0) c.q.push({ t: 'evolve', tier: 0, choice: botEvolve(c, 0) });
     if (c.lvl >= 8 && c.evolved[1] < 0) c.q.push({ t: 'evolve', tier: 1, choice: botEvolve(c, 1) });
@@ -4227,10 +4426,16 @@ const Sim = (() => {
     if (s.catchup[c.team] > .25) b.ratio *= 1 - .2 * s.catchup[c.team] * (.4 + .6 * sk.macro);
     if (b.deaths.length > 6) b.deaths.splice(0, b.deaths.length - 6);
 
+    pingCalls(s, c, b, ai, f, laning, laner);
     // Too hurt to stay: recall if it is quiet, walk home if it is not.
     // A duel the bot is winning is not abandoned at the usual health line.
     const duelEdge = duel && f > .12 && frac(t) < f + .08 * sk.iq;
     if (!duelEdge && (f < sk.low || (f < sk.low + .15 && b.closest < 600 && b.ratio < .9))) b.low = true;
+    // Recall with intent (14.0): hurt with nothing to stay for, or topping up before the side's boss call. Beginners stay out half-dead.
+    else if (!b.low && !c.chan && homeD > 2300 && b.closest > 1300 && s.t - (b.hurtAt || -9) > 4 && !b.fighting && hash01(c.id, s.t / 6 | 0) < sk.macro) {
+      const sieging = ai.siege && ai.siege.go && ai.siege.ids.includes(c.id), bossSoon = ai.hoard && ai.hoard.ids.includes(c.id) && !ai.hoardGo;
+      if (!sieging && (f < .38 + .17 * sk.macro || (bossSoon && f < .62))) b.low = true;
+    }
     if (b.low) {
       b.task = 'low';
       if (homeD < 360) { c.atk = !towerOver(s, c.team, c.x, c.y, 0); noMove(b); return; }
@@ -4245,7 +4450,7 @@ const Sim = (() => {
     const heeds = key => hash01(key, c.id + 3) < .3 + .7 * sk.macro;
     // A boss low enough to burst, with the other side on it: go steal it.
     if (stealTask(s, c, b, ai)) return;
-    const called = ai.defend && ai.defend.ids.includes(c.id) && heeds(ai.defend.id + (s.t / 20 | 0));
+    const called = ai.defend && ai.defend.ids.includes(c.id) && heeds(ai.defend.id + (s.t / 20 | 0)) && !(s.raid && ai.hoardGo && ai.hoard && ai.hoard.ids.includes(c.id) && ai.defend.ids[0] !== c.id);
 
     if (t) {
       const kill = t.hp <= burstOn(c, t), tw = towerOver(s, c.team, t.x, t.y, 10), tanks = tw ? alliesTanking(s, c.team, tw) : 0;
@@ -4253,10 +4458,12 @@ const Sim = (() => {
       const shots = 1 + Math.ceil((d / c.msBase + 1) / 1.1); let shotsSum = 0; for (let i = 0; i < shots; i++) shotsSum += towerShot(s, i);
       const sureKill = kill && c.hp > shotsSum;
       const pokeFromOut = tw && d - t.r <= c.range && !towerOver(s, c.team, c.x, c.y, 0);
-      const group = ai.push !== null || (ai.hoard && ai.hoard.ids.includes(c.id));
+      const group = ai.push !== null || (ai.hoard && ai.hoard.ids.includes(c.id)) || (ai.siege && ai.siege.ids.includes(c.id));
       let want = (kill && b.ratio > .7) || (b.ratio > 1.4 && (frac(t) < .7 || d < 620)) || (b.ratio > 1.15 && d < c.range + 70)
         || (b.fighting && b.ratio > .78 && d < 900) || (group && b.ratio > .95 && d < 850);
-      if (tw && !sureKill && !pokeFromOut) want = false;
+      // A beginner sometimes runs a low target right under its tower (and pays for it); sharp players only for a sure kill.
+      const greedDive = kill && frac(t) < .3 && hash01(t.id + (s.t / 4 | 0), c.id + 83) < sk.greed * .45;
+      if (tw && !sureKill && !pokeFromOut && !greedDive) want = false;
       if (f < .45 && b.ratio < 1.2 && !kill) want = false;
       const pack = s.champs.reduce((n, e) => n + (e.team !== c.team && e.alive && !e.air && dist(e, c) < 800 && canSee(s, c.team, e) ? 1 : e.team === c.team && e.alive && dist(e, c) < 800 ? -1 : 0), 0), outnumbered = pack >= 2 && !kill;
       if (outnumbered) want = false;
@@ -4272,8 +4479,16 @@ const Sim = (() => {
       if (laning && c.role === 'jungle' && !b.gank && !ai.help[c.id] && !kill && d > 600) want = false;
       if (safeMode && !kill) want = want && b.ratio > 1.2;
       // No long chases: a beginner gives up late, and a sharper bot sooner when it is losing ground.
-      if (want && d > c.range + 90 && !kill && !duel) { b.chase += sk.think; if (b.chase > 1.6 + sk.iq * 1.4) { want = false; b.noChase = s.t + 4; b.chase = 0; } } else b.chase = 0;
-      if (s.t < b.noChase && !kill) want = false;
+      // Chasing (14.0): a sharp player drops a chase it is not closing, kill or not; a beginner keeps running after
+      // anything hurt, for longer, into fog and towers.
+      if (want && d > c.range + 70 && !duel) {
+        const dt = s.t - (b.chaseAt || 0), closing = b.chaseId === t.id && dt > 0 && dt < 1 ? (b.chaseD - d) / dt : 0;
+        b.chaseId = t.id; b.chaseD = d; b.chaseAt = s.t; b.chase += sk.think;
+        if (closing < -10) b.losing = (b.losing || 0) + sk.think; else b.losing = 0;
+        const limit = kill ? 2.4 + sk.greed * 6 : 1.4 + sk.greed * 4, sharpStop = sk.iq > .45 && b.losing > .5 + (1 - sk.iq) * 1.5 && d > c.range + 160;
+        if (b.chase > limit || sharpStop) { want = false; b.noChase = s.t + 3; b.chase = 0; b.losing = 0; }
+      } else b.chase = 0;
+      if (s.t < b.noChase && d > c.range + 40 && (!kill || sk.iq > .45)) want = false;
       if (laning && laner && b.fighting && !want && !kill) b.tradeT = s.t + 3.5;
       b.fighting = !!want;
       if (want) {
@@ -4296,16 +4511,19 @@ const Sim = (() => {
       }
     } else b.fighting = false;
 
+    // 14.0: the side is converting. A bot that heeds it (sharper players nearly always do) groups and takes the structure.
+    if (ai.siege && ai.siege.ids.includes(c.id) && !called && !(ai.clear && ai.clear[c.id] !== undefined && heeds(7 + (s.t / 15 | 0))) && hash01(ai.siege.id + (s.t / 15 | 0), c.id + 71) < .2 + .8 * sk.push && siegeTask(s, c, b, ai, ai.siege)) return;
     // Answer pings from the side.
     const pg = pingTask(s, c, b, ai);
     if (pg === 'retreat' && homeD > 700 && !t) { moveTo(b, home.x, home.y, 80); b.task = 'pinged'; c.atk = true; useCombo(s, c, b, null, 'poke'); return; }
     if (pg && pg.x !== undefined) { b.task = 'pinged'; moveTo(b, pg.x, pg.y, 110); c.atk = true; if (t) useCombo(s, c, b, t, 'poke'); return; }
     // Team plan first, then the role's normal job.
     if (called) { b.task = 'defend'; moveTo(b, ai.defend.x, ai.defend.y, 60); c.atk = true; }
+    else if (ai.clear && ai.clear[c.id] !== undefined && heeds(7 + (s.t / 15 | 0))) clearTask(s, c, b, ai.clear[c.id]);
     else if (ai.help[c.id] && ai.help[c.id].alive && heeds(ai.help[c.id].id + (s.t / 12 | 0))) { b.task = 'help'; const a = ai.help[c.id]; moveTo(b, a.x, a.y, 130); c.atk = true; }
     else if (ai.cover[c.id] !== undefined) { b.task = 'cover'; laneTask(s, c, b, ai.cover[c.id], ai, false); }
     else if (ai.ev && ai.ev[c.id] && s.event && heeds(99 + (s.t / 12 | 0))) { b.task = 'event'; const E = s.event; moveTo(b, E.x, E.y, E.r * .55); c.atk = true; }
-    else if (ai.hoard && ai.hoard.ids.includes(c.id) && (hash01(1 + (s.t / 25 | 0), c.id + 7) < .65 + .35 * sk.macro) && hoardTask(s, c, b, ai)) { b.task = 'boss'; }
+    else if (ai.hoard && ai.hoard.ids.includes(c.id) && (hash01(1 + (s.t / 25 | 0), c.id + 7) < (s.raid ? .85 : .65) + .35 * sk.macro) && hoardTask(s, c, b, ai)) { b.task = 'boss'; }
     else if (ai.dist && ai.dist[c.id] && c.role !== 'jungle') districtTask(s, c, b, ai.dist[c.id].d);
     else if (ai.sites[c.id] && ai.sites[c.id].alive && heeds(ai.sites[c.id].id + 41 + (s.t / 25 | 0))) { b.task = 'site'; const z = ai.sites[c.id]; moveTo(b, z.x, z.y, 70); c.atk = true; }
     else if (ai.split === c.id && ai.push !== null) { b.task = 'split'; laneTask(s, c, b, ai.push === 0 ? 1 : 0, ai, true); }
@@ -4373,6 +4591,18 @@ const Sim = (() => {
     if ((danger >= 1.5 && hash01(c.id, s.t / 5 | 0) < .35 + .6 * b.sk.macro) || (late && (rich || c.respawn > 18) && hash01(c.id, s.t / 8 | 0) < .25 + .35 * b.sk.iq)) c.q.push({ t: 'buyback' });
   }
 
+  // Calls a bot makes for its side (14.0), rate-limited like a person's: help when collapsed on, and a missing lane opponent
+  // during laning (a sharp laner's 'danger' on its own spot, which its lane partner heeds by giving ground).
+  function pingCalls(s, c, b, ai, f, laning, laner) {
+    if (s.t < (b.pingAt || 0) || c.pingT > 0) return;
+    const say = (kind, x, y) => { c.q.push({ t: 'ping', kind, x, y }); b.pingAt = s.t + 18 + s.rand() * 12; };
+    let near = 0; for (const e of b.foes) if (dist(e, c) < 750) near++;
+    if (near >= 2 && f < .6 && s.t - (b.hurtAt || -9) < 1 && hash01(c.id, s.t | 0) < .3 + .6 * b.sk.macro && s.champs.some(a => a !== c && a.team === c.team && a.alive && dist(a, c) < 1600)) { say('help', c.x, c.y); return; }
+    if (laning && laner && b.sk.macro > .5) {
+      const opp = s.champs.find(e => e.team !== c.team && e.alive && e.role === c.role), m = opp && ai.mem[opp.id];
+      if (m && s.t - m.t > 6 && s.t - m.t < 9 && laneDist(s, b.lane, m.x, m.y) < 600 && hash01(c.id + 3, s.t / 3 | 0) < b.sk.macro) say('danger', c.x, c.y);
+    }
+  }
   // What an ally's ping asks of this bot right now: a point to go to, 'retreat', or nothing.
   function pingTask(s, c, b, ai) {
     if (!ai.pings.length) return null;
@@ -4384,7 +4614,8 @@ const Sim = (() => {
       const d = Math.hypot(p.x - c.x, p.y - c.y), human = !s.champs.find(a => a.id === p.by).bot;
       if (p.kind === 'retreat' && d < 1100) return 'retreat';
       if (p.kind === 'danger' && d < 520) { const n = norm(c.x - p.x, c.y - p.y); return { x: c.x + n.x * 400, y: c.y + n.y * 400 }; }
-      if ((p.kind === 'help' || p.kind === 'attack') && d < (human ? 2400 : 1600) && frac(c) > .45 && !b.low && (ai.phase !== 'lane' || human || c.role === 'jungle') && (d > 260 || p.kind === 'help')) {
+      // Bots already share the side's plan; a help or attack call is for, and from, people (14.0).
+      if ((p.kind === 'help' || p.kind === 'attack') && human && d < 2400 && frac(c) > .45 && !b.low && (ai.phase !== 'lane' || human || c.role === 'jungle') && (d > 260 || p.kind === 'help')) {
         if (!b.pinged[p.t]) { b.pinged[p.t] = 1; if (hash01(c.id, p.t * 7) < .4) c.q.push({ t: 'ping', kind: 'omw', x: p.x, y: p.y }); }
         if (!res || age < res.age) res = { x: p.x, y: p.y, age };
       }

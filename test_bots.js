@@ -1,7 +1,8 @@
 // Bot audit: headless matches, measuring discipline, tower respect, feeding, farming, abilities, fights,
 // objectives, pacing and the skill gradient. node test_bots.js [games] [mode]. Mode nav: node test_bots.js [games] nav [skill] [seconds] [mode] audits obstacles, jungler idle, districts and subway.
-// mode: all (default), even, ladder, human, rank, balance, nav, v13 [skill] [classic|brawl|duel], levels.
-const Sim = require('./src/sim.js');
+// mode: all (default), even, ladder, human, rank, balance, nav, v13 [skill] [classic|brawl|duel], levels,
+//   v14 [skill] [mode] [seedBase] (idle, jitter, conversion, lengths, step cost), ladder14 [seedBase] [pairs] [mode] (adjacent Custom Match levels).
+const Sim = require(process.env.SIMJS || './src/sim.js');
 const N = +process.argv[2] || 12, MODE = process.argv[3] || 'all', LANE_SECS = 360;
 const ids = Object.keys(Sim.KITS);
 const laneD = (s, l, x, y) => {
@@ -368,12 +369,100 @@ function levels(games) {
   }
 }
 
+// ---------- 14.0 audit. node test_bots.js [games] v14 [skill] [mode] [seedBase] ----------
+// Idle (strict): an alive bot that over the last second neither walked (under 25 units covered), attacked, cast, dealt damage
+// nor took any of the legitimate waits: a recall or subway channel, a hard disable, healing in the fountain (below 98%), standing in a
+// district or civilian site its side is taking, buying at the fountain. Sampled twice a second, reported per role and by the task it held.
+// Jitter: heading flip-flops (a turn of over 135 degrees and back within half a second) per bot-minute while walking. Dodges and kites are turns too,
+// so a small number is expected; a bot that dithers between two goals shows a large one.
+// Conversion: a fight won by two kills or more (fights as in the main report) is converted when the winners destroy a structure,
+// a boss, or flip a district within 50 seconds. Lead: the side ahead in kills at 10:00 (or the end) wins how often.
+function v14(games, skill, mode, base) {
+  const A = { games: 0, mins: 0, lens: [], wins: [0, 0], idle: {}, alive: {}, idleTask: {}, flips: 0, walkMin: 0, won2: 0, conv: 0, convWhat: {}, towers: 0, bosses: 0, flips2: 0, leadN: 0, leadWin: 0, stepMs: [], kills: 0, unfinished: 0 };
+  for (let g = 0; g < games; g++) {
+    let sd = (base + g) * 977 + 31, r = () => (sd = (sd * 16807) % 2147483647) / 2147483647;
+    // Rosters as bot fill makes them (Sim.sensiblePool: a kit for each role), not four random picks: a healer jungling with no front line is not a skill test.
+    const fill = t => { const list = Sim.sensiblePool(t, null, r), roles = Sim.autoRoles(list); return list.map((c, i) => ({ champ: c, role: roles[i], name: 'b' + i, tier: 0 })); };
+    const a = fill(0), b = fill(1), sk = Array.isArray(skill) ? skill : [skill, skill];
+    a.forEach(p => { p.skill = sk[0]; }); b.forEach(p => { p.skill = sk[1]; });
+    const s = Sim.createMatch({ seed: base + g + 900, teams: [a, b], mode: mode || 'classic' });
+    for (const c of s.champs) if (c.bot && c.bot.setSkill) c.bot.setSkill(sk[c.team]);
+    const st = s.champs.map(c => ({ hx: [], dmg: 0, act: -9, casts: 0, head: [], })), pend = [];
+    let fight = null, tN = 0, tT = 0, lead10 = null;
+    while (!s.over && s.t < 2400) {
+      const t0 = process.hrtime.bigint(); Sim.step(s); tT += Number(process.hrtime.bigint() - t0); tN++;
+      for (const e of s.ev) {
+        const what = e.e === 'tower' ? 'tower' : e.e === 'boss' ? 'boss' : e.e === 'district' && e.phase === 'flip' ? 'district' : null;
+        if (e.e === 'tower') A.towers++; if (e.e === 'boss') A.bosses++; if (what === 'district') A.flips2++;
+        if (what) { const team = e.e === 'tower' ? 1 - e.team : e.team; for (const P of pend) { if (P.team !== team || s.t - P.t > 60) continue; if (!P.done && s.t - P.t < 50) { P.done = true; A.conv++; A.convWhat[what] = (A.convWhat[what] || 0) + 1; } if (what === 'tower' && !P.tw) { P.tw = true; A.convTw = (A.convTw || 0) + 1; } } }
+      }
+      s.ev.length = 0;
+      if (lead10 === null && s.t >= 600) lead10 = s.kills[0] === s.kills[1] ? -1 : s.kills[0] > s.kills[1] ? 0 : 1;
+      s.champs.forEach((c, i) => {
+        const S0 = st[i]; if (!c.bot) return;
+        if ((c.stats.dmg || 0) > S0.dmg || c.stats.casts > S0.casts || c.atkCd > (S0.lastCd || 0) + .01) S0.act = s.t;
+        S0.dmg = c.stats.dmg || 0; S0.casts = c.stats.casts; S0.lastCd = c.atkCd;
+        if (!c.alive) { S0.hx.length = 0; S0.head.length = 0; return; }
+        S0.hx.push(c.x, c.y); if (S0.hx.length > 60) S0.hx.splice(0, 2);
+        const mx = c.x - c.px, my = c.y - c.py, sp = Math.hypot(mx, my);
+        if (sp > 1.5) { A.walkMin += 1 / 1800; const h = Math.atan2(my, mx); S0.head.push(s.t, h); if (S0.head.length > 40) S0.head.splice(0, 2); const H2 = S0.head, n = H2.length;
+          // look for a reversal and back: heading now close to one ~.2-.5s ago, with one in between pointing away from both
+          if (n >= 8 && !(S0.flipAt > s.t - .5)) { const ang = (x, y) => Math.abs(((x - y + 9.42478) % 6.28318) - 3.14159); for (let k = n - 4; k >= 0; k -= 2) { if (s.t - H2[k] > .5) break; if (ang(H2[k + 1], h) < .6) { let away = false; for (let j = k + 2; j < n - 2; j += 2) if (ang(H2[j + 1], h) > 2.35) { away = true; break; } if (away) { A.flips++; S0.flipAt = s.t; break; } } } }
+        }
+        if (s.tick % 15) return;
+        const R = c.role; A.alive[R] = (A.alive[R] || 0) + 1;
+        const moved = S0.hx.length >= 60 ? Math.hypot(c.x - S0.hx[0], c.y - S0.hx[1]) : 99;
+        const home = s.fountains[c.team], atBase = Math.hypot(c.x - home.x, c.y - home.y) < 400;
+        const capturing = (s.districts || []).some(z => !z.home && Math.hypot(c.x - z.x, c.y - z.y) < z.r && (z.owner !== c.team || z.by === 1 - c.team)) || s.sites.some(z => z.alive && Math.hypot(c.x - z.x, c.y - z.y) < 130 && z.prog[c.team] < 1);
+        const wait = c.chan || c.stunT > 0 || c.rootT > 0 || c.polyT > 0 || c.knockT > 0 || c.air || (atBase && c.hp < c.maxHp * .98) || capturing;
+        if (moved < 25 && s.t - S0.act > 1 && !wait && s.t > 5) { A.idle[R] = (A.idle[R] || 0) + 1; const k = R + ':' + (c.bot.task || '?'); A.idleTask[k] = (A.idleTask[k] || 0) + 1; }
+      });
+      if (s.tick % 15 === 0) {
+        const al = [0, 1].map(t => s.champs.filter(c => c.team === t && c.alive));
+        let f0 = 0, f1 = 0; for (const x of al[0]) if (al[1].some(y => dist(x, y) < 600)) f0++; for (const x of al[1]) if (al[0].some(y => dist(x, y) < 600)) f1++;
+        const on = f0 >= 2 && f1 >= 2;
+        if (on && !fight) fight = { k0: s.kills[0], k1: s.kills[1], last: s.t }; if (on) fight.last = s.t;
+        if (fight && s.t - fight.last > 6) { const d0 = s.kills[0] - fight.k0, d1 = s.kills[1] - fight.k1; if (Math.abs(d0 - d1) >= 2) { A.won2++; pend.push({ team: d0 > d1 ? 0 : 1, t: s.t, done: false }); } fight = null; }
+      }
+    }
+    A.stepMs.push(tT / 1e6 / tN);
+    if (!s.over) A.unfinished++; else { A.wins[s.over.winner]++; const L = lead10 === null ? (s.kills[0] === s.kills[1] ? -1 : s.kills[0] > s.kills[1] ? 0 : 1) : lead10; if (L >= 0) { A.leadN++; if (L === s.over.winner) A.leadWin++; } }
+    A.games++; A.mins += s.t / 60; A.lens.push(+(s.t / 60).toFixed(1)); A.kills += s.kills[0] + s.kills[1]; A.k = [(A.k || [0, 0])[0] + s.kills[0], (A.k || [0, 0])[1] + s.kills[1]]; A.tw = [0, 1].map(t => ((A.tw || [0, 0])[t]) + s.towers.filter(x => x.team !== t && !x.alive).length);
+  }
+  return A;
+}
+function v14Report(A, title) {
+  const roles = ['top', 'jungle', 'bottom', 'support'], g = A.games || 1;
+  console.log(`\n=== 14.0 audit ${title}: ${A.games} games${A.unfinished ? ' (' + A.unfinished + ' unfinished)' : ''}, avg ${(A.mins / g).toFixed(1)}m [${A.lens.join(' ')}], wins ${A.wins.join('-')}, kills/game ${(A.kills / g).toFixed(1)}`);
+  console.log(`idle (strict): ${roles.map(r => r + ' ' + pct(A.idle[r] || 0, A.alive[r] || 0)).join(', ')}; all ${pct(roles.reduce((n, r) => n + (A.idle[r] || 0), 0), roles.reduce((n, r) => n + (A.alive[r] || 0), 0))}`);
+  console.log('  idle by role:task:', Object.entries(A.idleTask).sort((a, b) => b[1] - a[1]).slice(0, 8).map(([k, v]) => k + ' ' + v).join(', '));
+  console.log(`jitter: ${(A.flips / Math.max(1, A.walkMin)).toFixed(2)} flip-flops per walking bot-minute; conversion: ${A.won2} fights won by 2+, ${pct(A.conv, A.won2)} converted within 50s (${JSON.stringify(A.convWhat)}), ${pct(A.convTw || 0, A.won2)} followed by a tower within 60s; towers/game ${(A.towers / g).toFixed(1)}, bosses/game ${(A.bosses / g).toFixed(1)}, district flips/game ${(A.flips2 / g).toFixed(1)}; kill leader at 10:00 wins ${pct(A.leadWin, A.leadN)}`);
+  console.log(`step cost avg ${avgArr(A.stepMs).toFixed(3)} ms/tick, worst game ${Math.max(...A.stepMs).toFixed(3)}`);
+}
+// Adjacent Custom Match levels, paired seeds with sides swapped: node test_bots.js [games] ladder14 [seedBase] [pairs e.g. 1,2,3,4]
+function ladder14(games, base, pairs) {
+  const L = Sim.BOT_LEVELS;
+  for (const hi of pairs) {
+    const lo = hi - 1; let w = 0, n = 0, ka = 0, kb = 0, ta = 0, tb = 0, mins = 0; const bySide = [[0, 0], [0, 0]];
+    for (let g = 0; g < games; g++) {
+      const swap = g % 2, sk = swap ? [L[lo].skill, L[hi].skill] : [L[hi].skill, L[lo].skill];
+      // Paired: each seed (same rosters, same sides) is played twice with the skills swapped, so kit and side strength cancel.
+      const A = v14(1, sk, process.argv[6] || 'classic', base + (g >> 1) * 13 + hi * 1000);
+      if (A.games && !A.unfinished) { n++; const win = A.wins[swap ? 1 : 0]; w += win; bySide[swap][0] += win; bySide[swap][1]++; } mins += A.mins;
+      const hiT = swap ? 1 : 0; ka += A.k[hiT]; kb += A.k[1 - hiT]; ta += A.tw[hiT]; tb += A.tw[1 - hiT];
+    }
+    console.log(`  ${L[hi].name} v ${L[lo].name}: ${w}/${n} wins (${pct(w, n)}; as Heroes ${bySide[0][0]}/${bySide[0][1]}, as Villains ${bySide[1][0]}/${bySide[1][1]}), kills ${ka}-${kb}, towers taken ${ta}-${tb}, avg ${(mins / games).toFixed(1)}m`);
+  }
+}
+
 async function main() {
   await Promise.resolve();
   if (MODE === 'nav') { auditReport(audit(N, +process.argv[4] || .6, +process.argv[5] || 1200, process.argv[6]), 'skill ' + (+process.argv[4] || .6) + (process.argv[6] ? ' ' + process.argv[6] : '')); return; }
   if (MODE === 'balance') { balance(N, +process.argv[4] || 1); return; }
   if (MODE === 'v13') { const sk = +process.argv[4] || .6; v13Report(v13(N, sk, process.argv[5]), 'skill ' + sk + (process.argv[5] ? ' ' + process.argv[5] : '')); return; }
   if (MODE === 'levels') { levels(N); return; }
+  if (MODE === 'v14') { const sk = +process.argv[4] || .55; v14Report(v14(N, sk, process.argv[5] || 'classic', +process.argv[6] || 0), 'skill ' + sk + ' ' + (process.argv[5] || 'classic')); return; }
+  if (MODE === 'ladder14') { ladder14(N, +process.argv[4] || 0, (process.argv[5] || '1,2,3,4').split(',').map(Number)); return; }
   console.log('Sim exports:', ['RANKS', 'rankOf', 'rankDelta', 'botSkills'].map(k => k + ':' + typeof Sim[k]).join(' '));
   if (MODE === 'all' || MODE === 'even') {
     report(run(N, g => ({ seed: g, skill0: .5, skill1: .5 })), 'even match, skill 0.5 v 0.5');
